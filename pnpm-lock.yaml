@@ -60,6 +60,49 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@20.19.43)
 
+  apps/orchestrator:
+    dependencies:
+      '@xperiment/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@xperiment/engine-core':
+        specifier: workspace:*
+        version: link:../../packages/engine-core
+      '@xperiment/ir':
+        specifier: workspace:*
+        version: link:../../packages/ir
+      '@xperiment/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
+      bullmq:
+        specifier: ^5.8.0
+        version: 5.81.0
+      pino:
+        specifier: ^9.0.0
+        version: 9.14.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.0
+        version: 20.19.43
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
+      '@vitest/coverage-v8':
+        specifier: ^2.0.0
+        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+      pg:
+        specifier: ^8.12.0
+        version: 8.22.0
+      tsx:
+        specifier: ^4.16.0
+        version: 4.23.1
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@20.19.43)
+
   packages/connectors:
     dependencies:
       '@xperiment/ir':
