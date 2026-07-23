@@ -1,0 +1,12 @@
+{
+  "name": "xperiment-workflow-builder",
+  "private": true,
+  "packageManager": "pnpm@10.8.1",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "test:cov": "pnpm -r --workspace-concurrency=1 test:cov",
+    "typecheck": "pnpm -r typecheck",
+    "migrate": "pnpm --filter @xperiment/db migrate"
+  }
+}
