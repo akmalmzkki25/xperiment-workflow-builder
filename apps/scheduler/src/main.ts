@@ -1,0 +1,44 @@
+import { createServer } from 'node:http';
+import { createPool, runMigrations } from '@xperiment/db';
+import { createQueues, createRedisConnection, startOutboxPublisher } from '@xperiment/queue';
+import { pino } from 'pino';
+import { runSchedulerTick } from './tick.js';
+
+const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
+const pool = createPool();
+await runMigrations(pool);
+
+const connection = createRedisConnection();
+const queues = createQueues(connection);
+const publisher = startOutboxPublisher({ pool, queues, log: (msg, extra) => logger.info(extra ?? {}, msg) });
+
+const intervalMs = Number(process.env['SCHEDULER_INTERVAL_MS'] ?? 5000);
+let running = false;
+const timer = setInterval(() => {
+  if (running) return;
+  running = true;
+  void runSchedulerTick({ pool, log: (msg, extra) => logger.info(extra ?? {}, msg) })
+    .catch((e: unknown) => logger.error({ err: (e as Error).message }, 'scheduler tick failed'))
+    .finally(() => {
+      running = false;
+    });
+}, intervalMs);
+
+const health = createServer((_req, res) => {
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ status: 'ok' }));
+});
+health.listen(Number(process.env['SCHEDULER_PORT'] ?? 3004), () => logger.info('scheduler healthz listening'));
+
+async function shutdown(): Promise<void> {
+  logger.info('shutting down');
+  clearInterval(timer);
+  await publisher.stop();
+  for (const q of Object.values(queues)) await q.close();
+  connection.disconnect();
+  health.close();
+  await pool.end();
+  process.exit(0);
+}
+process.on('SIGINT', () => void shutdown());
+process.on('SIGTERM', () => void shutdown());
