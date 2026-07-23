@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@xperiment/expressions": "workspace:*",
-    "@xperiment/ir": "workspace:*"
+    "@xperiment/ir": "workspace:*",
+    "cron-parser": "^4.9.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

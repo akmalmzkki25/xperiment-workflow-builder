@@ -2,6 +2,8 @@ import { coreIf } from './core/if.js';
 import { coreTransform } from './core/transform.js';
 import { createHttpRequest } from './http/request.js';
 import { manualTrigger } from './manual/trigger.js';
+import { scheduleTrigger } from './schedule/trigger.js';
+import { webhookTrigger } from './webhook/trigger.js';
 import type { ConnectorDefinition } from './types.js';
 
 export interface ConnectorRegistry {
@@ -16,6 +18,8 @@ export interface RegistryConfig {
 export function createDefaultRegistry(cfg: RegistryConfig = {}): ConnectorRegistry {
   const defs: ConnectorDefinition[] = [
     manualTrigger,
+    webhookTrigger,
+    scheduleTrigger,
     coreTransform,
     coreIf,
     createHttpRequest({ allowPrivateIps: cfg.allowPrivateIps ?? false }),

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@xperiment/ir": "workspace:*",
+    "cron-parser": "^4.9.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

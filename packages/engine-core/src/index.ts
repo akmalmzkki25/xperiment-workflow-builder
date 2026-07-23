@@ -17,3 +17,4 @@ export {
 } from './retry.js';
 export { computeReadiness, type NodeOutcome, type ReadinessResult } from './readiness.js';
 export { buildContext } from './context.js';
+export { nextFireAt } from './cron.js';

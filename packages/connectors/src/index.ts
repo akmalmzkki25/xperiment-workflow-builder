@@ -5,3 +5,5 @@ export { coreTransform } from './core/transform.js';
 export { coreIf } from './core/if.js';
 export { assertUrlAllowed, isForbiddenIp, type SsrfOptions } from './http/ssrf.js';
 export { createHttpRequest } from './http/request.js';
+export { webhookTrigger } from './webhook/trigger.js';
+export { scheduleTrigger } from './schedule/trigger.js';
