@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "0.1",
+  "workflow": { "id": "wf_lead", "name": "Lead check" },
+  "entrypoints": ["t"],
+  "nodes": [
+    {
+      "id": "t",
+      "kind": "trigger",
+      "type": "manual.trigger",
+      "operationVersion": "0.1.0",
+      "parameters": {}
+    },
+    {
+      "id": "branch",
+      "kind": "logic",
+      "type": "core.if",
+      "operationVersion": "0.1.0",
+      "parameters": { "condition": "{{ trigger.body.total > 100 }}" }
+    },
+    {
+      "id": "notify",
+      "kind": "action",
+      "type": "http.request",
+      "operationVersion": "0.1.0",
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:9999/notify",
+        "body": { "name": "{{ trigger.body.name }}" }
+      },
+      "settings": { "timeoutMs": 5000, "retry": { "maxAttempts": 3, "initialDelayMs": 100, "maxDelayMs": 400 } }
+    },
+    {
+      "id": "archive",
+      "kind": "logic",
+      "type": "core.transform",
+      "operationVersion": "0.1.0",
+      "parameters": { "fields": { "archived": true, "name": "{{ trigger.body.name }}" } }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": { "nodeId": "t", "port": "main" }, "to": { "nodeId": "branch", "port": "input" } },
+    { "id": "e2", "from": { "nodeId": "branch", "port": "true" }, "to": { "nodeId": "notify", "port": "input" } },
+    { "id": "e3", "from": { "nodeId": "branch", "port": "false" }, "to": { "nodeId": "archive", "port": "input" } }
+  ]
+}

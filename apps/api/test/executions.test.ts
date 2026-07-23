@@ -109,4 +109,39 @@ describe('execute and inspect', () => {
     const r = await app.inject({ method: 'GET', url: '/v1/executions/00000000-0000-0000-0000-0000000000bb' });
     expect(r.statusCode).toBe(404);
   });
+
+  test('execute on unknown workflow is 404', async () => {
+    const r = await app.inject({
+      method: 'POST',
+      url: '/v1/workflows/00000000-0000-0000-0000-0000000000cc/execute',
+      payload: {},
+    });
+    expect(r.statusCode).toBe(404);
+  });
+
+  test('executions list rejects invalid query and follows cursors', async () => {
+    const bad = await app.inject({ method: 'GET', url: '/v1/executions?limit=0' });
+    expect(bad.statusCode).toBe(400);
+    const id = await publishedWorkflow();
+    for (let i = 0; i < 3; i += 1) {
+      await app.inject({
+        method: 'POST',
+        url: `/v1/workflows/${id}/execute`,
+        headers: { 'idempotency-key': `cur${i}` },
+        payload: {},
+      });
+    }
+    const all = await app.inject({ method: 'GET', url: '/v1/executions?limit=2' });
+    const page1 = all.json<{ items: unknown[]; nextCursor: string }>();
+    const page2 = await app.inject({
+      method: 'GET',
+      url: `/v1/executions?limit=2&cursor=${encodeURIComponent(page1.nextCursor)}`,
+    });
+    expect(page2.json<{ items: unknown[] }>().items).toHaveLength(1);
+  });
+
+  test('workflows list rejects invalid query', async () => {
+    const r = await app.inject({ method: 'GET', url: '/v1/workflows?limit=0' });
+    expect(r.statusCode).toBe(400);
+  });
 });

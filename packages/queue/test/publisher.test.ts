@@ -72,6 +72,49 @@ describe('startOutboxPublisher', () => {
     }
   });
 
+  test('unknown event type is logged and left unpublished', async () => {
+    await pool.query(
+      `INSERT INTO task_outbox (event_type, payload_json, delay_ms) VALUES ('bogus.event', '{}'::jsonb, 0)`,
+    );
+    const logged: string[] = [];
+    const publisher = startOutboxPublisher({ pool, queues, intervalMs: 50, log: (msg) => logged.push(msg) });
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      expect(logged).toContain('outbox.unknown_event_type');
+      const remaining = await pool.query(`SELECT count(*)::int AS c FROM task_outbox WHERE published_at IS NULL`);
+      expect((remaining.rows[0] as { c: number }).c).toBe(1); // bogus row never marked
+    } finally {
+      await publisher.stop();
+    }
+  });
+
+  test('publish errors are caught, logged, and the loop keeps running', async () => {
+    await insertOutbox(pool, { eventType: 'execution.requested', payload: { executionId: 'E-err' } });
+    const throwingQueues = {
+      ...queues,
+      executionRequested: {
+        add: async () => {
+          throw new Error('redis down');
+        },
+      },
+    } as unknown as typeof queues;
+    const logged: string[] = [];
+    const publisher = startOutboxPublisher({
+      pool,
+      queues: throwingQueues,
+      intervalMs: 50,
+      log: (msg) => logged.push(msg),
+    });
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      expect(logged).toContain('outbox.publish_error');
+      const remaining = await pool.query(`SELECT count(*)::int AS c FROM task_outbox WHERE published_at IS NULL`);
+      expect((remaining.rows[0] as { c: number }).c).toBe(1); // row stays for a later retry
+    } finally {
+      await publisher.stop();
+    }
+  });
+
   test('republish with same jobId does not duplicate an existing waiting job', async () => {
     await insertOutbox(pool, { eventType: 'execution.requested', payload: { executionId: 'E3' } });
     await insertOutbox(pool, { eventType: 'execution.requested', payload: { executionId: 'E3' } });
