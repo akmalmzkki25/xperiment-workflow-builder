@@ -3,3 +3,4 @@ export { createDefaultRegistry, type ConnectorRegistry, type RegistryConfig } fr
 export { manualTrigger } from './manual/trigger.js';
 export { coreTransform } from './core/transform.js';
 export { coreIf } from './core/if.js';
+export { assertUrlAllowed, isForbiddenIp, type SsrfOptions } from './http/ssrf.js';
