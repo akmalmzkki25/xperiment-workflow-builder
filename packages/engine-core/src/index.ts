@@ -15,3 +15,5 @@ export {
   computeBackoffMs,
   type ResolvedRetryPolicy,
 } from './retry.js';
+export { computeReadiness, type NodeOutcome, type ReadinessResult } from './readiness.js';
+export { buildContext } from './context.js';
