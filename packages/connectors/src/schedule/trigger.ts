@@ -12,7 +12,14 @@ function isValidCron(cron: string): boolean {
 }
 
 function isValidTimezone(tz: string): boolean {
-  return (Intl.supportedValuesOf('timeZone') as string[]).includes(tz);
+  // Intl.supportedValuesOf('timeZone') omits 'UTC'; constructing a formatter
+  // throws RangeError for anything the runtime cannot resolve.
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const paramsSchema = z
