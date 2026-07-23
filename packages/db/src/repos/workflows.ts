@@ -8,6 +8,7 @@ export interface WorkflowRow {
   status: string;
   activeVersionId: string | null;
   draftRevision: number;
+  active: boolean;
 }
 
 function mapWorkflow(r: Record<string, unknown>): WorkflowRow {
@@ -17,6 +18,7 @@ function mapWorkflow(r: Record<string, unknown>): WorkflowRow {
     status: r['status'] as string,
     activeVersionId: (r['active_version_id'] as string | null) ?? null,
     draftRevision: Number(r['draft_revision']),
+    active: Boolean(r['active']),
   };
 }
 
