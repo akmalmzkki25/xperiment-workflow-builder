@@ -7,6 +7,7 @@
     "test": "pnpm -r --workspace-concurrency=1 test",
     "test:cov": "pnpm -r --workspace-concurrency=1 test:cov",
     "typecheck": "pnpm -r typecheck",
-    "migrate": "pnpm --filter @xperiment/db migrate"
+    "migrate": "pnpm --filter @xperiment/db migrate",
+    "xperiment": "pnpm --filter @xperiment/cli xperiment --"
   }
 }
