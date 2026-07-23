@@ -1,0 +1,175 @@
+import type { ConnectorRegistry } from '@xperiment/connectors';
+import {
+  appendEvent,
+  casNode,
+  getExecutionDetail,
+  getTriggerPayload,
+  getVersion,
+  insertOutbox,
+  succeededOutputs,
+  withTx,
+} from '@xperiment/db';
+import {
+  buildContext,
+  computeBackoffMs,
+  resolveRetryPolicy,
+  shouldRetry,
+  type NormalizedError,
+  type ResolvedRetryPolicy,
+} from '@xperiment/engine-core';
+import { resolveTemplate } from '@xperiment/expressions';
+import { workflowIrSchema, type IRNode, type WorkflowIR } from '@xperiment/ir';
+import type { NodeTaskPayload } from '@xperiment/queue';
+import type pg from 'pg';
+import { classifyError } from './classify.js';
+
+const TERMINAL_EXECUTION_STATUSES = ['SUCCEEDED', 'FAILED', 'TIMED_OUT'];
+const DEFAULT_NODE_TIMEOUT_MS = 30000;
+
+export interface WorkerDeps {
+  pool: pg.Pool;
+  registry: ConnectorRegistry;
+  workerId: string;
+  log: (msg: string, extra?: Record<string, unknown>) => void;
+}
+
+export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): Promise<void> {
+  const { executionId, nodeId, attempt } = payload;
+
+  const detail = await getExecutionDetail(deps.pool, executionId);
+  if (!detail) {
+    deps.log('run_task.unknown_execution', { executionId });
+    return;
+  }
+  if (TERMINAL_EXECUTION_STATUSES.includes(detail.execution.status)) {
+    deps.log('run_task.execution_terminal', { executionId, nodeId });
+    return;
+  }
+  const version = await getVersion(deps.pool, detail.execution.workflowVersionId);
+  if (!version) {
+    deps.log('run_task.missing_version', { executionId });
+    return;
+  }
+  const ir = workflowIrSchema.parse(version.definition) as WorkflowIR;
+  const node = ir.nodes.find((n) => n.id === nodeId);
+  if (!node) {
+    deps.log('run_task.unknown_node', { executionId, nodeId });
+    return;
+  }
+
+  const claimed = await casNode(deps.pool, {
+    executionId,
+    nodeId,
+    attempt,
+    from: ['QUEUED'],
+    to: 'RUNNING',
+    patch: { startedAt: true, workerId: deps.workerId },
+  });
+  if (!claimed) {
+    deps.log('run_task.duplicate_delivery', { executionId, nodeId, attempt });
+    return;
+  }
+  await appendEvent(deps.pool, { executionId, eventType: 'node.started', nodeId, payload: { attempt } });
+
+  const policy = resolveRetryPolicy(node.settings?.retry);
+  let resolvedParams: unknown;
+  try {
+    const triggerBody = await getTriggerPayload(deps.pool, executionId);
+    const outputs = await succeededOutputs(deps.pool, executionId);
+    const ctx = buildContext(executionId, triggerBody, outputs);
+    resolvedParams = resolveTemplate(node.parameters, ctx);
+    const result = await executeNode(deps, { node, resolvedParams, triggerBody, executionId, attempt });
+    await withTx(deps.pool, async (client) => {
+      const written = await casNode(client, {
+        executionId,
+        nodeId,
+        attempt,
+        from: ['RUNNING'],
+        to: 'SUCCEEDED',
+        patch: {
+          inputJson: resolvedParams,
+          outputJson: result.output ?? null,
+          outputPort: result.outputPort ?? 'main',
+          completedAt: true,
+        },
+      });
+      if (!written) return; // lost the row (e.g. watchdog) — do not emit completion
+      await appendEvent(client, { executionId, eventType: 'node.succeeded', nodeId, payload: { attempt } });
+      await insertOutbox(client, {
+        eventType: 'node.completed',
+        payload: { executionId, nodeId, attempt, status: 'SUCCEEDED', outputPort: result.outputPort ?? 'main' },
+      });
+    });
+  } catch (err) {
+    const normalized = classifyError(err, policy);
+    await recordFailure(deps, { executionId, nodeId, attempt, normalized, policy, resolvedParams });
+  }
+}
+
+async function executeNode(
+  deps: WorkerDeps,
+  args: { node: IRNode; resolvedParams: unknown; triggerBody: unknown; executionId: string; attempt: number },
+): Promise<{ output: unknown; outputPort?: string }> {
+  const { node } = args;
+  const def = deps.registry.get(node.type);
+  if (!def) throw new Error(`No connector registered for node type '${node.type}'`);
+  const timeoutMs = node.settings?.timeoutMs ?? DEFAULT_NODE_TIMEOUT_MS;
+  return def.run({
+    executionId: args.executionId,
+    nodeId: node.id,
+    attempt: args.attempt,
+    parameters: args.resolvedParams,
+    triggerBody: args.triggerBody,
+    signal: AbortSignal.timeout(timeoutMs),
+    log: deps.log,
+  });
+}
+
+async function recordFailure(
+  deps: WorkerDeps,
+  args: {
+    executionId: string;
+    nodeId: string;
+    attempt: number;
+    normalized: NormalizedError;
+    policy: ResolvedRetryPolicy;
+    resolvedParams: unknown;
+  },
+): Promise<void> {
+  const { executionId, nodeId, attempt, normalized, policy } = args;
+  const retrying = shouldRetry(normalized, attempt, policy);
+  const to = retrying ? 'RETRY_SCHEDULED' : 'FAILED';
+  const delayMs = retrying ? computeBackoffMs(attempt, policy) : undefined;
+
+  await withTx(deps.pool, async (client) => {
+    const written = await casNode(client, {
+      executionId,
+      nodeId,
+      attempt,
+      from: ['RUNNING'],
+      to,
+      patch: {
+        inputJson: args.resolvedParams ?? null,
+        errorJson: normalized,
+        completedAt: true,
+      },
+    });
+    if (!written) return;
+    await appendEvent(client, {
+      executionId,
+      eventType: retrying ? 'node.retrying' : 'node.failed',
+      nodeId,
+      payload: { attempt, error: normalized, ...(delayMs !== undefined ? { delayMs } : {}) },
+    });
+    await insertOutbox(client, {
+      eventType: 'node.completed',
+      payload: {
+        executionId,
+        nodeId,
+        attempt,
+        status: to,
+        ...(delayMs !== undefined ? { delayMs } : {}),
+      },
+    });
+  });
+}
