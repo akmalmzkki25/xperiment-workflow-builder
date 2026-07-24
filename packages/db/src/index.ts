@@ -10,4 +10,5 @@ export * from './repos/connections.js';
 export * from './repos/auth.js';
 export * from './repos/waits.js';
 export * from './repos/usage.js';
+export * from './repos/alerts.js';
 export { hashPassword, verifyPassword, generateToken, hashToken } from './authCrypto.js';
