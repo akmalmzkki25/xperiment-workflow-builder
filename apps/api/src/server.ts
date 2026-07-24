@@ -7,6 +7,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { AiConfig } from './routes/deps.js';
 import { registerAuthPlugin } from './auth/plugin.js';
+import { registerRateLimit } from './rateLimit/plugin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
@@ -26,6 +27,7 @@ export interface ServerDeps {
   credentialsKey?: Buffer;
   ai?: AiConfig;
   aiClientFactory?: (cfg: { apiKey: string; model: string; baseUrl: string; appUrl?: string }) => ChatClient;
+  rateLimitPerMinute?: number;
 }
 
 function resolveAiConfig(override?: AiConfig): AiConfig {
@@ -66,6 +68,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     aiClientFactory: deps.aiClientFactory ?? createOpenRouterClient,
   };
   registerAuthPlugin(app, { pool: deps.pool });
+  registerRateLimit(app, {
+    perMinute: deps.rateLimitPerMinute ?? Number(process.env['RATE_LIMIT_PER_MIN'] ?? 600),
+  });
   registerHealthRoutes(app);
   registerAuthRoutes(app, resolvedDeps);
   registerWorkspaceRoutes(app, resolvedDeps);
