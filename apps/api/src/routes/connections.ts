@@ -1,6 +1,7 @@
 import { CONNECTION_PAYLOAD_SCHEMAS, type ConnectorKey } from '@xperiment/connectors';
 import {
   countPublishedRefs,
+  DEFAULT_WORKSPACE_ID,
   createConnection,
   decryptSecret,
   deleteConnection,
@@ -30,6 +31,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
     const payload = schema.safeParse(parsed.data.payload);
     if (!payload.success) return sendProblem(reply, 400, 'Invalid connection payload', payload.error.message);
     const row = await createConnection(deps.pool, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
       connectorKey: parsed.data.connectorKey,
       name: parsed.data.name,
       encryptedPayload: encryptSecret(JSON.stringify(payload.data), deps.credentialsKey),
@@ -38,7 +40,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
   });
 
   app.get('/v1/connections', async () => {
-    return { items: await listConnections(deps.pool) };
+    return { items: await listConnections(deps.pool, DEFAULT_WORKSPACE_ID) };
   });
 
   app.delete('/v1/connections/:id', async (req, reply) => {
@@ -47,7 +49,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
     if (refs > 0) {
       return sendProblem(reply, 409, 'Connection in use', `Referenced by ${refs} published workflow version(s)`);
     }
-    const deleted = await deleteConnection(deps.pool, id);
+    const deleted = await deleteConnection(deps.pool, id, DEFAULT_WORKSPACE_ID);
     if (!deleted) return sendProblem(reply, 404, 'Connection not found');
     return reply.status(204).send();
   });

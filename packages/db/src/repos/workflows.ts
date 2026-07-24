@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { DEFAULT_WORKSPACE_ID, type Db } from '../pool.js';
+import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
 
 export interface WorkflowRow {
@@ -22,34 +22,39 @@ function mapWorkflow(r: Record<string, unknown>): WorkflowRow {
   };
 }
 
-export async function createWorkflow(db: Db, args: { name: string }): Promise<WorkflowRow> {
+export async function createWorkflow(
+  db: Db,
+  args: { workspaceId: string; name: string },
+): Promise<WorkflowRow> {
   const wf = await db.query(`INSERT INTO workflows (workspace_id, name) VALUES ($1, $2) RETURNING *`, [
-    DEFAULT_WORKSPACE_ID,
+    args.workspaceId,
     args.name,
   ]);
   const row = wf.rows[0] as Record<string, unknown>;
   await db.query(
     `INSERT INTO workflow_drafts (workflow_id, workspace_id, definition_json, revision) VALUES ($1, $2, '{}'::jsonb, 1)`,
-    [row['id'], DEFAULT_WORKSPACE_ID],
+    [row['id'], args.workspaceId],
   );
   return mapWorkflow(row);
 }
 
-export async function getWorkflow(db: Db, id: string): Promise<WorkflowRow | null> {
-  const r = await db.query(`SELECT * FROM workflows WHERE id = $1`, [id]);
+export async function getWorkflow(db: Db, id: string, workspaceId?: string): Promise<WorkflowRow | null> {
+  const r = workspaceId
+    ? await db.query(`SELECT * FROM workflows WHERE id = $1 AND workspace_id = $2`, [id, workspaceId])
+    : await db.query(`SELECT * FROM workflows WHERE id = $1`, [id]);
   return r.rowCount ? mapWorkflow(r.rows[0] as Record<string, unknown>) : null;
 }
 
 export async function listWorkflows(
   db: Db,
-  args: { limit: number; cursor?: string },
+  args: { workspaceId: string; limit: number; cursor?: string },
 ): Promise<{ items: WorkflowRow[]; nextCursor: string | null }> {
-  const params: unknown[] = [];
-  let where = '';
+  const params: unknown[] = [args.workspaceId];
+  let where = `WHERE workspace_id = $1`;
   if (args.cursor) {
     const [createdAt, id] = Buffer.from(args.cursor, 'base64').toString('utf8').split('|');
     params.push(createdAt, id);
-    where = `WHERE (created_at, id) < ($1::timestamptz, $2::uuid)`;
+    where += ` AND (created_at, id) < ($2::timestamptz, $3::uuid)`;
   }
   params.push(args.limit + 1);
   const r = await db.query(
@@ -110,8 +115,8 @@ export async function createVersion(
     const versionNumber = Number((next.rows[0] as { n: string | number }).n);
     const inserted = await client.query(
       `INSERT INTO workflow_versions (workspace_id, workflow_id, version_number, definition_json, definition_hash)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [DEFAULT_WORKSPACE_ID, args.workflowId, versionNumber, JSON.stringify(args.definition), args.hash],
+       SELECT w.workspace_id, w.id, $2, $3, $4 FROM workflows w WHERE w.id = $1 RETURNING id`,
+      [args.workflowId, versionNumber, JSON.stringify(args.definition), args.hash],
     );
     const id = (inserted.rows[0] as { id: string }).id;
     await client.query(

@@ -1,5 +1,6 @@
 import {
   createPool,
+  DEFAULT_WORKSPACE_ID,
   createVersion,
   createWorkflow,
   listTriggers,
@@ -51,7 +52,7 @@ beforeEach(async () => {
   await pool.query(
     `TRUNCATE workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
   );
-  const wf = await createWorkflow(pool, { name: 'Cron' });
+  const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Cron' });
   workflowId = wf.id;
   await createVersion(pool, { workflowId, definition: cronIr, hash: 'h' });
   await setWorkflowActive(pool, workflowId, true);
@@ -111,7 +112,7 @@ describe('runSchedulerTick', () => {
   });
 
   test('due trigger on an unpublished workflow is skipped without firing', async () => {
-    const bare = await createWorkflow(pool, { name: 'NoVersion' });
+    const bare = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'NoVersion' });
     await setWorkflowActive(pool, bare.id, true);
     await upsertTrigger(pool, {
       workflowId: bare.id,

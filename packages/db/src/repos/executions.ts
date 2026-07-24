@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { DEFAULT_WORKSPACE_ID, type Db } from '../pool.js';
+import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
 import { insertOutbox } from './outbox.js';
 
@@ -58,10 +58,12 @@ export async function createExecutionWithTrigger(
   },
 ): Promise<{ execution: ExecutionRow; created: boolean }> {
   return withTx(pool, async (client) => {
+    // workspace_id is inherited from the workflow row — tenancy by construction.
     const te = await client.query(
       `INSERT INTO trigger_events (workspace_id, workflow_id, idempotency_key, payload_json)
-       VALUES ($1, $2, $3, $4) ON CONFLICT (workflow_id, idempotency_key) DO NOTHING RETURNING id`,
-      [DEFAULT_WORKSPACE_ID, args.workflowId, args.idempotencyKey, capJson(args.payload)],
+       SELECT w.workspace_id, w.id, $2, $3 FROM workflows w WHERE w.id = $1
+       ON CONFLICT (workflow_id, idempotency_key) DO NOTHING RETURNING id, workspace_id`,
+      [args.workflowId, args.idempotencyKey, capJson(args.payload)],
     );
     if (!te.rowCount) {
       const existing = await client.query(
@@ -72,18 +74,18 @@ export async function createExecutionWithTrigger(
       );
       return { execution: mapExecution(existing.rows[0] as Record<string, unknown>), created: false };
     }
-    const triggerEventId = (te.rows[0] as { id: string }).id;
+    const { id: triggerEventId, workspace_id: workspaceId } = te.rows[0] as { id: string; workspace_id: string };
     const ex = await client.query(
       `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, trigger_event_id, status, idempotency_key)
        VALUES ($1, $2, $3, $4, 'CREATED', $5) RETURNING *`,
-      [DEFAULT_WORKSPACE_ID, args.workflowId, args.versionId, triggerEventId, args.idempotencyKey],
+      [workspaceId, args.workflowId, args.versionId, triggerEventId, args.idempotencyKey],
     );
     const execution = mapExecution(ex.rows[0] as Record<string, unknown>);
     for (const nodeId of args.nodeIds) {
       await client.query(
         `INSERT INTO execution_nodes (workspace_id, execution_id, node_id, status, attempt)
          VALUES ($1, $2, $3, 'PENDING', 1)`,
-        [DEFAULT_WORKSPACE_ID, execution.id, nodeId],
+        [workspaceId, execution.id, nodeId],
       );
     }
     await insertOutbox(client, { eventType: 'execution.requested', payload: { executionId: execution.id } });
@@ -95,7 +97,7 @@ export async function createExecutionWithTrigger(
     await client.query(
       `INSERT INTO execution_events (workspace_id, execution_id, event_type, payload_json)
        VALUES ($1, $2, 'execution.created', $3)`,
-      [DEFAULT_WORKSPACE_ID, execution.id, JSON.stringify({ idempotencyKey: args.idempotencyKey })],
+      [workspaceId, execution.id, JSON.stringify({ idempotencyKey: args.idempotencyKey })],
     );
     return { execution, created: true };
   });
@@ -166,8 +168,8 @@ export async function insertNodeAttempt(
 ): Promise<void> {
   await db.query(
     `INSERT INTO execution_nodes (workspace_id, execution_id, node_id, status, attempt)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [DEFAULT_WORKSPACE_ID, args.executionId, args.nodeId, args.status, args.attempt],
+     SELECT e.workspace_id, e.id, $2, $3, $4 FROM executions e WHERE e.id = $1`,
+    [args.executionId, args.nodeId, args.status, args.attempt],
   );
 }
 
@@ -215,9 +217,8 @@ export async function appendEvent(
 ): Promise<void> {
   await db.query(
     `INSERT INTO execution_events (workspace_id, execution_id, event_type, node_id, payload_json)
-     VALUES ($1, $2, $3, $4, $5)`,
+     SELECT e.workspace_id, e.id, $2, $3, $4 FROM executions e WHERE e.id = $1`,
     [
-      DEFAULT_WORKSPACE_ID,
       args.executionId,
       args.eventType,
       args.nodeId ?? null,
@@ -247,8 +248,11 @@ export interface EventRow {
 export async function getExecutionDetail(
   pool: pg.Pool,
   id: string,
+  workspaceId?: string,
 ): Promise<{ execution: ExecutionRow; nodes: NodeRow[]; events: EventRow[] } | null> {
-  const ex = await pool.query(`SELECT * FROM executions WHERE id = $1`, [id]);
+  const ex = workspaceId
+    ? await pool.query(`SELECT * FROM executions WHERE id = $1 AND workspace_id = $2`, [id, workspaceId])
+    : await pool.query(`SELECT * FROM executions WHERE id = $1`, [id]);
   if (!ex.rowCount) return null;
   const ts = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string | null));
   const nodes = await pool.query(
@@ -284,10 +288,14 @@ export async function getExecutionDetail(
 
 export async function listExecutions(
   db: Db,
-  args: { workflowId?: string; limit: number; cursor?: string },
+  args: { workspaceId?: string; workflowId?: string; limit: number; cursor?: string },
 ): Promise<{ items: ExecutionRow[]; nextCursor: string | null }> {
   const params: unknown[] = [];
   const where: string[] = [];
+  if (args.workspaceId) {
+    params.push(args.workspaceId);
+    where.push(`workspace_id = $${params.length}`);
+  }
   if (args.workflowId) {
     params.push(args.workflowId);
     where.push(`workflow_id = $${params.length}`);

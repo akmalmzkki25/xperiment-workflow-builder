@@ -3,6 +3,7 @@ import {
   createPool,
   createVersion,
   createWorkflow,
+  DEFAULT_WORKSPACE_ID,
   deriveTriggerKey,
   encryptSecret,
   getExecutionDetail,
@@ -59,7 +60,7 @@ beforeEach(async () => {
 });
 
 async function seedHook(authMode: 'none' | 'token' | 'hmac', opts: { active?: boolean; idemPath?: string } = {}) {
-  const wf = await createWorkflow(pool, { name: 'Hook' });
+  const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Hook' });
   await createVersion(pool, { workflowId: wf.id, definition: hookIr, hash: 'h' });
   const secret = randomBytes(12).toString('hex');
   const row = await upsertTrigger(pool, {

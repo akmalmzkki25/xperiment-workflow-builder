@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { createPool, runMigrations, withTx } from '../src/index.js';
+import { createPool, DEFAULT_WORKSPACE_ID, runMigrations, withTx } from '../src/index.js';
 import {
   casExecution,
   createExecutionWithTrigger,
@@ -29,7 +29,7 @@ beforeEach(async () => {
   await pool.query(
     `TRUNCATE executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
   );
-  const wf = await createWorkflow(pool, { name: 'Cov' });
+  const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Cov' });
   workflowId = wf.id;
   versionId = (await createVersion(pool, { workflowId, definition: {}, hash: 'h' })).id;
 });

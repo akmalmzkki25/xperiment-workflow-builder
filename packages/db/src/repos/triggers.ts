@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type pg from 'pg';
-import { DEFAULT_WORKSPACE_ID, type Db } from '../pool.js';
+import { type Db } from '../pool.js';
 
 export interface TriggerRow {
   id: string;
@@ -54,7 +54,7 @@ export async function upsertTrigger(
     `INSERT INTO workflow_triggers
        (workspace_id, workflow_id, node_id, type, route_key, auth_mode, secret_encrypted,
         idempotency_key_path, cron, timezone, next_fire_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     SELECT w.workspace_id, w.id, $2, $3, $4, $5, $6, $7, $8, $9, $10 FROM workflows w WHERE w.id = $1
      ON CONFLICT (workflow_id, node_id) DO UPDATE SET
        type = EXCLUDED.type,
        auth_mode = EXCLUDED.auth_mode,
@@ -66,7 +66,6 @@ export async function upsertTrigger(
        updated_at = now()
      RETURNING *`,
     [
-      DEFAULT_WORKSPACE_ID,
       args.workflowId,
       args.nodeId,
       args.type,

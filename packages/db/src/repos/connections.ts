@@ -1,4 +1,4 @@
-import { DEFAULT_WORKSPACE_ID, type Db } from '../pool.js';
+import { type Db } from '../pool.js';
 
 export interface ConnectionRow {
   id: string;
@@ -21,19 +21,20 @@ function mapConnection(r: Record<string, unknown>): ConnectionRow {
 
 export async function createConnection(
   db: Db,
-  args: { connectorKey: string; name: string; encryptedPayload: Buffer },
+  args: { workspaceId: string; connectorKey: string; name: string; encryptedPayload: Buffer },
 ): Promise<ConnectionRow> {
   const r = await db.query(
     `INSERT INTO connections (workspace_id, connector_key, name, encrypted_payload)
      VALUES ($1, $2, $3, $4) RETURNING *`,
-    [DEFAULT_WORKSPACE_ID, args.connectorKey, args.name, args.encryptedPayload],
+    [args.workspaceId, args.connectorKey, args.name, args.encryptedPayload],
   );
   return mapConnection(r.rows[0] as Record<string, unknown>);
 }
 
-export async function listConnections(db: Db): Promise<ConnectionRow[]> {
+export async function listConnections(db: Db, workspaceId: string): Promise<ConnectionRow[]> {
   const r = await db.query(
-    `SELECT id, connector_key, name, status, created_at FROM connections ORDER BY created_at`,
+    `SELECT id, connector_key, name, status, created_at FROM connections WHERE workspace_id = $1 ORDER BY created_at`,
+    [workspaceId],
   );
   return (r.rows as Record<string, unknown>[]).map(mapConnection);
 }
@@ -41,15 +42,18 @@ export async function listConnections(db: Db): Promise<ConnectionRow[]> {
 export async function getConnectionWithPayload(
   db: Db,
   id: string,
+  workspaceId?: string,
 ): Promise<(ConnectionRow & { encryptedPayload: Buffer }) | null> {
-  const r = await db.query(`SELECT * FROM connections WHERE id = $1`, [id]);
+  const r = workspaceId
+    ? await db.query(`SELECT * FROM connections WHERE id = $1 AND workspace_id = $2`, [id, workspaceId])
+    : await db.query(`SELECT * FROM connections WHERE id = $1`, [id]);
   if (!r.rowCount) return null;
   const row = r.rows[0] as Record<string, unknown>;
   return { ...mapConnection(row), encryptedPayload: row['encrypted_payload'] as Buffer };
 }
 
-export async function deleteConnection(db: Db, id: string): Promise<boolean> {
-  const r = await db.query(`DELETE FROM connections WHERE id = $1`, [id]);
+export async function deleteConnection(db: Db, id: string, workspaceId: string): Promise<boolean> {
+  const r = await db.query(`DELETE FROM connections WHERE id = $1 AND workspace_id = $2`, [id, workspaceId]);
   return (r.rowCount ?? 0) > 0;
 }
 

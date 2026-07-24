@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { createPool, runMigrations } from '../src/index.js';
+import { createPool, DEFAULT_WORKSPACE_ID, runMigrations } from '../src/index.js';
 import { createVersion, createWorkflow } from '../src/repos/workflows.js';
 import {
   appendEvent,
@@ -32,7 +32,7 @@ beforeEach(async () => {
   await pool.query(
     `TRUNCATE executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
   );
-  const wf = await createWorkflow(pool, { name: 'X' });
+  const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'X' });
   workflowId = wf.id;
   versionId = (await createVersion(pool, { workflowId, definition: { nodes: [] }, hash: 'h' })).id;
 });

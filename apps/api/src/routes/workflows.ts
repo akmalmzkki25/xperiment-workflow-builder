@@ -1,5 +1,6 @@
 import {
   createVersion,
+  DEFAULT_WORKSPACE_ID,
   createWorkflow,
   getDraft,
   getWorkflow,
@@ -24,14 +25,14 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ServerDeps): 
   app.post('/v1/workflows', async (req, reply) => {
     const parsed = createSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    const wf = await createWorkflow(deps.pool, { name: parsed.data.name });
+    const wf = await createWorkflow(deps.pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: parsed.data.name });
     return reply.status(201).send(wf);
   });
 
   app.get('/v1/workflows', async (req, reply) => {
     const q = listQuerySchema.safeParse(req.query ?? {});
     if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
-    return listWorkflows(deps.pool, { limit: q.data.limit, ...(q.data.cursor ? { cursor: q.data.cursor } : {}) });
+    return listWorkflows(deps.pool, { workspaceId: DEFAULT_WORKSPACE_ID, limit: q.data.limit, ...(q.data.cursor ? { cursor: q.data.cursor } : {}) });
   });
 
   app.get('/v1/workflows/:id', async (req, reply) => {
@@ -77,7 +78,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ServerDeps): 
   });
 
   const workspaceConnections = async () =>
-    (await listConnections(deps.pool)).map((c) => ({ id: c.id, connectorKey: c.connectorKey }));
+    (await listConnections(deps.pool, DEFAULT_WORKSPACE_ID)).map((c) => ({ id: c.id, connectorKey: c.connectorKey }));
 
   app.post('/v1/workflows/:id/validate', async (req, reply) => {
     const { id } = req.params as { id: string };

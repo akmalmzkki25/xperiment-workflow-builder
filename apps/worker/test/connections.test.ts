@@ -1,6 +1,7 @@
 import { createDefaultRegistry } from '@xperiment/connectors';
 import {
   createConnection,
+  DEFAULT_WORKSPACE_ID,
   createPool,
   deriveTriggerKey,
   encryptSecret,
@@ -70,6 +71,7 @@ async function runThrough(ir: WorkflowIR): Promise<string> {
 describe('worker connection resolution', () => {
   test('decrypts and passes the connection; query runs; input_json stays secret-free', async () => {
     const conn = await createConnection(pool, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
       connectorKey: 'postgres',
       name: 'DB',
       encryptedPayload: encryptSecret(JSON.stringify({ connectionString: DB_URL }), credentialsKey),
@@ -108,7 +110,7 @@ describe('worker connection resolution', () => {
     const good = encryptSecret(JSON.stringify({ connectionString: DB_URL }), credentialsKey);
     const tampered = Buffer.from(good);
     tampered[tampered.length - 1] = tampered[tampered.length - 1]! ^ 0xff;
-    const conn = await createConnection(pool, { connectorKey: 'postgres', name: 'Bad', encryptedPayload: tampered });
+    const conn = await createConnection(pool, { workspaceId: DEFAULT_WORKSPACE_ID, connectorKey: 'postgres', name: 'Bad', encryptedPayload: tampered });
     const executionId = await runThrough(pgIr(conn.id));
     const row = await pool.query(
       `SELECT error_json FROM execution_nodes WHERE execution_id = $1 AND node_id = 'q'`,

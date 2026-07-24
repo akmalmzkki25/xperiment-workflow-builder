@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createExecutionWithTrigger, createVersion, createWorkflow } from '@xperiment/db';
+import { createExecutionWithTrigger, createVersion, createWorkflow, DEFAULT_WORKSPACE_ID } from '@xperiment/db';
 import type { WorkflowIR } from '@xperiment/ir';
 import type { Pool } from 'pg';
 
@@ -66,7 +66,7 @@ export async function seedExecution(
   ir: WorkflowIR,
   payload: unknown = { name: 'Budi', total: 150 },
 ): Promise<{ workflowId: string; executionId: string }> {
-  const wf = await createWorkflow(pool, { name: ir.workflow.name });
+  const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: ir.workflow.name });
   const version = await createVersion(pool, { workflowId: wf.id, definition: ir, hash: 'test-hash' });
   const { execution } = await createExecutionWithTrigger(pool, {
     workflowId: wf.id,

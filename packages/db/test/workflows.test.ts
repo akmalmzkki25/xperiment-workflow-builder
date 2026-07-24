@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { createPool, runMigrations } from '../src/index.js';
+import { createPool, DEFAULT_WORKSPACE_ID, runMigrations } from '../src/index.js';
 import {
   createVersion,
   createWorkflow,
@@ -28,7 +28,7 @@ beforeEach(async () => {
 
 describe('workflow repos', () => {
   test('createWorkflow creates row plus empty draft at revision 1', async () => {
-    const wf = await createWorkflow(pool, { name: 'Lead check' });
+    const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Lead check' });
     expect(wf.name).toBe('Lead check');
     expect(wf.draftRevision).toBe(1);
     const draft = await getDraft(pool, wf.id);
@@ -39,7 +39,7 @@ describe('workflow repos', () => {
   });
 
   test('updateDraft succeeds with matching revision, conflicts otherwise', async () => {
-    const wf = await createWorkflow(pool, { name: 'X' });
+    const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'X' });
     const def = { schemaVersion: '0.1' };
     const rev2 = await updateDraft(pool, { workflowId: wf.id, definition: def, expectedRevision: 1 });
     expect(rev2).toBe(2);
@@ -50,7 +50,7 @@ describe('workflow repos', () => {
   });
 
   test('createVersion numbers monotonically and activates', async () => {
-    const wf = await createWorkflow(pool, { name: 'X' });
+    const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'X' });
     const v1 = await createVersion(pool, { workflowId: wf.id, definition: { a: 1 }, hash: 'h1' });
     const v2 = await createVersion(pool, { workflowId: wf.id, definition: { a: 2 }, hash: 'h2' });
     expect(v1.versionNumber).toBe(1);
@@ -64,11 +64,11 @@ describe('workflow repos', () => {
   });
 
   test('listWorkflows paginates with cursor', async () => {
-    for (let i = 0; i < 5; i += 1) await createWorkflow(pool, { name: `wf-${i}` });
-    const page1 = await listWorkflows(pool, { limit: 2 });
+    for (let i = 0; i < 5; i += 1) await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: `wf-${i}` });
+    const page1 = await listWorkflows(pool, { workspaceId: DEFAULT_WORKSPACE_ID, limit: 2 });
     expect(page1.items).toHaveLength(2);
     expect(page1.nextCursor).not.toBeNull();
-    const page2 = await listWorkflows(pool, { limit: 2, cursor: page1.nextCursor! });
+    const page2 = await listWorkflows(pool, { workspaceId: DEFAULT_WORKSPACE_ID, limit: 2, cursor: page1.nextCursor! });
     expect(page2.items).toHaveLength(2);
     const ids = new Set([...page1.items, ...page2.items].map((w) => w.id));
     expect(ids.size).toBe(4);

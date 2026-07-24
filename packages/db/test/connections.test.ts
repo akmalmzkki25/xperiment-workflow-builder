@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { createPool, decryptSecret, deriveTriggerKey, encryptSecret, runMigrations } from '../src/index.js';
+import { createPool, DEFAULT_WORKSPACE_ID, decryptSecret, deriveTriggerKey, encryptSecret, runMigrations } from '../src/index.js';
 import {
   countPublishedRefs,
   createConnection,
@@ -30,6 +30,7 @@ describe('connections repo', () => {
   test('stores encrypted payload at rest and round-trips via decrypt', async () => {
     const payload = JSON.stringify({ botToken: 'tok-123' });
     const row = await createConnection(pool, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
       connectorKey: 'telegram',
       name: 'Bot',
       encryptedPayload: encryptSecret(payload, key),
@@ -44,25 +45,27 @@ describe('connections repo', () => {
 
   test('list omits payloads; delete removes; missing lookups are null/false', async () => {
     const row = await createConnection(pool, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
       connectorKey: 'openai',
       name: 'AI',
       encryptedPayload: encryptSecret('{}', key),
     });
-    const list = await listConnections(pool);
+    const list = await listConnections(pool, DEFAULT_WORKSPACE_ID);
     expect(list).toHaveLength(1);
     expect(Object.keys(list[0]!)).not.toContain('encryptedPayload');
-    expect(await deleteConnection(pool, row.id)).toBe(true);
-    expect(await deleteConnection(pool, row.id)).toBe(false);
+    expect(await deleteConnection(pool, row.id, DEFAULT_WORKSPACE_ID)).toBe(true);
+    expect(await deleteConnection(pool, row.id, DEFAULT_WORKSPACE_ID)).toBe(false);
     expect(await getConnectionWithPayload(pool, row.id)).toBeNull();
   });
 
   test('countPublishedRefs finds connectionRef inside published versions', async () => {
     const conn = await createConnection(pool, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
       connectorKey: 'postgres',
       name: 'DB',
       encryptedPayload: encryptSecret('{}', key),
     });
-    const wf = await createWorkflow(pool, { name: 'W' });
+    const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'W' });
     await createVersion(pool, {
       workflowId: wf.id,
       definition: { nodes: [{ id: 'q', connectionRef: conn.id }] },
