@@ -254,6 +254,14 @@ export class ApiClient {
   getExecution(id: string): Promise<ExecutionDetail> {
     return this.request('GET', `/v1/executions/${id}`);
   }
+
+  aiGenerate(prompt: string): Promise<{ ir: unknown; attempts: number }> {
+    return this.request('POST', '/v1/ai/generate', { body: { prompt } });
+  }
+
+  aiEdit(prompt: string, definition: unknown): Promise<{ ir: unknown; attempts: number }> {
+    return this.request('POST', '/v1/ai/edit', { body: { prompt, definition } });
+  }
 }
 
 let browserClient: ApiClient | null = null;

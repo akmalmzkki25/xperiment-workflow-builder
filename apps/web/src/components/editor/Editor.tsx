@@ -27,6 +27,7 @@ import {
 import { defaultParams } from '../../lib/schemaForm';
 import { useEditorStore } from '../../stores/editorStore';
 import { ActionBar } from './ActionBar';
+import { AiDock } from './AiDock';
 import { Canvas } from './Canvas';
 import { EditorProvider, type EditorContextValue } from './EditorContext';
 import { Inspector } from './Inspector';
@@ -40,6 +41,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [revision, setRevision] = useState<number | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [aiOpen, setAiOpen] = useState(false);
   const initializedRef = useRef(false);
   const previousDefinitionRef = useRef<unknown>({});
 
@@ -231,6 +233,19 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     [setNodes, setEdges, select, markDirty],
   );
 
+  const applyDefinition = useCallback(
+    (ir: unknown) => {
+      const canvas = definitionToCanvas(ir);
+      setNodes(canvas.nodes as FlowNode[]);
+      setEdges(canvas.edges as Edge[]);
+      select(null);
+      markDirty();
+      setAiOpen(false);
+      if (canvas.nodes.length > 0) setTimeout(() => void flow.fitView({ padding: 0.3, maxZoom: 1 }), 80);
+    },
+    [setNodes, setEdges, select, markDirty, flow],
+  );
+
   if (workflowQ.isLoading || catalogQ.isLoading) {
     return <p style={{ color: 'var(--text-muted)' }}>Loading editor…</p>;
   }
@@ -259,6 +274,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
           setFindings={setFindings}
           nodeCount={nodes.length}
           onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
+          onToggleAi={() => setAiOpen((v) => !v)}
         />
         <div className="q-editor">
           {libraryOpen ? <NodeLibrary items={catalogQ.data?.items ?? []} onAdd={addNodeFromItem} /> : null}
@@ -281,6 +297,13 @@ function EditorInner({ workflowId }: { workflowId: string }) {
               onDelete={onDelete}
             />
           ) : null}
+          <AiDock
+            open={aiOpen}
+            onClose={() => setAiOpen(false)}
+            hasNodes={nodes.length > 0}
+            currentDefinition={buildDefinition}
+            onApply={applyDefinition}
+          />
         </div>
       </div>
     </EditorProvider>

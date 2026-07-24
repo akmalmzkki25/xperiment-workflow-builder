@@ -18,6 +18,7 @@ interface ActionBarProps {
   setFindings: (findings: Finding[]) => void;
   nodeCount: number;
   onToggleLibrary: () => void;
+  onToggleAi: () => void;
 }
 
 type Notice = { kind: 'ok' | 'err'; text: string } | null;
@@ -32,6 +33,7 @@ export function ActionBar({
   setFindings,
   nodeCount,
   onToggleLibrary,
+  onToggleAi,
 }: ActionBarProps) {
   const queryClient = useQueryClient();
   const { dirty, clearDirtyUpTo } = useEditorStore();
@@ -142,6 +144,9 @@ export function ActionBar({
           </span>
         ) : null}
         <span className="q-editor-head__spacer" />
+        <button className="q-btn q-btn--live q-btn--sm" onClick={onToggleAi} data-testid="ai-open">
+          ✦ AI
+        </button>
         <button className="q-btn q-btn--ghost q-btn--sm" onClick={onToggleLibrary} data-testid="lib-open">
           Add node
         </button>

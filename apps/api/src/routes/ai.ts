@@ -41,8 +41,13 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
       return sendProblem(reply, 502, 'AI provider error', 'The AI provider could not be reached');
     }
     if (!result.ir) {
+      const detail = result.findings
+        .slice(0, 3)
+        .map((f) => (f.nodeId ? `${f.nodeId}: ${f.message}` : f.message))
+        .join('; ');
       return reply.status(422).send({
         title: 'AI could not produce a valid workflow',
+        detail: detail || `Gave up after ${result.attempts} attempts`,
         findings: result.findings,
         attempts: result.attempts,
       });
