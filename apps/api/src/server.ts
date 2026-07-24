@@ -9,6 +9,7 @@ import type { AiConfig } from './routes/deps.js';
 import { registerAuthPlugin } from './auth/plugin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAiRoutes } from './routes/ai.js';
+import { registerApprovalRoutes } from './routes/approvals.js';
 import { registerConnectionRoutes } from './routes/connections.js';
 import { registerConnectorRoutes } from './routes/connectors.js';
 import { registerExecutionRoutes } from './routes/executions.js';
@@ -74,5 +75,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerConnectionRoutes(app, resolvedDeps);
   registerConnectorRoutes(app, resolvedDeps);
   registerAiRoutes(app, resolvedDeps);
+  registerApprovalRoutes(app, resolvedDeps);
   return app;
 }

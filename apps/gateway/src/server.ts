@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  applyResume,
   createExecutionWithTrigger,
   decryptSecret,
+  getOpenWaitByToken,
   getTriggerByRouteKey,
   getVersion,
   getWorkflow,
+  withTx,
 } from '@xperiment/db';
 import { workflowIrSchema } from '@xperiment/ir';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -92,5 +95,36 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
 
   app.post('/t/test/:routeKey', handle('test'));
   app.post('/t/:routeKey', handle('production'));
+
+  // Resume a waitForEvent node. The token is the secret (like a route key), so
+  // no auth header is required; a single-use token resolves the open event wait.
+  app.post('/r/:resumeToken', async (req: FastifyRequest, reply: FastifyReply) => {
+    const { resumeToken } = req.params as { resumeToken: string };
+    const wait = await getOpenWaitByToken(deps.pool, resumeToken);
+    if (!wait || wait.kind !== 'event') return reply.status(404).send({ title: 'Not found', status: 404 });
+
+    const rawBody = (req.body as Buffer | undefined) ?? Buffer.alloc(0);
+    let body: unknown = null;
+    if (rawBody.length > 0) {
+      try {
+        body = JSON.parse(rawBody.toString('utf8'));
+      } catch {
+        return reply.status(400).send({ title: 'Invalid JSON body', status: 400 });
+      }
+    }
+
+    const resumed = await withTx(deps.pool, (client) =>
+      applyResume(client, {
+        wait: { id: wait.id, executionId: wait.executionId, nodeId: wait.nodeId, attempt: wait.attempt },
+        waitStatus: 'resolved',
+        terminal: 'SUCCEEDED',
+        outputPort: 'main',
+        output: body,
+      }),
+    );
+    if (!resumed) return reply.status(404).send({ title: 'Not found', status: 404 });
+    return reply.status(200).send({ resumed: true });
+  });
+
   return app;
 }

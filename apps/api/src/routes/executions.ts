@@ -5,6 +5,7 @@ import {
   getVersion,
   getWorkflow,
   listExecutions,
+  waitsForExecution,
 } from '@xperiment/db';
 import { workflowIrSchema } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
@@ -62,6 +63,19 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
     const { id } = req.params as { id: string };
     const detail = await getExecutionDetail(deps.pool, id, authOf(req).workspaceId);
     if (!detail) return sendProblem(reply, 404, 'Execution not found');
-    return detail;
+    // Surface the resume URL for open event waits so an operator/external system
+    // can discover the callback endpoint. Tokens are added deliberately here and
+    // never by getExecutionDetail itself.
+    const rows = await waitsForExecution(deps.pool, id);
+    const resumeUrlByNode = new Map(
+      rows
+        .filter((w) => w.status === 'open' && w.kind === 'event' && w.resumeToken)
+        .map((w) => [w.nodeId, `${deps.gatewayUrl}/r/${w.resumeToken}`]),
+    );
+    const waits = detail.waits.map((w) => ({
+      ...w,
+      ...(resumeUrlByNode.has(w.nodeId) ? { resumeUrl: resumeUrlByNode.get(w.nodeId) } : {}),
+    }));
+    return { ...detail, waits };
   });
 }

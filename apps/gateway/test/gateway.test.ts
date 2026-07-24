@@ -7,6 +7,8 @@ import {
   deriveTriggerKey,
   encryptSecret,
   getExecutionDetail,
+  latestNodeStates,
+  openWait,
   runMigrations,
   setTriggersActive,
   setWorkflowActive,
@@ -225,5 +227,45 @@ describe('gateway', () => {
       payload: '{not json',
     });
     expect(bad.statusCode).toBe(400);
+  });
+
+  test('POST /r/:token resumes an open event wait with the body as output', async () => {
+    const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Wait' });
+    const ver = await createVersion(pool, { workflowId: wf.id, definition: hookIr, hash: 'h' });
+    const ex = await pool.query(
+      `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, status)
+       VALUES ($1,$2,$3,'RUNNING') RETURNING id`,
+      [DEFAULT_WORKSPACE_ID, wf.id, ver.id],
+    );
+    const executionId = (ex.rows[0] as { id: string }).id;
+    await pool.query(
+      `INSERT INTO execution_nodes (workspace_id, execution_id, node_id, status, attempt) VALUES ($1,$2,'evt','WAITING',1)`,
+      [DEFAULT_WORKSPACE_ID, executionId],
+    );
+    const token = randomBytes(24).toString('base64url');
+    await openWait(pool, { executionId, nodeId: 'evt', attempt: 1, kind: 'event', resumeToken: token });
+
+    const r = await app.inject({
+      method: 'POST',
+      url: `/r/${token}`,
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ approvedBy: 'callback' }),
+    });
+    expect(r.statusCode).toBe(200);
+    expect((await latestNodeStates(pool, executionId)).find((n) => n.nodeId === 'evt')?.status).toBe('SUCCEEDED');
+
+    // Single-use: a second callback with the same token is a 404.
+    const again = await app.inject({
+      method: 'POST',
+      url: `/r/${token}`,
+      headers: { 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    expect(again.statusCode).toBe(404);
+  });
+
+  test('unknown resume token 404', async () => {
+    const r = await app.inject({ method: 'POST', url: '/r/nope', headers: { 'content-type': 'application/json' }, payload: '{}' });
+    expect(r.statusCode).toBe(404);
   });
 });
