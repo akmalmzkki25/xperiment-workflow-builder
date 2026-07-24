@@ -11,6 +11,7 @@ import {
 } from '@xperiment/queue';
 import { Worker } from 'bullmq';
 import { pino } from 'pino';
+import { runAlertDelivery, type AlertDeliveryDeps } from './alertDelivery.js';
 import { runCallback, type CallbackDeps } from './callback.js';
 import { runNodeTask, type WorkerDeps } from './runTask.js';
 
@@ -52,6 +53,19 @@ const callbackWorker = new Worker<{ executionId: string }>(
 );
 callbackWorker.on('failed', (job, err) => logger.warn({ jobId: job?.id, err: err.message }, 'callback job failed'));
 
+const alertDeps: AlertDeliveryDeps = {
+  pool,
+  alertKey: deriveTriggerKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+  allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true',
+  log: deps.log,
+};
+const alertWorker = new Worker<{ ruleId: string; eventId: string }>(
+  QUEUE_NAMES.alertNotify,
+  async (job) => runAlertDelivery(alertDeps, job.data),
+  { connection, concurrency: 4 },
+);
+alertWorker.on('failed', (job, err) => logger.warn({ jobId: job?.id, err: err.message }, 'alert delivery job failed'));
+
 const health = createServer((_req, res) => {
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ status: 'ok', workerId: deps.workerId }));
@@ -62,6 +76,7 @@ async function shutdown(): Promise<void> {
   logger.info('shutting down');
   await taskWorker.close();
   await callbackWorker.close();
+  await alertWorker.close();
   await publisher.stop();
   for (const q of Object.values(queues)) await q.close();
   connection.disconnect();
