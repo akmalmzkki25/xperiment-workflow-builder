@@ -1,8 +1,9 @@
 import { createDefaultRegistry } from '@xperiment/connectors';
 import { createPool, runMigrations } from '@xperiment/db';
-import type { FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { registerRateLimit } from '../src/rateLimit/plugin.js';
 import { buildServer } from '../src/server.js';
 import { createAuthedUser, type AuthedUser } from './authHelpers.js';
 
@@ -42,5 +43,30 @@ describe('rate limiting', () => {
       expect(h.statusCode).toBe(200);
       expect(h.headers['x-ratelimit-limit']).toBeUndefined();
     }
+  });
+});
+
+describe('rate-limit window reset (injectable clock)', () => {
+  test('a 429ed key recovers once the window elapses', async () => {
+    let clock = 1_000_000;
+    const bare = Fastify();
+    registerRateLimit(bare, { perMinute: 2, now: () => clock });
+    bare.get('/v1/ping', async () => ({ ok: true }));
+    await bare.ready();
+    const hit = () => bare.inject({ method: 'GET', url: '/v1/ping' });
+
+    const a = await hit();
+    expect(a.statusCode).toBe(200);
+    expect(a.headers['x-ratelimit-remaining']).toBe('1');
+    expect(a.headers['x-ratelimit-reset']).toBe(String(Math.ceil((clock + 60_000) / 1000)));
+    expect((await hit()).headers['x-ratelimit-remaining']).toBe('0'); // count 2
+    expect((await hit()).statusCode).toBe(429); // count 3 — over the limit
+
+    clock += 60_000; // cross the window boundary → bucket resets
+    const recovered = await hit();
+    expect(recovered.statusCode).toBe(200);
+    expect(recovered.headers['x-ratelimit-remaining']).toBe('1');
+
+    await bare.close();
   });
 });

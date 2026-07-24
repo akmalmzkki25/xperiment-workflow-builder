@@ -229,7 +229,10 @@ export async function closeOpenWaits(client: pg.PoolClient, executionId: string)
   for (const row of open.rows as Record<string, unknown>[]) {
     const ok = await resolveWait(client, { waitId: row['id'] as string, status: 'expired' });
     if (!ok) continue;
-    await casNode(client, {
+    // Only emit node.skipped if THIS call actually skipped the node. A caller may
+    // have already skipped it (e.g. the cancel handler skips WAITING nodes before
+    // calling closeOpenWaits); double-emitting would duplicate the audit event.
+    const skipped = await casNode(client, {
       executionId,
       nodeId: row['node_id'] as string,
       attempt: Number(row['attempt']),
@@ -237,7 +240,9 @@ export async function closeOpenWaits(client: pg.PoolClient, executionId: string)
       to: 'SKIPPED',
       patch: { completedAt: true },
     });
-    await appendEvent(client, { executionId, eventType: 'node.skipped', nodeId: row['node_id'] as string });
+    if (skipped) {
+      await appendEvent(client, { executionId, eventType: 'node.skipped', nodeId: row['node_id'] as string });
+    }
     closed += 1;
   }
   return closed;

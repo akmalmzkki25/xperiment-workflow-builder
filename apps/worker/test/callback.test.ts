@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { createPool, deriveTriggerKey, encryptSecret, runMigrations, setWorkflowCallback } from '@xperiment/db';
 import type { Pool } from 'pg';
@@ -90,6 +90,12 @@ describe('runCallback', () => {
   test('no-ops when the callback was cleared after enqueue', async () => {
     const executionId = await seedExecution(null, null);
     await runCallback(deps, { executionId });
+    expect(received).toHaveLength(0);
+  });
+
+  test('no-ops (does not throw) for an unknown execution id', async () => {
+    // A poison/stale job or a hard-deleted execution must not wedge the queue.
+    await expect(runCallback(deps, { executionId: randomUUID() })).resolves.toBeUndefined();
     expect(received).toHaveLength(0);
   });
 });

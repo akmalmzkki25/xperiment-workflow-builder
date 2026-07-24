@@ -19,6 +19,9 @@ beforeAll(async () => {
   queues = createQueues(connection);
 });
 afterAll(async () => {
+  // Drain leftover jobs so they don't linger in the shared Redis DB and get
+  // picked up (and harmlessly rejected) by the e2e worker on a later run.
+  for (const q of Object.values(queues)) await q.obliterate({ force: true });
   for (const q of Object.values(queues)) await q.close();
   connection.disconnect();
   await pool.end();
@@ -123,6 +126,35 @@ describe('startOutboxPublisher', () => {
       await new Promise((r) => setTimeout(r, 500));
       const waiting = await queues.executionRequested.getJobs(['waiting', 'delayed']);
       expect(waiting.filter((j) => j.id === 'exec-req_E3')).toHaveLength(1);
+    } finally {
+      await publisher.stop();
+    }
+  });
+
+  test('completion-callback jobs carry BullMQ retries so a transient failure is not dropped', async () => {
+    await insertOutbox(pool, { eventType: 'execution.callback', payload: { executionId: 'ECB' } });
+    const publisher = startOutboxPublisher({ pool, queues, intervalMs: 50 });
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      const job = await queues.executionCallback.getJob('callback_ECB');
+      expect(job).toBeDefined();
+      expect(job!.opts.attempts).toBe(5);
+      expect(job!.opts.backoff).toMatchObject({ type: 'exponential' });
+    } finally {
+      await publisher.stop();
+    }
+  });
+
+  test('node-task jobs keep attempts=1 so a throwing processor never double-runs a node', async () => {
+    await insertOutbox(pool, { eventType: 'node.task', payload: { executionId: 'ENT', nodeId: 'a', attempt: 1 } });
+    const publisher = startOutboxPublisher({ pool, queues, intervalMs: 50 });
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      const job = await queues.nodeTask.getJob('node-task_ENT_a_1');
+      expect(job).toBeDefined();
+      // Unconfigured → BullMQ stores attempts 0 (effective single run). The point
+      // is simply that node tasks never get multi-attempt BullMQ retries.
+      expect((job!.opts.attempts ?? 0) < 2).toBe(true);
     } finally {
       await publisher.stop();
     }
