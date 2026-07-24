@@ -204,6 +204,24 @@ finalizes the execution (so a redelivered job never double-counts):
 The web **Usage** page renders the totals as scorecards (runs, success rate, nodes,
 compute, AI tokens) with a runs-per-day chart.
 
+## Alerts (Phase 2J)
+
+Define alert rules that the scheduler evaluates every sweep over the usage ledger:
+
+- `failure_rate` — fires when `failed/total` executions over a window ≥ threshold
+  (guarded by a minimum sample size).
+- `usage_threshold` — fires when a usage metric
+  (`execution` / `node` / `compute_ms` / `ai_tokens`) over a window ≥ threshold.
+
+A breach (past the rule's cooldown) records an append-only firing that surfaces in
+the in-app **Alerts** feed and an incident banner (unacknowledged count). A rule may
+also set a webhook URL, which receives an `X-Xperiment-Signature` (HMAC-SHA256), SSRF-guarded,
+retrying POST via the worker. `POST /v1/alerts` returns the signing secret once;
+`GET /v1/alerts/events` lists firings and `POST /v1/alerts/events/:id/ack` acknowledges one.
+
+Firing is idempotent per cooldown (`last_fired_at` + `FOR UPDATE SKIP LOCKED`), and
+a webhook-delivery failure never removes the in-app firing.
+
 ## Wait & Human Approval (Phase 2F)
 
 Three logic nodes suspend an execution **without holding a worker**, and resume

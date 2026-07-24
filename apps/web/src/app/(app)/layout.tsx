@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
+import { IncidentBanner } from '../../components/shell/IncidentBanner';
 import { Sidebar } from '../../components/shell/Sidebar';
 import { WorkspaceSwitcher } from '../../components/shell/WorkspaceSwitcher';
 import { getBrowserClient } from '../../lib/api';
@@ -43,7 +44,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             Sign out
           </button>
         </header>
-        <div className="q-content">{children}</div>
+        <div className="q-content">
+          <IncidentBanner />
+          {children}
+        </div>
       </div>
     </div>
   );

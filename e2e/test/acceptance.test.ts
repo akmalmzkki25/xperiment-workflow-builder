@@ -24,6 +24,7 @@ let providerUrl: string;
 const telegramMessages: { chat_id: string; text: string }[] = [];
 const whatsappMessages: { to: string; type: string }[] = [];
 const callbacks: { signature: string | undefined; body: { executionId: string; status: string } }[] = [];
+const alertHooks: { signature: string | undefined; raw: string; body: { ruleId: string } }[] = [];
 
 beforeAll(async () => {
   pool = await prepareDatabase();
@@ -49,6 +50,13 @@ beforeAll(async () => {
         callbacks.push({
           signature: req.headers['x-xperiment-signature'] as string | undefined,
           body: JSON.parse(raw) as { executionId: string; status: string },
+        });
+        res.end(JSON.stringify({ ok: true }));
+      } else if (req.url!.includes('/xperiment-alert')) {
+        alertHooks.push({
+          signature: req.headers['x-xperiment-signature'] as string | undefined,
+          raw,
+          body: JSON.parse(raw) as { ruleId: string },
         });
         res.end(JSON.stringify({ ok: true }));
       } else {
@@ -354,5 +362,48 @@ describe('PRD acceptance scenario', () => {
     );
     expect(detail.body.execution.status).toBe('CANCELED');
     expect(detail.body.waits.every((w) => w.status !== 'open')).toBe(true);
+  }, 60000);
+
+  test('a failure_rate alert fires from the scheduler and delivers a signed webhook', async () => {
+    // Resolve the authed workspace id via a created workflow row (the api() helper
+    // skips auth on /v1/auth/* paths, so /v1/auth/me can't be used here).
+    const probe = await api<{ id: string }>('POST', '/v1/workflows', { name: 'alert-ws-probe' });
+    const wsRow = await pool.query(`SELECT workspace_id FROM workflows WHERE id=$1`, [probe.body.id]);
+    const ws = (wsRow.rows[0] as { workspace_id: string }).workspace_id;
+    // Seed failed executions in the ledger (the orchestrator→usage path is unit-tested).
+    await pool.query(
+      `INSERT INTO usage_events (workspace_id, metric, quantity, metadata, occurred_at)
+       VALUES ($1,'execution',1,'{"status":"FAILED"}'::jsonb, now()),
+              ($1,'execution',1,'{"status":"FAILED"}'::jsonb, now())`,
+      [ws],
+    );
+    // threshold 0.01 → any nonzero failure rate fires (the shared workspace already
+    // holds SUCCEEDED executions from earlier tests; the seeded failures guarantee ≥1).
+    const rule = await api<{ id: string; secret: string }>('POST', '/v1/alerts', {
+      name: 'e2e failures',
+      type: 'failure_rate',
+      params: { windowMinutes: 60, threshold: 0.01, minSample: 1 },
+      webhookUrl: `${providerUrl}/xperiment-alert`,
+    });
+    expect(rule.status).toBe(201);
+    const secret = rule.body.secret;
+
+    // The scheduler sweep (500ms) evaluates and fires; poll the firing feed.
+    const deadline = Date.now() + 15000;
+    let fired = 0;
+    while (Date.now() < deadline) {
+      const ev = await api<{ items: unknown[] }>('GET', '/v1/alerts/events');
+      fired = ev.body.items.length;
+      if (fired >= 1) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    expect(fired).toBeGreaterThanOrEqual(1);
+
+    // The worker delivers a correctly-signed webhook.
+    while (alertHooks.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
+    expect(alertHooks.length).toBeGreaterThanOrEqual(1);
+    const hook = alertHooks.at(-1)!;
+    expect(hook.body.ruleId).toBe(rule.body.id);
+    expect(hook.signature).toBe('sha256=' + createHmac('sha256', secret).update(hook.raw).digest('hex'));
   }, 60000);
 });

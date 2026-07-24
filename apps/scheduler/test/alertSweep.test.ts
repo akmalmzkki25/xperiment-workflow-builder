@@ -56,6 +56,34 @@ describe('runAlertSweep', () => {
     expect((await runAlertSweep(deps())).fired).toBe(0);
   });
 
+  test('does not fire when the failure rate is below the threshold', async () => {
+    await createAlertRule(pool, {
+      workspaceId: WS,
+      name: 'fr',
+      type: 'failure_rate',
+      params: { windowMinutes: 60, threshold: 0.5, minSample: 1 },
+    });
+    await seedRuns(9, 1); // 1/10 = 0.1 < 0.5, total 10 >= minSample
+    expect((await runAlertSweep(deps())).fired).toBe(0);
+  });
+
+  test('does not fire a usage_threshold rule below its threshold', async () => {
+    await createAlertRule(pool, {
+      workspaceId: WS,
+      name: 'ut',
+      type: 'usage_threshold',
+      params: { windowMinutes: 60, metric: 'ai_tokens', threshold: 1000 },
+    });
+    await insertUsageEvents(pool, [{ workspaceId: WS, metric: 'ai_tokens', quantity: 150, occurredAt: new Date() }]);
+    expect((await runAlertSweep(deps())).fired).toBe(0);
+  });
+
+  test('uses default window/threshold when params are missing (no fire without data)', async () => {
+    // A rule created directly with empty params exercises the num() defaults.
+    await createAlertRule(pool, { workspaceId: WS, name: 'bare', type: 'usage_threshold', params: {} });
+    expect((await runAlertSweep(deps())).fired).toBe(0); // threshold defaults to Infinity → never fires
+  });
+
   test('fires a usage_threshold rule when the metric sum crosses the threshold', async () => {
     await createAlertRule(pool, {
       workspaceId: WS,

@@ -57,6 +57,29 @@ describe('/v1/alerts', () => {
     expect((await auth.inject({ method: 'DELETE', url: `/v1/alerts/${created.id}` })).statusCode).toBe(204);
   });
 
+  test('creates a usage_threshold rule with a custom cooldown', async () => {
+    const r = await auth.inject({
+      method: 'POST',
+      url: '/v1/alerts',
+      payload: { name: 'tokens', type: 'usage_threshold', params: { windowMinutes: 30, metric: 'ai_tokens', threshold: 1000 }, cooldownMinutes: 15 },
+    });
+    expect(r.statusCode).toBe(201);
+    expect(r.json<{ cooldownMinutes: number; type: string }>().cooldownMinutes).toBe(15);
+    expect(r.json<{ type: string }>().type).toBe('usage_threshold');
+  });
+
+  test('deleting a missing rule and acking a missing event are 404', async () => {
+    const missing = '00000000-0000-0000-0000-0000000000aa';
+    expect((await auth.inject({ method: 'DELETE', url: `/v1/alerts/${missing}` })).statusCode).toBe(404);
+    expect((await auth.inject({ method: 'POST', url: `/v1/alerts/events/${missing}/ack` })).statusCode).toBe(404);
+  });
+
+  test('events accepts a non-numeric limit by falling back to the default', async () => {
+    const r = await auth.inject({ method: 'GET', url: '/v1/alerts/events?limit=abc' });
+    expect(r.statusCode).toBe(200);
+    expect(Array.isArray(r.json<{ items: unknown[] }>().items)).toBe(true);
+  });
+
   test('events list + ack', async () => {
     const rule = (await auth.inject({ method: 'POST', url: '/v1/alerts', payload: failureRule })).json<{ id: string }>();
     await pool.query(`INSERT INTO alert_events (workspace_id, rule_id, fired_at, detail) VALUES ($1,$2,now(),'{}')`, [auth.workspaceId, rule.id]);

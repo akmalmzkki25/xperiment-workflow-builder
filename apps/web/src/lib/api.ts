@@ -113,6 +113,26 @@ export interface UsageSummary {
   series: { date: string; executions: number; nodes: number; computeMs: number; aiTokens: number }[];
 }
 
+export interface AlertRule {
+  id: string;
+  name: string;
+  type: string;
+  params: Record<string, unknown>;
+  webhookUrl: string | null;
+  enabled: boolean;
+  cooldownMinutes: number;
+  lastFiredAt: string | null;
+  createdAt: string;
+}
+
+export interface AlertEvent {
+  id: string;
+  ruleId: string;
+  firedAt: string;
+  detail: Record<string, unknown>;
+  acknowledgedAt: string | null;
+}
+
 export interface MeResponse {
   user: { id: string };
   currentWorkspaceId: string;
@@ -278,6 +298,39 @@ export class ApiClient {
 
   retryExecution(id: string): Promise<{ executionId: string; created: boolean }> {
     return this.request('POST', `/v1/executions/${id}/retry`);
+  }
+
+  listAlerts(): Promise<{ items: AlertRule[] }> {
+    return this.request('GET', '/v1/alerts');
+  }
+
+  createAlert(body: {
+    name: string;
+    type: string;
+    params: Record<string, unknown>;
+    webhookUrl?: string;
+    cooldownMinutes?: number;
+  }): Promise<AlertRule & { secret?: string }> {
+    return this.request('POST', '/v1/alerts', { body });
+  }
+
+  updateAlert(
+    id: string,
+    body: { name?: string; enabled?: boolean; cooldownMinutes?: number; params?: Record<string, unknown> },
+  ): Promise<AlertRule> {
+    return this.request('PUT', `/v1/alerts/${id}`, { body });
+  }
+
+  deleteAlert(id: string): Promise<void> {
+    return this.request('DELETE', `/v1/alerts/${id}`);
+  }
+
+  listAlertEvents(): Promise<{ items: AlertEvent[]; unacknowledged: number }> {
+    return this.request('GET', '/v1/alerts/events');
+  }
+
+  acknowledgeAlert(id: string): Promise<{ acknowledged: boolean }> {
+    return this.request('POST', `/v1/alerts/events/${id}/ack`);
   }
 
   getUsage(params?: { from?: string; to?: string }): Promise<UsageSummary> {

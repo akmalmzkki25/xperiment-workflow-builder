@@ -129,6 +129,10 @@ describe('endpoint helpers', () => {
     await client.cancelExecution('e1');
     await client.retryExecution('e1');
     await client.getUsage();
+    await client.listAlerts();
+    await client.createAlert({ name: 'r', type: 'failure_rate', params: {} });
+    await client.listAlertEvents();
+    await client.acknowledgeAlert('a1');
     const seen = calls.map((c) => `${c.init.method} ${c.url.replace('http://api.test', '')}`);
     expect(seen).toEqual([
       'POST /v1/auth/register',
@@ -155,6 +159,10 @@ describe('endpoint helpers', () => {
       'POST /v1/executions/e1/cancel',
       'POST /v1/executions/e1/retry',
       'GET /v1/usage',
+      'GET /v1/alerts',
+      'POST /v1/alerts',
+      'GET /v1/alerts/events',
+      'POST /v1/alerts/events/a1/ack',
     ]);
   });
 });
