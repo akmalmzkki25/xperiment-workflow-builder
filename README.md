@@ -186,6 +186,24 @@ The REST API is hardened for external use:
   signed. `DELETE` clears it.
 - **OpenAPI** — `GET /v1/openapi.json` (public) documents the `/v1` surface.
 
+## Usage metering (Phase 2I)
+
+Every unit of work an execution consumes is written to an **append-only**
+`usage_events` ledger, exactly once, inside the same CAS-guarded transaction that
+finalizes the execution (so a redelivered job never double-counts):
+
+- `execution` — one row per terminal run, tagged with its `status`
+  (SUCCEEDED / FAILED / TIMED_OUT / CANCELED).
+- `node` — number of nodes that ran.
+- `compute_ms` — execution wall-clock duration.
+- `ai_tokens` — OpenRouter tokens per `/v1/ai/*` call (recorded best-effort, so a
+  metering write never fails a generation).
+
+`GET /v1/usage?from&to` returns tenant-scoped totals plus a daily series
+(`from`/`to` are optional ISO dates; the default period is the current UTC month).
+The web **Usage** page renders the totals as scorecards (runs, success rate, nodes,
+compute, AI tokens) with a runs-per-day chart.
+
 ## Wait & Human Approval (Phase 2F)
 
 Three logic nodes suspend an execution **without holding a worker**, and resume

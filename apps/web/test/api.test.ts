@@ -128,6 +128,7 @@ describe('endpoint helpers', () => {
     await client.aiEdit('tweak it', { nodes: [] });
     await client.cancelExecution('e1');
     await client.retryExecution('e1');
+    await client.getUsage();
     const seen = calls.map((c) => `${c.init.method} ${c.url.replace('http://api.test', '')}`);
     expect(seen).toEqual([
       'POST /v1/auth/register',
@@ -153,6 +154,7 @@ describe('endpoint helpers', () => {
       'POST /v1/ai/edit',
       'POST /v1/executions/e1/cancel',
       'POST /v1/executions/e1/retry',
+      'GET /v1/usage',
     ]);
   });
 });

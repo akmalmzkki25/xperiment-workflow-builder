@@ -238,6 +238,12 @@ describe('PRD acceptance scenario', () => {
     expect(inputs).not.toContain('stub-key');
     expect(inputs).not.toContain('stub-token');
     expect(inputs).not.toContain('dev_password_change_me');
+
+    // Usage metering (Phase 2I): the completed runs are recorded in the ledger.
+    const usage = await api<{ totals: { executions: number; nodes: number; computeMs: number } }>('GET', '/v1/usage');
+    expect(usage.status).toBe(200);
+    expect(usage.body.totals.executions).toBeGreaterThanOrEqual(2);
+    expect(usage.body.totals.nodes).toBeGreaterThanOrEqual(1);
   }, 90000);
 
   test('whatsapp.sendMessage runs against the vault credential without leaking the token', async () => {

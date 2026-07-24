@@ -107,6 +107,12 @@ export interface ExecutionDetail {
   waits: ExecutionWaitRow[];
 }
 
+export interface UsageSummary {
+  period: { from: string; to: string };
+  totals: { executions: number; succeeded: number; failed: number; nodes: number; computeMs: number; aiTokens: number };
+  series: { date: string; executions: number; nodes: number; computeMs: number; aiTokens: number }[];
+}
+
 export interface MeResponse {
   user: { id: string };
   currentWorkspaceId: string;
@@ -272,6 +278,14 @@ export class ApiClient {
 
   retryExecution(id: string): Promise<{ executionId: string; created: boolean }> {
     return this.request('POST', `/v1/executions/${id}/retry`);
+  }
+
+  getUsage(params?: { from?: string; to?: string }): Promise<UsageSummary> {
+    const qs = new URLSearchParams();
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    const s = qs.toString();
+    return this.request('GET', `/v1/usage${s ? `?${s}` : ''}`);
   }
 
   aiGenerate(prompt: string): Promise<{ ir: unknown; attempts: number }> {
