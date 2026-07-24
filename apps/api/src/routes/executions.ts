@@ -5,6 +5,7 @@ import {
   casNode,
   closeOpenWaits,
   createExecutionWithTrigger,
+  enqueueCompletionCallback,
   getExecutionDetail,
   getTriggerPayload,
   getVersion,
@@ -122,6 +123,7 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       }
       await closeOpenWaits(client, id);
       await appendEvent(client, { executionId: id, eventType: 'execution.canceled' });
+      await enqueueCompletionCallback(client, { workflowId: detail.execution.workflowId, executionId: id });
     });
     return { status: 'CANCELED' };
   });

@@ -154,6 +154,24 @@ describe('handleNodeCompleted FAILED', () => {
     expect(states.find((n) => n.nodeId === 'greet')?.status).toBe('SKIPPED');
   });
 
+  test('finalizing an execution with a configured callback enqueues one execution.callback', async () => {
+    const { executionId, workflowId } = await seedExecution(pool, linearIr());
+    await pool.query(
+      `UPDATE workflows SET completion_webhook_url='https://example.com/h', completion_webhook_secret_encrypted='\\x00'::bytea WHERE id=$1`,
+      [workflowId],
+    );
+    await handleExecutionRequested(deps, { executionId });
+    await pool.query(`TRUNCATE task_outbox`);
+    await casNode(pool, { executionId, nodeId: 't', attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    await casNode(pool, { executionId, nodeId: 't', attempt: 1, from: ['RUNNING'], to: 'FAILED', patch: { errorJson: { code: 'x' }, completedAt: true } });
+    await handleNodeCompleted(deps, { executionId, nodeId: 't', attempt: 1, status: 'FAILED' });
+    const cb = await pool.query(
+      `SELECT count(*)::int AS n FROM task_outbox WHERE event_type='execution.callback' AND payload_json->>'executionId'=$1`,
+      [executionId],
+    );
+    expect((cb.rows[0] as { n: number }).n).toBe(1);
+  });
+
   test("finalizing FAILED closes a sibling branch's open wait (no dangling approval)", async () => {
     const { executionId } = await seedExecution(pool, linearIr());
     await handleExecutionRequested(deps, { executionId });

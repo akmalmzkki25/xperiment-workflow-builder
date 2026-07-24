@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { type Db } from '../pool.js';
+import { insertOutbox } from './outbox.js';
 import { withTx } from '../tx.js';
 
 export interface WorkflowRow {
@@ -125,6 +126,54 @@ export async function createVersion(
     );
     return { id, versionNumber };
   });
+}
+
+export async function setWorkflowCallback(
+  db: Db,
+  args: { workflowId: string; url: string; secretEncrypted: Buffer },
+): Promise<void> {
+  await db.query(
+    `UPDATE workflows SET completion_webhook_url = $1, completion_webhook_secret_encrypted = $2, updated_at = now()
+     WHERE id = $3`,
+    [args.url, args.secretEncrypted, args.workflowId],
+  );
+}
+
+export async function clearWorkflowCallback(db: Db, workflowId: string): Promise<void> {
+  await db.query(
+    `UPDATE workflows SET completion_webhook_url = NULL, completion_webhook_secret_encrypted = NULL, updated_at = now()
+     WHERE id = $1`,
+    [workflowId],
+  );
+}
+
+export async function getWorkflowCallback(
+  db: Db,
+  workflowId: string,
+): Promise<{ url: string; secretEncrypted: Buffer } | null> {
+  const r = await db.query(
+    `SELECT completion_webhook_url, completion_webhook_secret_encrypted FROM workflows WHERE id = $1`,
+    [workflowId],
+  );
+  if (!r.rowCount) return null;
+  const row = r.rows[0] as { completion_webhook_url: string | null; completion_webhook_secret_encrypted: Buffer | null };
+  if (!row.completion_webhook_url || !row.completion_webhook_secret_encrypted) return null;
+  return { url: row.completion_webhook_url, secretEncrypted: row.completion_webhook_secret_encrypted };
+}
+
+/**
+ * If the workflow has a completion webhook configured, enqueue one
+ * `execution.callback` outbox event. Call this in the same tx that finalizes an
+ * execution to a terminal state. Idempotent per execution via the outbox job id.
+ */
+export async function enqueueCompletionCallback(
+  client: pg.PoolClient,
+  args: { workflowId: string; executionId: string },
+): Promise<boolean> {
+  const cb = await getWorkflowCallback(client, args.workflowId);
+  if (!cb) return false;
+  await insertOutbox(client, { eventType: 'execution.callback', payload: { executionId: args.executionId } });
+  return true;
 }
 
 export async function getVersion(

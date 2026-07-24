@@ -1,4 +1,12 @@
-import { appendEvent, casExecution, casNode, latestNodeStates, waitsForExecution, withTx } from '@xperiment/db';
+import {
+  appendEvent,
+  casExecution,
+  casNode,
+  enqueueCompletionCallback,
+  latestNodeStates,
+  waitsForExecution,
+  withTx,
+} from '@xperiment/db';
 import type { WatchdogPayload } from '@xperiment/queue';
 import { loadExecutionContext, TERMINAL_EXECUTION_STATUSES, type OrchestratorDeps } from '../deps.js';
 
@@ -50,6 +58,9 @@ export async function handleWatchdog(deps: OrchestratorDeps, payload: WatchdogPa
       completedAt: true,
       errorSummary: 'Execution timed out',
     });
-    if (timedOut) await appendEvent(client, { executionId, eventType: 'execution.timed_out' });
+    if (timedOut) {
+      await appendEvent(client, { executionId, eventType: 'execution.timed_out' });
+      await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
+    }
   });
 }

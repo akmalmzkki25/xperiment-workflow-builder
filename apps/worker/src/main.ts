@@ -11,6 +11,7 @@ import {
 } from '@xperiment/queue';
 import { Worker } from 'bullmq';
 import { pino } from 'pino';
+import { runCallback, type CallbackDeps } from './callback.js';
 import { runNodeTask, type WorkerDeps } from './runTask.js';
 
 const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
@@ -38,6 +39,19 @@ const taskWorker = new Worker<NodeTaskPayload>(QUEUE_NAMES.nodeTask, async (job)
 });
 taskWorker.on('failed', (job, err) => logger.error({ jobId: job?.id, err: err.message }, 'node task job failed'));
 
+const callbackDeps: CallbackDeps = {
+  pool,
+  triggerKey: deriveTriggerKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+  allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true',
+  log: deps.log,
+};
+const callbackWorker = new Worker<{ executionId: string }>(
+  QUEUE_NAMES.executionCallback,
+  async (job) => runCallback(callbackDeps, job.data),
+  { connection, concurrency: 4 },
+);
+callbackWorker.on('failed', (job, err) => logger.warn({ jobId: job?.id, err: err.message }, 'callback job failed'));
+
 const health = createServer((_req, res) => {
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ status: 'ok', workerId: deps.workerId }));
@@ -47,6 +61,7 @@ health.listen(Number(process.env['WORKER_PORT'] ?? 3002), () => logger.info('wor
 async function shutdown(): Promise<void> {
   logger.info('shutting down');
   await taskWorker.close();
+  await callbackWorker.close();
   await publisher.stop();
   for (const q of Object.values(queues)) await q.close();
   connection.disconnect();

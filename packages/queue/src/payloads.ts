@@ -34,6 +34,8 @@ export function jobIdFor(eventType: string, payload: Record<string, unknown>): s
       return `node-done_${payload['executionId']}_${payload['nodeId']}_${payload['attempt']}`;
     case 'execution.watchdog':
       return `watchdog_${payload['executionId']}`;
+    case 'execution.callback':
+      return `callback_${payload['executionId']}`;
     default:
       throw new Error(`Unknown outbox event type '${eventType}'`);
   }

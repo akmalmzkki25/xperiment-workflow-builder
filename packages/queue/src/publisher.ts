@@ -18,6 +18,7 @@ export function createQueues(connection: Redis): Queues {
     nodeTask: make(QUEUE_NAMES.nodeTask),
     nodeCompleted: make(QUEUE_NAMES.nodeCompleted),
     watchdog: make(QUEUE_NAMES.watchdog),
+    executionCallback: make(QUEUE_NAMES.executionCallback),
   };
 }
 
@@ -26,6 +27,7 @@ const EVENT_TO_QUEUE: Record<string, QueueKey> = {
   'node.task': 'nodeTask',
   'node.completed': 'nodeCompleted',
   'execution.watchdog': 'watchdog',
+  'execution.callback': 'executionCallback',
 };
 
 export interface OutboxPublisher {

@@ -1,10 +1,14 @@
+import { randomBytes } from 'node:crypto';
 import {
+  clearWorkflowCallback,
   createVersion,
   createWorkflow,
+  encryptSecret,
   getDraft,
   getWorkflow,
   listConnections,
   listWorkflows,
+  setWorkflowCallback,
   updateDraft,
 } from '@xperiment/db';
 import { canonicalHash, validateWorkflow, type WorkflowIR } from '@xperiment/ir';
@@ -102,6 +106,34 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
       connections: await workspaceConnections(ctx.workspaceId),
     });
     return { valid: result.valid, findings: result.findings };
+  });
+
+  const callbackSchema = z.object({ url: z.string().url() }).strict();
+
+  app.put('/v1/workflows/:id/callback', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
+    const { id } = req.params as { id: string };
+    if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
+    const parsed = callbackSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
+    const secret = randomBytes(24).toString('base64url');
+    await setWorkflowCallback(deps.pool, {
+      workflowId: id,
+      url: parsed.data.url,
+      secretEncrypted: encryptSecret(secret, deps.triggerKey),
+    });
+    // The signing secret is shown once, like a trigger secret.
+    return { url: parsed.data.url, secret };
+  });
+
+  app.delete('/v1/workflows/:id/callback', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
+    const { id } = req.params as { id: string };
+    if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
+    await clearWorkflowCallback(deps.pool, id);
+    return reply.status(204).send();
   });
 
   app.post('/v1/workflows/:id/publish', async (req, reply) => {

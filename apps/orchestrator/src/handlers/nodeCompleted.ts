@@ -3,6 +3,7 @@ import {
   casExecution,
   casNode,
   closeOpenWaits,
+  enqueueCompletionCallback,
   insertNodeAttempt,
   insertOutbox,
   latestNodeStates,
@@ -76,6 +77,7 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
       if (failed) {
         await closeOpenWaits(client, executionId); // don't leave a sibling's wait dangling
         await appendEvent(client, { executionId, eventType: 'execution.failed', nodeId });
+        await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
       }
     });
     return;
@@ -118,7 +120,10 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
 
     if (readiness.terminal === 'SUCCEEDED') {
       const done = await casExecution(client, { executionId, from: ['RUNNING'], to: 'SUCCEEDED', completedAt: true });
-      if (done) await appendEvent(client, { executionId, eventType: 'execution.succeeded' });
+      if (done) {
+        await appendEvent(client, { executionId, eventType: 'execution.succeeded' });
+        await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
+      }
     } else if (readiness.terminal === 'FAILED') {
       const done = await casExecution(client, {
         executionId,
@@ -130,6 +135,7 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
       if (done) {
         await closeOpenWaits(client, executionId);
         await appendEvent(client, { executionId, eventType: 'execution.failed' });
+        await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
       }
     }
   });
