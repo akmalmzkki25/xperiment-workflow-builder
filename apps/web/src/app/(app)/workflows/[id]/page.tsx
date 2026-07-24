@@ -8,5 +8,5 @@ const Editor = dynamic(() => import('../../../../components/editor/Editor').then
 });
 
 export default function WorkflowEditorPage({ params }: { params: { id: string } }) {
-  return <Editor workflowId={params.id} />;
+  return <Editor key={params.id} workflowId={params.id} />;
 }

@@ -12,13 +12,14 @@ import {
   type Node,
   type NodeChange,
 } from 'reactflow';
-import { getBrowserClient, type Finding } from '../../lib/api';
+import { getBrowserClient, type ConnectorItem, type Finding } from '../../lib/api';
 import {
   canvasToDefinition,
   definitionToCanvas,
   edgeId,
   makeNode,
   nextNodeId,
+  remapEdgesForRename,
   type EditorEdge,
   type EditorNode,
   type IRNodeData,
@@ -116,49 +117,56 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     (changes: NodeChange[]) => {
       onNodesChangeBase(changes);
       if (changes.some((c) => c.type === 'position' || c.type === 'remove' || c.type === 'add')) markDirty();
-      const removed = changes.filter((c) => c.type === 'remove');
-      if (removed.some((c) => 'id' in c && c.id === selectedNodeId)) select(null);
+      if (changes.some((c) => c.type === 'remove' && c.id === selectedNodeId)) select(null);
     },
     [onNodesChangeBase, markDirty, select, selectedNodeId],
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: Parameters<typeof onEdgesChangeBase>[0]) => {
+      onEdgesChangeBase(changes);
+      if (changes.some((c) => c.type === 'remove' || c.type === 'add')) markDirty();
+    },
+    [onEdgesChangeBase, markDirty],
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target || connection.source === connection.target) return;
-      const id = edgeId(connection.source, connection.sourceHandle ?? 'main', connection.target);
-      setEdges((prev) => {
-        if (prev.some((e) => e.id === id)) return prev;
-        return [
-          ...prev,
-          {
-            id,
-            source: connection.source!,
-            sourceHandle: connection.sourceHandle ?? 'main',
-            target: connection.target!,
-            targetHandle: connection.targetHandle ?? 'input',
-          },
-        ];
-      });
+      const sourceHandle = connection.sourceHandle ?? 'main';
+      // Dedupe by endpoints, not id — ids can drift after renames.
+      const duplicate = edges.some(
+        (e) => e.source === connection.source && (e.sourceHandle ?? 'main') === sourceHandle && e.target === connection.target,
+      );
+      if (duplicate) return;
+      setEdges((prev) => [
+        ...prev,
+        {
+          id: edgeId(connection.source!, sourceHandle, connection.target!),
+          source: connection.source!,
+          sourceHandle,
+          target: connection.target!,
+          targetHandle: connection.targetHandle ?? 'input',
+        },
+      ]);
       markDirty();
     },
-    [setEdges, markDirty],
+    [edges, setEdges, markDirty],
   );
 
   const addNodeFromItem = useCallback(
-    (item: NonNullable<ReturnType<typeof catalogByType.get>>) => {
-      setNodes((prev) => {
-        const id = nextNodeId(
-          prev.map((n) => n.id),
-          item.type.replace(/\./g, '_'),
-        );
-        const position = { x: 120 + prev.length * 320, y: 160 + (prev.length % 2) * 60 };
-        const node = makeNode(item, id, position, defaultParams(item.paramsJsonSchema));
-        select(id);
-        return [...prev, node as FlowNode];
-      });
+    (item: ConnectorItem) => {
+      const id = nextNodeId(
+        nodes.map((n) => n.id),
+        item.type.replace(/\./g, '_'),
+      );
+      const position = { x: 120 + nodes.length * 320, y: 160 + (nodes.length % 2) * 60 };
+      const node = makeNode(item, id, position, defaultParams(item.paramsJsonSchema));
+      setNodes((prev) => [...prev, node as FlowNode]);
+      select(id);
       markDirty();
     },
-    [setNodes, select, markDirty],
+    [nodes, setNodes, select, markDirty],
   );
 
   const updateIr = useCallback(
@@ -171,6 +179,13 @@ function EditorInner({ workflowId }: { workflowId: string }) {
 
   const onCommitParam = useCallback(
     (nodeId: string, name: string, value: unknown) => {
+      const current = nodes.find((n) => n.id === nodeId)?.data.ir.parameters;
+      if (current) {
+        const existed = name in current;
+        const unchanged =
+          value === undefined ? !existed : existed && JSON.stringify(current[name]) === JSON.stringify(value);
+        if (unchanged) return; // blurring an untouched field must not dirty the draft
+      }
       updateIr(nodeId, (ir) => {
         const parameters = { ...ir.parameters };
         if (value === undefined) delete parameters[name];
@@ -178,7 +193,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
         return { ...ir, parameters };
       });
     },
-    [updateIr],
+    [nodes, updateIr],
   );
 
   const onConnectionRef = useCallback(
@@ -198,13 +213,8 @@ function EditorInner({ workflowId }: { workflowId: string }) {
       setNodes((prev) =>
         prev.map((n) => (n.id === oldId ? { ...n, id: newId, data: { ir: { ...n.data.ir, id: newId } } } : n)),
       );
-      setEdges((prev) =>
-        prev.map((e) => ({
-          ...e,
-          source: e.source === oldId ? newId : e.source,
-          target: e.target === oldId ? newId : e.target,
-        })),
-      );
+      // Endpoints AND ids must follow the rename — stale ids break edge dedupe.
+      setEdges((prev) => remapEdgesForRename(prev, oldId, newId));
       select(newId);
       markDirty();
     },
@@ -226,6 +236,10 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   }
   if (workflowQ.isError || !workflowQ.data) {
     return <div className="q-banner">Could not load this workflow.</div>;
+  }
+  if (catalogQ.isError) {
+    // Without the catalog, readiness badges and forms would silently lie.
+    return <div className="q-banner">Could not load the connector catalog — check the API and reload.</div>;
   }
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
@@ -252,7 +266,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChangeBase}
+            onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onSelect={select}
           />

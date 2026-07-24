@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ApiError, getBrowserClient } from '../../lib/api';
-import { setToken } from '../../lib/auth';
+import { clearToken, setToken } from '../../lib/auth';
 import { TextField } from '../ui/TextField';
 
 export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
@@ -19,6 +19,9 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     setError(null);
     try {
       const client = getBrowserClient();
+      // Drop any prior session's stored workspace so this account doesn't send a
+      // stale X-Xperiment-Workspace it isn't a member of (→ 403 on every request).
+      clearToken();
       const { token } =
         mode === 'register' ? await client.register(email, password) : await client.login(email, password);
       setToken(token);

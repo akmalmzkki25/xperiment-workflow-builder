@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError, getBrowserClient, type Finding, type TriggerView, type WorkflowDetail } from '../../lib/api';
 import { useEditorStore } from '../../stores/editorStore';
 import { LiveChip, StatusChip } from '../ui/StatusChip';
@@ -34,11 +34,12 @@ export function ActionBar({
   onToggleLibrary,
 }: ActionBarProps) {
   const queryClient = useQueryClient();
-  const { dirty, clearDirty } = useEditorStore();
+  const { dirty, clearDirtyUpTo } = useEditorStore();
   const [notice, setNotice] = useState<Notice>(null);
   const [conflict, setConflict] = useState(false);
   const [triggers, setTriggers] = useState<TriggerView[] | null>(null);
   const [secretsVisible, setSecretsVisible] = useState(false);
+  const saveInFlight = useRef(false);
 
   const refreshWorkflow = () =>
     Promise.all([
@@ -48,19 +49,29 @@ export function ActionBar({
 
   const save = useMutation({
     mutationFn: async () => {
+      const seqAtSave = useEditorStore.getState().editSeq;
       const definition = buildDefinition();
       const result = await getBrowserClient().putDraft(workflow.id, definition, revision ?? 1);
-      return { definition, revision: result.revision };
+      return { definition, revision: result.revision, seqAtSave };
     },
-    onSuccess: ({ definition, revision: nextRevision }) => {
+    onSuccess: ({ definition, revision: nextRevision, seqAtSave }) => {
       setRevision(nextRevision);
       onDefinitionSaved(definition);
-      clearDirty();
+      // Keep the workflow cache truthful so a remount doesn't revert the canvas
+      // to the pre-save draft and produce a spurious 412.
+      queryClient.setQueryData<WorkflowDetail>(['workflow', workflow.id], (old) =>
+        old ? { ...old, draftRevision: nextRevision, draft: { definition, revision: nextRevision } } : old,
+      );
+      // Edits made while the PUT was in flight must keep the draft dirty.
+      clearDirtyUpTo(seqAtSave);
       setNotice({ kind: 'ok', text: `Draft saved (rev ${nextRevision})` });
     },
     onError: (e) => {
       if (e instanceof ApiError && e.status === 412) setConflict(true);
       else setNotice({ kind: 'err', text: e instanceof Error ? e.message : 'Save failed' });
+    },
+    onSettled: () => {
+      saveInFlight.current = false;
     },
   });
 
@@ -136,8 +147,12 @@ export function ActionBar({
         </button>
         <button
           className="q-btn q-btn--sm"
-          disabled={busy || !dirty || nodeCount === 0}
-          onClick={() => save.mutate()}
+          disabled={busy || !dirty}
+          onClick={() => {
+            if (saveInFlight.current) return;
+            saveInFlight.current = true;
+            save.mutate();
+          }}
           data-testid="action-save"
         >
           Save draft

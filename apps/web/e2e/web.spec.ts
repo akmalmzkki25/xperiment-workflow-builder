@@ -62,6 +62,13 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   await page.mouse.up();
   await expect(page.locator('.react-flow__edge')).toHaveCount(1);
 
+  // Rename the transform via the inspector; the edge must survive the rename.
+  await page.getByTestId('node-core_transform').click();
+  await page.getByTestId('node-id-input').fill('shape_lead');
+  await page.getByTestId('node-rename').click();
+  await expect(page.getByTestId('node-shape_lead')).toBeVisible();
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1);
+
   await page.getByTestId('action-save').click();
   await expect(page.getByTestId('editor-banner')).toContainText('Draft saved');
   await page.getByTestId('action-validate').click();
@@ -92,7 +99,7 @@ test('a webhook fire appears in executions with a green timeline', async ({ page
   await expect(page).toHaveURL(/\/executions\/[0-9a-f-]{36}/);
   await expect(page.getByTestId('exec-status')).toContainText('Succeeded', { timeout: 45_000 });
   await expect(page.getByTestId('timeline-node-webhook_trigger')).toContainText('Succeeded');
-  await expect(page.getByTestId('timeline-node-core_transform')).toContainText('Succeeded');
+  await expect(page.getByTestId('timeline-node-shape_lead')).toContainText('Succeeded');
   await page.screenshot({ path: `${ARTIFACTS}/03-execution-detail.png` });
 });
 

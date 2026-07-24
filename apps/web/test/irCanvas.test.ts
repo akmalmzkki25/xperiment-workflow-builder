@@ -5,6 +5,7 @@ import {
   edgeId,
   makeNode,
   nextNodeId,
+  remapEdgesForRename,
   type EditorNode,
 } from '../src/lib/irCanvas';
 
@@ -70,6 +71,26 @@ describe('definitionToCanvas', () => {
     expect(definitionToCanvas(null)).toEqual({ nodes: [], edges: [] });
     expect(definitionToCanvas('nope')).toEqual({ nodes: [], edges: [] });
   });
+
+  test('survives malformed nodes and edges instead of crashing the editor', () => {
+    const mangled = {
+      nodes: [
+        null,
+        { kind: 'action', type: 'x' }, // no id
+        { id: 'ok', kind: 'weird', type: 'core.transform', operationVersion: '0.1.0', parameters: 'not-an-object' },
+      ],
+      edges: [null, { id: 'e1' }, { id: 'e2', from: { nodeId: 'ok', port: 'main' }, to: { nodeId: 'ok' } }],
+    };
+    const { nodes, edges } = definitionToCanvas(mangled);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]!.id).toBe('ok');
+    expect(nodes[0]!.data.ir.parameters).toEqual({});
+    expect(nodes[0]!.data.ir.kind).toBe('action'); // unknown kind coerced
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.targetHandle).toBe('input'); // missing port defaulted
+    const nonArray = { nodes: [{ id: 'a', kind: 'trigger', type: 't', operationVersion: '1', parameters: {} }], edges: 'zz' };
+    expect(definitionToCanvas(nonArray).edges).toEqual([]);
+  });
 });
 
 describe('canvasToDefinition', () => {
@@ -118,8 +139,26 @@ describe('helpers', () => {
     expect(nextNodeId(['http_request', 'http_request_2'], 'http_request')).toBe('http_request_3');
   });
 
-  test('edgeId builds a stable IR-safe id', () => {
+  test('edgeId builds a stable IR-safe id and caps at 64 chars', () => {
     expect(edgeId('a', 'main', 'b')).toBe('e_a_main_b');
+    const long = 'n'.repeat(60);
+    const capped = edgeId(long, 'main', long);
+    expect(capped.length).toBeLessThanOrEqual(64);
+    expect(capped).toMatch(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
+    expect(edgeId(long, 'main', long)).toBe(capped); // deterministic
+    expect(edgeId(long, 'true', long)).not.toBe(capped); // still distinguishes ports
+  });
+
+  test('remapEdgesForRename rewrites endpoints and regenerates ids', () => {
+    const edges = [
+      { id: 'e_a_main_b', source: 'a', sourceHandle: 'main', target: 'b', targetHandle: 'input' },
+      { id: 'e_b_true_c', source: 'b', sourceHandle: 'true', target: 'c', targetHandle: 'input' },
+      { id: 'e_x_main_y', source: 'x', sourceHandle: 'main', target: 'y', targetHandle: 'input' },
+    ];
+    const out = remapEdgesForRename(edges, 'b', 'branch');
+    expect(out[0]).toEqual({ id: 'e_a_main_branch', source: 'a', sourceHandle: 'main', target: 'branch', targetHandle: 'input' });
+    expect(out[1]).toEqual({ id: 'e_branch_true_c', source: 'branch', sourceHandle: 'true', target: 'c', targetHandle: 'input' });
+    expect(out[2]).toBe(edges[2]); // untouched edges keep identity
   });
 
   test('makeNode builds an EditorNode from a catalog item with defaults', () => {

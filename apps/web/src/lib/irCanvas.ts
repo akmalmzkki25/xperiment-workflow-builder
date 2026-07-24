@@ -59,23 +59,54 @@ function asDefinition(definition: unknown): IRDefinitionShape | null {
   return d;
 }
 
+const VALID_KINDS = new Set(['trigger', 'action', 'logic']);
+
+function sanitizeNode(raw: unknown): IRNodeData | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const node = raw as Record<string, unknown>;
+  if (typeof node['id'] !== 'string' || node['id'].length === 0) return null;
+  const kind = VALID_KINDS.has(node['kind'] as string) ? (node['kind'] as IRNodeData['kind']) : 'action';
+  const parameters =
+    typeof node['parameters'] === 'object' && node['parameters'] !== null
+      ? (node['parameters'] as Record<string, unknown>)
+      : {};
+  return { ...(node as unknown as IRNodeData), kind, parameters };
+}
+
 export function definitionToCanvas(definition: unknown): { nodes: EditorNode[]; edges: EditorEdge[] } {
   const def = asDefinition(definition);
   if (!def) return { nodes: [], edges: [] };
   const layout = def.metadata?.layout ?? {};
-  const nodes = (def.nodes ?? []).map((ir, index): EditorNode => {
-    const position = layout[ir.id] ?? { x: FALLBACK_X_START + index * FALLBACK_X_STEP, y: FALLBACK_Y };
-    return { id: ir.id, type: 'xperiment', position: { x: position.x, y: position.y }, data: { ir } };
-  });
-  const edges = (def.edges ?? []).map(
-    (e): EditorEdge => ({
-      id: e.id,
-      source: e.from.nodeId,
-      sourceHandle: e.from.port,
-      target: e.to.nodeId,
-      targetHandle: e.to.port,
-    }),
-  );
+  const nodes = (def.nodes ?? [])
+    .map(sanitizeNode)
+    .filter((ir): ir is IRNodeData => ir !== null)
+    .map((ir, index): EditorNode => {
+      const position = layout[ir.id] ?? { x: FALLBACK_X_START + index * FALLBACK_X_STEP, y: FALLBACK_Y };
+      return { id: ir.id, type: 'xperiment', position: { x: position.x, y: position.y }, data: { ir } };
+    });
+  const rawEdges = Array.isArray(def.edges) ? def.edges : [];
+  const edges = rawEdges
+    .filter(
+      (e): e is NonNullable<IRDefinitionShape['edges']>[number] =>
+        typeof e === 'object' &&
+        e !== null &&
+        typeof e.id === 'string' &&
+        typeof e.from === 'object' &&
+        e.from !== null &&
+        typeof e.from.nodeId === 'string' &&
+        typeof e.to === 'object' &&
+        e.to !== null &&
+        typeof e.to.nodeId === 'string',
+    )
+    .map(
+      (e): EditorEdge => ({
+        id: e.id,
+        source: e.from.nodeId,
+        sourceHandle: typeof e.from.port === 'string' ? e.from.port : 'main',
+        target: e.to.nodeId,
+        targetHandle: typeof e.to.port === 'string' ? e.to.port : 'input',
+      }),
+    );
   return { nodes, edges };
 }
 
@@ -110,7 +141,23 @@ export function canvasToDefinition(args: {
 }
 
 export function edgeId(source: string, sourceHandle: string, target: string): string {
-  return `e_${source}_${sourceHandle}_${target}`;
+  const raw = `e_${source}_${sourceHandle}_${target}`;
+  if (raw.length <= 64) return raw;
+  // Deterministic cap: keep a readable prefix, disambiguate with a djb2 hash.
+  let hash = 5381;
+  for (let i = 0; i < raw.length; i += 1) hash = ((hash << 5) + hash + raw.charCodeAt(i)) >>> 0;
+  return `${raw.slice(0, 55)}_${hash.toString(36)}`;
+}
+
+export function remapEdgesForRename<
+  T extends { id: string; source: string; target: string; sourceHandle?: string | null },
+>(edges: T[], oldId: string, newId: string): T[] {
+  return edges.map((edge) => {
+    if (edge.source !== oldId && edge.target !== oldId) return edge;
+    const source = edge.source === oldId ? newId : edge.source;
+    const target = edge.target === oldId ? newId : edge.target;
+    return { ...edge, source, target, id: edgeId(source, edge.sourceHandle ?? 'main', target) };
+  });
 }
 
 export function nextNodeId(existing: string[], base: string): string {
