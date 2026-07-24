@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { Command } from 'commander';
+import { clearToken, loadToken, saveToken } from './auth.js';
 import { ApiClient, ApiError } from './client.js';
 import { renderTimeline } from './render.js';
 
 const TERMINAL = ['SUCCEEDED', 'FAILED', 'TIMED_OUT'];
-const client = new ApiClient();
+const client = new ApiClient(undefined, loadToken());
 const program = new Command().name('xperiment').description('Xperiment workflow CLI');
 
 function fail(e: unknown): never {
@@ -15,6 +16,26 @@ function fail(e: unknown): never {
   }
   process.exit(1);
 }
+
+program
+  .command('login')
+  .requiredOption('--email <email>')
+  .requiredOption('--password <password>')
+  .action(async (opts: { email: string; password: string }) => {
+    try {
+      const { token } = await client.login(opts.email, opts.password);
+      saveToken(token);
+      client.setToken(token);
+      console.log('Logged in.');
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program.command('logout').action(() => {
+  clearToken();
+  console.log('Logged out.');
+});
 
 const workflow = program.command('workflow');
 

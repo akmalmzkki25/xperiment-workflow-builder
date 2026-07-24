@@ -163,16 +163,43 @@ export async function startStubServer(): Promise<StubServer> {
   };
 }
 
+let cachedToken: string | null = null;
+
+/** Registers (or logs in) the shared e2e user against the live API; cached per test file. */
+export async function ensureAuth(): Promise<string> {
+  if (cachedToken) return cachedToken;
+  const credentials = { email: 'e2e@xperiment.test', password: 'password-e2e-123' };
+  const reg = await fetch(`${API_URL}/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(credentials),
+  });
+  if (reg.status === 201) {
+    cachedToken = ((await reg.json()) as { token: string }).token;
+    return cachedToken;
+  }
+  const login = await fetch(`${API_URL}/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(credentials),
+  });
+  if (!login.ok) throw new Error(`e2e auth failed: ${login.status}`);
+  cachedToken = ((await login.json()) as { token: string }).token;
+  return cachedToken;
+}
+
 export async function api<T>(
   method: string,
   path: string,
   body?: unknown,
   headers?: Record<string, string>,
 ): Promise<{ status: number; body: T }> {
+  const token = path.startsWith('/v1/auth/') ? null : await ensureAuth();
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(headers ?? {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),

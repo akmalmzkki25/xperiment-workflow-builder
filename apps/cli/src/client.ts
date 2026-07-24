@@ -23,7 +23,18 @@ export interface ExecutionDetail {
 }
 
 export class ApiClient {
-  constructor(private readonly baseUrl: string = process.env['XPERIMENT_API_URL'] ?? 'http://localhost:3000') {}
+  private token: string | null;
+
+  constructor(
+    private readonly baseUrl: string = process.env['XPERIMENT_API_URL'] ?? 'http://localhost:3000',
+    token: string | null = null,
+  ) {
+    this.token = token;
+  }
+
+  setToken(token: string | null): void {
+    this.token = token;
+  }
 
   private async request<T>(
     method: string,
@@ -35,6 +46,7 @@ export class ApiClient {
       method,
       headers: {
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
         ...(headers ?? {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -45,6 +57,12 @@ export class ApiClient {
     return json as T;
   }
 
+  register(email: string, password: string): Promise<{ token: string }> {
+    return this.request('POST', '/v1/auth/register', { email, password });
+  }
+  login(email: string, password: string): Promise<{ token: string }> {
+    return this.request('POST', '/v1/auth/login', { email, password });
+  }
   createWorkflow(name: string): Promise<{ id: string; name: string; draftRevision: number }> {
     return this.request('POST', '/v1/workflows', { name });
   }

@@ -9,6 +9,7 @@ import { ApiClient, ApiError } from '../src/client.js';
 let pool: Pool;
 let app: FastifyInstance;
 let client: ApiClient;
+let baseUrl: string;
 
 const minimalIr = {
   schemaVersion: '0.1',
@@ -24,7 +25,8 @@ beforeAll(async () => {
   app = buildServer({ pool, registry: createDefaultRegistry({ allowPrivateIps: true }) });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();
-  client = new ApiClient(`http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`);
+  baseUrl = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  client = new ApiClient(baseUrl);
 });
 afterAll(async () => {
   await app.close();
@@ -37,7 +39,9 @@ beforeEach(async () => {
 });
 
 describe('ApiClient', () => {
-  test('full lifecycle: create, draft, validate, publish, execute, inspect', async () => {
+  test('full lifecycle: register, create, draft, validate, publish, execute, inspect', async () => {
+    const { token } = await client.register(`cli-${Date.now()}@xperiment.test`, 'password-123');
+    client.setToken(token);
     const wf = await client.createWorkflow('CLI test');
     await client.updateDraft(wf.id, minimalIr, 1);
     const validation = await client.validate(wf.id);
@@ -56,5 +60,11 @@ describe('ApiClient', () => {
     const err = await client.getWorkflow('00000000-0000-0000-0000-0000000000dd').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(404);
+  });
+
+  test('unauthenticated client gets 401', async () => {
+    const anon = new ApiClient(baseUrl);
+    const err = await anon.listWorkflows().catch((e: unknown) => e);
+    expect((err as ApiError).status).toBe(401);
   });
 });
