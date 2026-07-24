@@ -5,7 +5,7 @@ import { workflowIrSchema } from './schema.js';
 import type { WorkflowIR } from './types.js';
 
 export interface ValidationFinding {
-  layer: 'schema' | 'graph' | 'parameters' | 'expressions';
+  layer: 'schema' | 'graph' | 'parameters' | 'expressions' | 'connections';
   code: string;
   message: string;
   nodeId?: string;
@@ -31,7 +31,10 @@ function* walkStrings(value: unknown, path: string): Generator<{ path: string; t
   }
 }
 
-export function validateWorkflow(raw: unknown, opts: { registry: RegistryLike }): ValidationResult {
+export function validateWorkflow(
+  raw: unknown,
+  opts: { registry: RegistryLike; connections?: { id: string; connectorKey: string }[] },
+): ValidationResult {
   // Layer 1: schema
   const parsed = workflowIrSchema.safeParse(raw);
   if (!parsed.success) {
@@ -93,6 +96,37 @@ export function validateWorkflow(raw: unknown, opts: { registry: RegistryLike })
             ...(e instanceof ExpressionParseError ? { position: e.position } : {}),
           });
         }
+      }
+    }
+  }
+
+  // Layer 5: connections (only when the caller supplies the workspace's connections)
+  if (opts.connections) {
+    const byId = new Map(opts.connections.map((c) => [c.id, c.connectorKey]));
+    for (const node of ir.nodes) {
+      const info = opts.registry.get(node.type);
+      if (!info?.requiresConnection) continue;
+      if (!node.connectionRef) {
+        findings.push({
+          layer: 'connections',
+          code: 'connection_required',
+          message: `Node requires a '${info.requiresConnection}' connection`,
+          nodeId: node.id,
+        });
+      } else if (!byId.has(node.connectionRef)) {
+        findings.push({
+          layer: 'connections',
+          code: 'connection_not_found',
+          message: 'Referenced connection does not exist',
+          nodeId: node.id,
+        });
+      } else if (byId.get(node.connectionRef) !== info.requiresConnection) {
+        findings.push({
+          layer: 'connections',
+          code: 'connection_wrong_type',
+          message: `Connection must be '${info.requiresConnection}'`,
+          nodeId: node.id,
+        });
       }
     }
   }

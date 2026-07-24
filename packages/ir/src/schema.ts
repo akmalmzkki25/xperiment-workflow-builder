@@ -27,6 +27,7 @@ export const irNodeSchema = z
       .strict()
       .optional(),
     effectClass: z.enum(['pure', 'read', 'write']).optional(),
+    connectionRef: z.string().uuid().optional(),
   })
   .strict();
 

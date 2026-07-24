@@ -22,6 +22,8 @@ export interface IRNode {
   parameters: Record<string, unknown>;
   settings?: NodeSettings;
   effectClass?: EffectClass;
+  /** Reference to a stored connection (credentials never live in the IR). */
+  connectionRef?: string;
 }
 
 export interface IREdge {
