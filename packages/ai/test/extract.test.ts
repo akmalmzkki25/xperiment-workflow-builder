@@ -26,6 +26,27 @@ describe('extractJson', () => {
     });
   });
 
+  test('prefers the real workflow over a leading decoy example block', () => {
+    const text =
+      'For example a node looks like:\n```json\n{"id":"example"}\n```\nHere is your workflow:\n' +
+      '{"schemaVersion":"0.1","nodes":[{"id":"hook"}],"edges":[]}';
+    expect(extractJson(text)).toEqual({ schemaVersion: '0.1', nodes: [{ id: 'hook' }], edges: [] });
+  });
+
+  test('recovers valid JSON whose string value contains triple backticks', () => {
+    const text = '```json\n{"msg":"use ``` fences","schemaVersion":"0.1","nodes":[]}\n```';
+    expect(extractJson(text)).toEqual({ msg: 'use ``` fences', schemaVersion: '0.1', nodes: [] });
+  });
+
+  test('skips a stray prose brace before the real object', () => {
+    const text = 'Note: use {curly} placeholders. Result: {"schemaVersion":"0.1","nodes":[]}';
+    expect(extractJson(text)).toEqual({ schemaVersion: '0.1', nodes: [] });
+  });
+
+  test('falls back to the last parseable object when none look like a workflow', () => {
+    expect(extractJson('first {"a":1} then {"b":2}')).toEqual({ b: 2 });
+  });
+
   test('throws SyntaxError when no JSON object is present', () => {
     expect(() => extractJson('I cannot help with that.')).toThrow(SyntaxError);
     expect(() => extractJson('{ not valid json')).toThrow(SyntaxError);

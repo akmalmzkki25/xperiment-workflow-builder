@@ -92,6 +92,9 @@ function startTelegramStub(): Promise<Server> {
   return new Promise((resolve) => server.listen(TELEGRAM_STUB_PORT, '127.0.0.1', () => resolve(server)));
 }
 
+/** Marker in a prompt that makes the stub decline, exercising the 422 path. */
+export const AI_FAIL_MARKER = 'TRIGGER_AI_FAILURE';
+
 /** Minimal OpenRouter chat-completions stub returning the canned workflow. */
 function startOpenRouterStub(): Promise<Server> {
   const server = createServer((req, res) => {
@@ -99,11 +102,8 @@ function startOpenRouterStub(): Promise<Server> {
     req.on('data', (c: Buffer) => (raw += c.toString()));
     req.on('end', () => {
       res.setHeader('content-type', 'application/json');
-      res.end(
-        JSON.stringify({
-          choices: [{ message: { role: 'assistant', content: JSON.stringify(STUB_WORKFLOW) } }],
-        }),
-      );
+      const content = raw.includes(AI_FAIL_MARKER) ? 'I cannot help with that.' : JSON.stringify(STUB_WORKFLOW);
+      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }));
     });
   });
   return new Promise((resolve) => server.listen(OPENROUTER_STUB_PORT, '127.0.0.1', () => resolve(server)));

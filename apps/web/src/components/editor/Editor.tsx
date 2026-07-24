@@ -236,7 +236,15 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const applyDefinition = useCallback(
     (ir: unknown) => {
       const canvas = definitionToCanvas(ir);
-      setNodes(canvas.nodes as FlowNode[]);
+      // Preserve the user's arrangement for any node the AI kept — the model's
+      // IR usually omits metadata.layout, which would otherwise flatten the graph.
+      setNodes((prev) => {
+        const priorPositions = new Map(prev.map((n) => [n.id, n.position]));
+        return canvas.nodes.map((n) => {
+          const prior = priorPositions.get(n.id);
+          return (prior ? { ...n, position: prior } : n) as FlowNode;
+        });
+      });
       setEdges(canvas.edges as Edge[]);
       select(null);
       markDirty();

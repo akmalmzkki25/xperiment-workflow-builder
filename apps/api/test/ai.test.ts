@@ -14,6 +14,7 @@ let stub: Server;
 let stubUrl: string;
 /** Queue of assistant `content` strings the stub returns, in order. */
 let scripted: string[] = [];
+let stubStatus = 200;
 let lastAuthHeader: string | undefined;
 
 const validIr = () => ({
@@ -43,9 +44,14 @@ beforeAll(async () => {
     let raw = '';
     req.on('data', (c: Buffer) => (raw += c.toString()));
     req.on('end', () => {
-      const content = scripted.shift() ?? '{}';
-      res.statusCode = 200;
+      res.statusCode = stubStatus;
       res.setHeader('content-type', 'application/json');
+      if (stubStatus >= 400) {
+        // Provider error bodies can echo the request Authorization header.
+        res.end(JSON.stringify({ error: { message: `upstream failure for ${lastAuthHeader}` } }));
+        return;
+      }
+      const content = scripted.shift() ?? '{}';
       res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }));
     });
   });
@@ -59,6 +65,7 @@ afterAll(async () => {
 });
 beforeEach(() => {
   scripted = [];
+  stubStatus = 200;
   lastAuthHeader = undefined;
 });
 
@@ -121,6 +128,16 @@ describe('POST /v1/ai/generate', () => {
     expect(r.body).not.toContain(FAKE_KEY);
     await app.close();
   });
+
+  test('maps a provider failure to 502 without leaking the key', async () => {
+    const app = buildAiServer(FAKE_KEY);
+    const auth = await createAuthedUser(app);
+    stubStatus = 500; // provider error whose body embeds the Authorization header
+    const r = await auth.inject({ method: 'POST', url: '/v1/ai/generate', payload: { prompt: 'x' } });
+    expect(r.statusCode).toBe(502);
+    expect(r.body).not.toContain(FAKE_KEY);
+    await app.close();
+  });
 });
 
 describe('POST /v1/ai/edit', () => {
@@ -132,6 +149,18 @@ describe('POST /v1/ai/edit', () => {
     const r = await auth.inject({ method: 'POST', url: '/v1/ai/edit', payload: { prompt: 'add a transform', definition: current } });
     expect(r.statusCode).toBe(200);
     expect(r.json<{ ir: { nodes: unknown[] } }>().ir.nodes).toHaveLength(2);
+    await app.close();
+  });
+
+  test('repairs an invalid edit before succeeding', async () => {
+    const app = buildAiServer(FAKE_KEY);
+    const auth = await createAuthedUser(app);
+    const broken = JSON.stringify({ schemaVersion: '0.1', workflow: { id: 'w', name: 'n' }, entrypoints: ['ghost'], nodes: [], edges: [] });
+    scripted = [broken, JSON.stringify(validIr())];
+    const current = { schemaVersion: '0.1', workflow: { id: 'wf_ai', name: 'old' }, entrypoints: [], nodes: [], edges: [] };
+    const r = await auth.inject({ method: 'POST', url: '/v1/ai/edit', payload: { prompt: 'fix it', definition: current } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json<{ attempts: number }>().attempts).toBe(2);
     await app.close();
   });
 });

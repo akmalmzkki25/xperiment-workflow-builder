@@ -27,7 +27,7 @@ interface ChatCompletion {
 
 export function createOpenRouterClient(cfg: OpenRouterConfig): ChatClient {
   const fetchImpl = cfg.fetchImpl ?? fetch;
-  const url = `${cfg.baseUrl}/api/v1/chat/completions`;
+  const url = `${cfg.baseUrl.replace(/\/+$/, '')}/api/v1/chat/completions`;
   return {
     async chat(messages, opts) {
       const headers: Record<string, string> = {

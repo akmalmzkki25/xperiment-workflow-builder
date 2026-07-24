@@ -61,6 +61,13 @@ describe('createOpenRouterClient', () => {
     expect(sent.response_format.json_schema.schema).toEqual({ type: 'object' });
   });
 
+  test('strips a trailing slash from baseUrl to avoid a double-slash path', async () => {
+    const { fetchImpl, calls } = fakeFetch(200, completion('{}'));
+    const client = createOpenRouterClient({ apiKey: 'k', model: 'm', baseUrl: 'https://openrouter.ai/', fetchImpl });
+    await client.chat(messages);
+    expect(calls[0]!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
+  });
+
   test('raises AiProviderError on non-2xx without leaking the key', async () => {
     const { fetchImpl } = fakeFetch(429, { error: { message: 'rate limited for sk-secret-xyz' } });
     const client = createOpenRouterClient({ apiKey: 'sk-secret-xyz', model: 'm', baseUrl: 'https://openrouter.ai', fetchImpl });

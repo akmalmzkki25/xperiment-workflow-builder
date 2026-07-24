@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { TELEGRAM_STUB_PORT } from './services';
+import { AI_FAIL_MARKER, TELEGRAM_STUB_PORT } from './services';
 
 const runId = Date.now();
 const EMAIL = `web-${runId}@xperiment.test`;
@@ -156,4 +156,10 @@ test('the AI dock generates a workflow onto the canvas', async ({ page }) => {
   await page.getByTestId('action-validate').click();
   await expect(page.getByTestId('editor-banner')).toContainText('Draft is valid');
   await page.screenshot({ path: `${ARTIFACTS}/06-ai-generated.png` });
+
+  // When the model can't produce a valid workflow, the dock surfaces the error.
+  await page.getByTestId('ai-open').click();
+  await page.getByTestId('ai-prompt').fill(`please ${AI_FAIL_MARKER}`);
+  await page.getByTestId('ai-generate').click();
+  await expect(page.getByTestId('ai-error')).toBeVisible();
 });

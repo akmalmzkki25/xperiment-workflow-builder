@@ -124,6 +124,8 @@ describe('endpoint helpers', () => {
     await client.deleteConnection('c1');
     await client.testConnection('c1');
     await client.getExecution('e1');
+    await client.aiGenerate('make a flow');
+    await client.aiEdit('tweak it', { nodes: [] });
     const seen = calls.map((c) => `${c.init.method} ${c.url.replace('http://api.test', '')}`);
     expect(seen).toEqual([
       'POST /v1/auth/register',
@@ -145,6 +147,8 @@ describe('endpoint helpers', () => {
       'DELETE /v1/connections/c1',
       'POST /v1/connections/c1/test',
       'GET /v1/executions/e1',
+      'POST /v1/ai/generate',
+      'POST /v1/ai/edit',
     ]);
   });
 });
