@@ -43,6 +43,16 @@ export const OPENAPI_DOCUMENT = {
     '/v1/executions/{id}/approvals/{nodeId}': { post: { summary: 'Approve or reject a pending approval', tags: ['approvals'] } },
     '/v1/approvals': { get: { summary: 'List pending approvals', tags: ['approvals'] } },
     '/v1/usage': { get: { summary: 'Usage totals + daily series (from/to, default current month)', tags: ['usage'] } },
+    '/v1/alerts': {
+      get: { summary: 'List alert rules', tags: ['alerts'] },
+      post: { summary: 'Create an alert rule (webhook secret returned once)', tags: ['alerts'] },
+    },
+    '/v1/alerts/{id}': {
+      put: { summary: 'Update an alert rule', tags: ['alerts'] },
+      delete: { summary: 'Delete an alert rule', tags: ['alerts'] },
+    },
+    '/v1/alerts/events': { get: { summary: 'Recent alert firings + unacknowledged count', tags: ['alerts'] } },
+    '/v1/alerts/events/{id}/ack': { post: { summary: 'Acknowledge an alert firing', tags: ['alerts'] } },
     '/v1/connectors': { get: { summary: 'Connector catalog with param JSON Schemas', tags: ['connectors'] } },
     '/v1/connections': {
       get: { summary: 'List connections', tags: ['connections'] },

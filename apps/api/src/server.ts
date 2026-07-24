@@ -10,6 +10,7 @@ import { registerAuthPlugin } from './auth/plugin.js';
 import { registerRateLimit } from './rateLimit/plugin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAiRoutes } from './routes/ai.js';
+import { registerAlertRoutes } from './routes/alerts.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
 import { registerConnectionRoutes } from './routes/connections.js';
 import { registerConnectorRoutes } from './routes/connectors.js';
@@ -85,5 +86,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerAiRoutes(app, resolvedDeps);
   registerApprovalRoutes(app, resolvedDeps);
   registerUsageRoutes(app, resolvedDeps);
+  registerAlertRoutes(app, resolvedDeps);
   return app;
 }
