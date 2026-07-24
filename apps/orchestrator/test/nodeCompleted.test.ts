@@ -69,6 +69,24 @@ describe('handleNodeCompleted SUCCEEDED', () => {
     expect(detail?.events.map((e) => e.eventType)).toContain('execution.succeeded');
   });
 
+  test('records execution usage exactly once on SUCCEEDED (redelivery does not double-count)', async () => {
+    const { executionId } = await seedExecution(pool, linearIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedNode(executionId, 'greet'); // resolves terminal SUCCEEDED + emits usage
+    // Redeliver the final completion — the CAS guard must prevent a 2nd execution row.
+    await handleNodeCompleted(deps, { executionId, nodeId: 'greet', attempt: 1, status: 'SUCCEEDED', outputPort: 'main' });
+    const rows = await pool.query(
+      `SELECT metric, quantity, metadata->>'status' AS status FROM usage_events WHERE execution_id=$1`,
+      [executionId],
+    );
+    const exec = (rows.rows as { metric: string; status: string }[]).filter((r) => r.metric === 'execution');
+    expect(exec).toHaveLength(1);
+    expect(exec[0]!.status).toBe('SUCCEEDED');
+    const metrics = (rows.rows as { metric: string }[]).map((r) => r.metric).sort();
+    expect(metrics).toEqual(['compute_ms', 'execution', 'node']); // both nodes ran → node qty 2 > 0
+  });
+
   test('IF false: true-branch subtree skipped, false branch queued, then terminal', async () => {
     const { executionId } = await seedExecution(pool, branchIr(), { name: 'Budi', total: 50 });
     await handleExecutionRequested(deps, { executionId });

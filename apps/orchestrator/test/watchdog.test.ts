@@ -38,6 +38,18 @@ describe('handleWatchdog', () => {
     expect((failed.rows[0] as { error_json: { code: string } }).error_json.code).toBe('execution_timeout');
   });
 
+  test('records a TIMED_OUT execution usage row', async () => {
+    const { executionId } = await seedExecution(pool, linearIr());
+    await handleExecutionRequested(deps, { executionId });
+    await handleWatchdog(deps, { executionId });
+    const rows = await pool.query(
+      `SELECT metadata->>'status' AS status FROM usage_events WHERE execution_id=$1 AND metric='execution'`,
+      [executionId],
+    );
+    expect(rows.rowCount).toBe(1);
+    expect((rows.rows[0] as { status: string }).status).toBe('TIMED_OUT');
+  });
+
   test('skips an execution with an open wait instead of timing it out', async () => {
     const { executionId } = await seedExecution(pool, linearIr());
     await handleExecutionRequested(deps, { executionId });

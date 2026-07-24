@@ -4,11 +4,12 @@ import {
   casNode,
   enqueueCompletionCallback,
   latestNodeStates,
+  recordExecutionUsage,
   waitsForExecution,
   withTx,
 } from '@xperiment/db';
 import type { WatchdogPayload } from '@xperiment/queue';
-import { loadExecutionContext, TERMINAL_EXECUTION_STATUSES, type OrchestratorDeps } from '../deps.js';
+import { buildExecutionUsage, loadExecutionContext, TERMINAL_EXECUTION_STATUSES, type OrchestratorDeps } from '../deps.js';
 
 const TIMEOUT_ERROR = { code: 'execution_timeout', message: 'Execution exceeded its timeout', retryable: false };
 
@@ -61,6 +62,7 @@ export async function handleWatchdog(deps: OrchestratorDeps, payload: WatchdogPa
     if (timedOut) {
       await appendEvent(client, { executionId, eventType: 'execution.timed_out' });
       await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
+      await recordExecutionUsage(client, buildExecutionUsage(ctx.execution, states, 'TIMED_OUT'));
     }
   });
 }

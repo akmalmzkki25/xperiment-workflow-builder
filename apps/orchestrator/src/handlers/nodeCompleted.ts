@@ -7,11 +7,12 @@ import {
   insertNodeAttempt,
   insertOutbox,
   latestNodeStates,
+  recordExecutionUsage,
   withTx,
 } from '@xperiment/db';
 import { computeReadiness, type NodeOutcome, type NodeStatus } from '@xperiment/engine-core';
 import type { NodeCompletedPayload } from '@xperiment/queue';
-import { loadExecutionContext, TERMINAL_EXECUTION_STATUSES, type OrchestratorDeps } from '../deps.js';
+import { buildExecutionUsage, loadExecutionContext, TERMINAL_EXECUTION_STATUSES, type OrchestratorDeps } from '../deps.js';
 
 export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeCompletedPayload): Promise<void> {
   const ctx = await loadExecutionContext(deps.pool, payload.executionId);
@@ -78,6 +79,7 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
         await closeOpenWaits(client, executionId); // don't leave a sibling's wait dangling
         await appendEvent(client, { executionId, eventType: 'execution.failed', nodeId });
         await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
+        await recordExecutionUsage(client, buildExecutionUsage(ctx.execution, states, 'FAILED'));
       }
     });
     return;
@@ -123,6 +125,7 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
       if (done) {
         await appendEvent(client, { executionId, eventType: 'execution.succeeded' });
         await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
+        await recordExecutionUsage(client, buildExecutionUsage(ctx.execution, states, 'SUCCEEDED'));
       }
     } else if (readiness.terminal === 'FAILED') {
       const done = await casExecution(client, {
@@ -136,6 +139,7 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
         await closeOpenWaits(client, executionId);
         await appendEvent(client, { executionId, eventType: 'execution.failed' });
         await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
+        await recordExecutionUsage(client, buildExecutionUsage(ctx.execution, states, 'FAILED'));
       }
     }
   });

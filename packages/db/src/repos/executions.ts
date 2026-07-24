@@ -21,6 +21,7 @@ function capJson(value: unknown): string {
 
 export interface ExecutionRow {
   id: string;
+  workspaceId: string;
   workflowId: string;
   workflowVersionId: string;
   triggerEventId: string | null;
@@ -35,6 +36,7 @@ function mapExecution(r: Record<string, unknown>): ExecutionRow {
   const ts = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string | null));
   return {
     id: r['id'] as string,
+    workspaceId: r['workspace_id'] as string,
     workflowId: r['workflow_id'] as string,
     workflowVersionId: r['workflow_version_id'] as string,
     triggerEventId: (r['trigger_event_id'] as string | null) ?? null,

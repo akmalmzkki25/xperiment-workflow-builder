@@ -81,6 +81,6 @@ export async function seedExecution(
 
 export async function truncateAll(pool: Pool): Promise<void> {
   await pool.query(
-    `TRUNCATE executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
+    `TRUNCATE usage_events, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
   );
 }
