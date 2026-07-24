@@ -266,6 +266,14 @@ export class ApiClient {
     return this.request('GET', `/v1/executions/${id}`);
   }
 
+  cancelExecution(id: string): Promise<{ status: string }> {
+    return this.request('POST', `/v1/executions/${id}/cancel`);
+  }
+
+  retryExecution(id: string): Promise<{ executionId: string; created: boolean }> {
+    return this.request('POST', `/v1/executions/${id}/retry`);
+  }
+
   aiGenerate(prompt: string): Promise<{ ir: unknown; attempts: number }> {
     return this.request('POST', '/v1/ai/generate', { body: { prompt } });
   }

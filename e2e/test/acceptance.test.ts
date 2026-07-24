@@ -23,6 +23,7 @@ let providerStub: Server;
 let providerUrl: string;
 const telegramMessages: { chat_id: string; text: string }[] = [];
 const whatsappMessages: { to: string; type: string }[] = [];
+const callbacks: { signature: string | undefined; body: { executionId: string; status: string } }[] = [];
 
 beforeAll(async () => {
   pool = await prepareDatabase();
@@ -44,6 +45,12 @@ beforeAll(async () => {
       } else if (req.url!.includes('/messages')) {
         whatsappMessages.push(JSON.parse(raw) as { to: string; type: string });
         res.end(JSON.stringify({ messages: [{ id: `wamid.${whatsappMessages.length}` }] }));
+      } else if (req.url!.includes('/xperiment-callback')) {
+        callbacks.push({
+          signature: req.headers['x-xperiment-signature'] as string | undefined,
+          body: JSON.parse(raw) as { executionId: string; status: string },
+        });
+        res.end(JSON.stringify({ ok: true }));
       } else {
         res.end(JSON.stringify({ ok: true, data: [] }));
       }
@@ -272,5 +279,74 @@ describe('PRD acceptance scenario', () => {
       [exec.body.executionId],
     );
     expect((stored.rows[0] as { inputs: string }).inputs).not.toContain('wa-stub-secret');
+  }, 60000);
+
+  test('completion webhook delivers a correctly-signed callback', async () => {
+    const definition = {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_cb', name: 'CB' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+        { id: 'done', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: { ok: true } } },
+      ],
+      edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'done', port: 'input' } }],
+    };
+    const created = await api<{ id: string }>('POST', '/v1/workflows', { name: 'CB' });
+    await api('PUT', `/v1/workflows/${created.body.id}/draft`, { definition }, { 'if-match': '1' });
+    await api('POST', `/v1/workflows/${created.body.id}/publish`);
+    const cb = await api<{ secret: string }>('PUT', `/v1/workflows/${created.body.id}/callback`, {
+      url: `${providerUrl}/xperiment-callback`,
+    });
+    const secret = cb.body.secret;
+
+    const before = callbacks.length;
+    const exec = await api<{ executionId: string }>('POST', `/v1/workflows/${created.body.id}/execute`, {});
+    await waitForTerminal(exec.body.executionId);
+
+    const deadline = Date.now() + 15000;
+    while (callbacks.length === before && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
+    const call = callbacks.at(-1)!;
+    expect(call.body.executionId).toBe(exec.body.executionId);
+    expect(call.body.status).toBe('SUCCEEDED');
+    const expected = 'sha256=' + createHmac('sha256', secret).update(JSON.stringify(call.body)).digest('hex');
+    expect(call.signature).toBe(expected);
+  }, 60000);
+
+  test('cancel stops a suspended run and marks it CANCELED', async () => {
+    const definition = {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_cancel', name: 'Cancel' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+        { id: 'gate', kind: 'logic', type: 'core.approval', operationVersion: '0.1.0', parameters: { message: 'ok?', ttlMs: 3_600_000, fallback: 'reject' } },
+      ],
+      edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'gate', port: 'input' } }],
+    };
+    const created = await api<{ id: string }>('POST', '/v1/workflows', { name: 'Cancel' });
+    await api('PUT', `/v1/workflows/${created.body.id}/draft`, { definition }, { 'if-match': '1' });
+    await api('POST', `/v1/workflows/${created.body.id}/publish`);
+    const exec = await api<{ executionId: string }>('POST', `/v1/workflows/${created.body.id}/execute`, {});
+
+    // Wait for the approval to suspend the run.
+    const deadline = Date.now() + 15000;
+    let status = '';
+    while (Date.now() < deadline) {
+      const d = await api<{ nodes: { nodeId: string; status: string }[] }>('GET', `/v1/executions/${exec.body.executionId}`);
+      status = d.body.nodes.find((n) => n.nodeId === 'gate')?.status ?? '';
+      if (status === 'WAITING') break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    expect(status).toBe('WAITING');
+
+    const cancel = await api('POST', `/v1/executions/${exec.body.executionId}/cancel`);
+    expect(cancel.status).toBe(200);
+    const detail = await api<{ execution: { status: string }; waits: { status: string }[] }>(
+      'GET',
+      `/v1/executions/${exec.body.executionId}`,
+    );
+    expect(detail.body.execution.status).toBe('CANCELED');
+    expect(detail.body.waits.every((w) => w.status !== 'open')).toBe(true);
   }, 60000);
 });

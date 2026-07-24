@@ -22,6 +22,7 @@ const STATUS_META: Record<string, StatusMeta> = {
   READY: { label: 'Ready', glyph: '◌', colorVar: '--status-neutral' },
   RETRY_SCHEDULED: { label: 'Retrying', glyph: '↻', colorVar: '--status-retry' },
   SKIPPED: { label: 'Skipped', glyph: '○', colorVar: '--status-neutral' },
+  CANCELED: { label: 'Canceled', glyph: '⊘', colorVar: '--status-neutral' },
   draft: { label: 'Draft', glyph: '◌', colorVar: '--status-neutral' },
   published: { label: 'Published', glyph: '◆', colorVar: '--status-running' },
 };

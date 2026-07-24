@@ -170,6 +170,22 @@ pnpm --filter @xperiment/web e2e
 
 Flow screenshots land in `apps/web/e2e/artifacts/`.
 
+## Public API (Phase 2H)
+
+The REST API is hardened for external use:
+
+- **Retry / cancel** — `POST /v1/executions/:id/retry` replays a run as a new execution
+  (honoring `Idempotency-Key`); `POST /v1/executions/:id/cancel` stops a running execution
+  (new terminal status `CANCELED`), skips its live nodes, and closes any open waits.
+- **Rate limits** — every `/v1` response carries `X-RateLimit-Limit/Remaining/Reset`;
+  over the limit returns `429` with `Retry-After` (fixed window per workspace, in-memory
+  for this single-instance beta; `RATE_LIMIT_PER_MIN` default 600).
+- **Completion webhooks** — `PUT /v1/workflows/:id/callback { url }` returns a signing
+  secret once; the orchestrator POSTs `{ executionId, workflowId, status, completedAt }`
+  to that URL on any terminal state, SSRF-guarded and `X-Xperiment-Signature` (HMAC-SHA256)
+  signed. `DELETE` clears it.
+- **OpenAPI** — `GET /v1/openapi.json` (public) documents the `/v1` surface.
+
 ## Wait & Human Approval (Phase 2F)
 
 Three logic nodes suspend an execution **without holding a worker**, and resume

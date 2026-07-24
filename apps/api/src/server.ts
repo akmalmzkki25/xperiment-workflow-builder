@@ -15,6 +15,7 @@ import { registerConnectionRoutes } from './routes/connections.js';
 import { registerConnectorRoutes } from './routes/connectors.js';
 import { registerExecutionRoutes } from './routes/executions.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerOpenapiRoutes } from './routes/openapi.js';
 import { registerTriggerRoutes } from './routes/triggers.js';
 import { registerWorkflowRoutes } from './routes/workflows.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
@@ -72,6 +73,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     perMinute: deps.rateLimitPerMinute ?? Number(process.env['RATE_LIMIT_PER_MIN'] ?? 600),
   });
   registerHealthRoutes(app);
+  registerOpenapiRoutes(app);
   registerAuthRoutes(app, resolvedDeps);
   registerWorkspaceRoutes(app, resolvedDeps);
   registerWorkflowRoutes(app, resolvedDeps);

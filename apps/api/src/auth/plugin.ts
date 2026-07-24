@@ -28,7 +28,7 @@ export function roleGate(reply: FastifyReply, ctx: AuthContext, minimum: Role): 
   return false;
 }
 
-const EXEMPT = new Set(['/v1/healthz', '/v1/auth/register', '/v1/auth/login']);
+const EXEMPT = new Set(['/v1/healthz', '/v1/openapi.json', '/v1/auth/register', '/v1/auth/login']);
 
 export function registerAuthPlugin(app: FastifyInstance, deps: { pool: pg.Pool }): void {
   app.decorateRequest('authContext', null);

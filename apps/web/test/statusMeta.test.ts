@@ -20,6 +20,7 @@ describe('statusMeta', () => {
     expect(statusMeta('RETRY_SCHEDULED')).toEqual({ label: 'Retrying', glyph: '↻', colorVar: '--status-retry' });
     expect(statusMeta('WAITING')).toEqual({ label: 'Waiting', glyph: '⏸', colorVar: '--status-retry' });
     expect(statusMeta('SKIPPED')).toEqual({ label: 'Skipped', glyph: '○', colorVar: '--status-neutral' });
+    expect(statusMeta('CANCELED')).toEqual({ label: 'Canceled', glyph: '⊘', colorVar: '--status-neutral' });
   });
 
   test('workflow statuses and unknown fallback', () => {
