@@ -1,5 +1,7 @@
 import type pg from 'pg';
 import { type Db } from '../pool.js';
+import { appendEvent, casNode } from './executions.js';
+import { insertOutbox } from './outbox.js';
 
 export type WaitKind = 'timer' | 'event' | 'approval';
 export type WaitStatus = 'open' | 'resolved' | 'expired';
@@ -144,6 +146,69 @@ export async function dueWaits(client: pg.PoolClient, limit: number): Promise<Wa
     [limit],
   );
   return (r.rows as Record<string, unknown>[]).map(mapWait);
+}
+
+/**
+ * Resolves an open wait and its WAITING node in one step, then emits a
+ * `node.completed` so the orchestrator advances the run. Shared by the approvals
+ * API, the gateway event endpoint, and the scheduler sweep. Idempotent: if the
+ * wait is already closed the whole operation is a no-op (returns false), which
+ * makes the timer-sweep-vs-decision race safe.
+ */
+export async function applyResume(
+  client: pg.PoolClient,
+  args: {
+    wait: Pick<WaitRow, 'id' | 'executionId' | 'nodeId' | 'attempt'>;
+    waitStatus: 'resolved' | 'expired';
+    terminal: 'SUCCEEDED' | 'FAILED';
+    outputPort?: string;
+    output?: unknown;
+    error?: unknown;
+    decision?: string;
+    resolvedBy?: string;
+    comment?: string;
+  },
+): Promise<boolean> {
+  const closed = await resolveWait(client, {
+    waitId: args.wait.id,
+    status: args.waitStatus,
+    ...(args.decision ? { decision: args.decision } : {}),
+    ...(args.resolvedBy ? { resolvedBy: args.resolvedBy } : {}),
+    ...(args.comment ? { comment: args.comment } : {}),
+  });
+  if (!closed) return false; // lost the race — another resolver already handled it
+
+  const { executionId, nodeId, attempt } = args.wait;
+  await casNode(client, {
+    executionId,
+    nodeId,
+    attempt,
+    from: ['WAITING'],
+    to: args.terminal,
+    patch: {
+      ...(args.terminal === 'SUCCEEDED'
+        ? { outputJson: args.output ?? null, outputPort: args.outputPort ?? 'main' }
+        : { errorJson: args.error ?? { code: 'wait_failed', message: 'wait resolved to failure' } }),
+      completedAt: true,
+    },
+  });
+  await appendEvent(client, {
+    executionId,
+    eventType: 'node.resumed',
+    nodeId,
+    payload: { attempt, terminal: args.terminal, ...(args.outputPort ? { outputPort: args.outputPort } : {}) },
+  });
+  await insertOutbox(client, {
+    eventType: 'node.completed',
+    payload: {
+      executionId,
+      nodeId,
+      attempt,
+      status: args.terminal,
+      ...(args.terminal === 'SUCCEEDED' ? { outputPort: args.outputPort ?? 'main' } : {}),
+    },
+  });
+  return true;
 }
 
 export async function waitsForExecution(db: Db, executionId: string): Promise<WaitRow[]> {

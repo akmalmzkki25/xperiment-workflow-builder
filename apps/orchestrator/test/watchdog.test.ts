@@ -1,4 +1,4 @@
-import { createPool, getExecutionDetail, latestNodeStates, runMigrations } from '@xperiment/db';
+import { createPool, getExecutionDetail, latestNodeStates, openWait, runMigrations } from '@xperiment/db';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import type { OrchestratorDeps } from '../src/deps.js';
@@ -36,6 +36,29 @@ describe('handleWatchdog', () => {
       [executionId],
     );
     expect((failed.rows[0] as { error_json: { code: string } }).error_json.code).toBe('execution_timeout');
+  });
+
+  test('skips an execution with an open wait instead of timing it out', async () => {
+    const { executionId } = await seedExecution(pool, linearIr());
+    await handleExecutionRequested(deps, { executionId });
+    // Simulate a suspended node with an open wait.
+    await pool.query(`UPDATE execution_nodes SET status = 'WAITING' WHERE execution_id = $1 AND node_id = 't'`, [
+      executionId,
+    ]);
+    await openWait(pool, {
+      executionId,
+      nodeId: 't',
+      attempt: 1,
+      kind: 'approval',
+      resumeToken: 'tok-open-guard',
+      expiresAt: new Date(Date.now() + 3_600_000),
+      fallback: 'reject',
+      message: 'x',
+    });
+    await handleWatchdog(deps, { executionId });
+    const detail = await getExecutionDetail(pool, executionId);
+    expect(detail?.execution.status).toBe('RUNNING');
+    expect(detail?.events.map((e) => e.eventType)).not.toContain('execution.timed_out');
   });
 
   test('is a no-op on a terminal execution', async () => {

@@ -3,6 +3,7 @@ import { createPool, runMigrations } from '@xperiment/db';
 import { createQueues, createRedisConnection, startOutboxPublisher } from '@xperiment/queue';
 import { pino } from 'pino';
 import { runSchedulerTick } from './tick.js';
+import { runWaitSweep } from './waitSweep.js';
 
 const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
 const pool = createPool();
@@ -14,10 +15,11 @@ const publisher = startOutboxPublisher({ pool, queues, log: (msg, extra) => logg
 
 const intervalMs = Number(process.env['SCHEDULER_INTERVAL_MS'] ?? 5000);
 let running = false;
+const log = (msg: string, extra?: Record<string, unknown>) => logger.info(extra ?? {}, msg);
 const timer = setInterval(() => {
   if (running) return;
   running = true;
-  void runSchedulerTick({ pool, log: (msg, extra) => logger.info(extra ?? {}, msg) })
+  void Promise.all([runSchedulerTick({ pool, log }), runWaitSweep({ pool, log })])
     .catch((e: unknown) => logger.error({ err: (e as Error).message }, 'scheduler tick failed'))
     .finally(() => {
       running = false;

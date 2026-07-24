@@ -1,4 +1,4 @@
-import { appendEvent, casExecution, casNode, latestNodeStates, withTx } from '@xperiment/db';
+import { appendEvent, casExecution, casNode, latestNodeStates, waitsForExecution, withTx } from '@xperiment/db';
 import type { WatchdogPayload } from '@xperiment/queue';
 import { loadExecutionContext, TERMINAL_EXECUTION_STATUSES, type OrchestratorDeps } from '../deps.js';
 
@@ -12,6 +12,14 @@ export async function handleWatchdog(deps: OrchestratorDeps, payload: WatchdogPa
   }
   if (TERMINAL_EXECUTION_STATUSES.includes(ctx.execution.status)) return;
   const { executionId } = payload;
+
+  // A legitimately-suspended execution is not stalled: an open wait bounds itself
+  // via its own expires_at (swept by the scheduler), so the global watchdog skips it.
+  const waits = await waitsForExecution(deps.pool, executionId);
+  if (waits.some((w) => w.status === 'open')) {
+    deps.log('watchdog.skipped_open_wait', { executionId });
+    return;
+  }
 
   await withTx(deps.pool, async (client) => {
     const states = await latestNodeStates(client, executionId);
