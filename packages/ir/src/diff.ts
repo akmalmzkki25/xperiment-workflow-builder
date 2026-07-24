@@ -13,16 +13,22 @@ export interface WorkflowDiff {
   changed: boolean;
 }
 
+const MAX_DEPTH = 200;
+
 /**
  * Deterministic JSON with recursively sorted object keys, so parameter key
- * ordering never registers as a change.
+ * ordering never registers as a change. Depth-bounded so a pathologically deep
+ * parameter payload cannot overflow the stack; `undefined` gets a distinct token
+ * so it never collides with `null`.
  */
-function stableStringify(value: unknown): string {
+function stableStringify(value: unknown, depth = 0): string {
+  if (depth > MAX_DEPTH) return '"__deep__"';
+  if (value === undefined) return '"__undefined__"';
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (Array.isArray(value)) return `[${value.map((v) => stableStringify(v, depth + 1)).join(',')}]`;
   const obj = value as Record<string, unknown>;
   const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k], depth + 1)}`).join(',')}}`;
 }
 
 function nodeChangedFields(a: IRNode, b: IRNode): string[] {

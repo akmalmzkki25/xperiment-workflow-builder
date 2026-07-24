@@ -83,6 +83,23 @@ describe('version diff + rollback', () => {
     expect((await auth.inject({ method: 'GET', url: `/v1/workflows/${wfB.id}/diff?from=draft&to=draft` })).statusCode).toBe(400); // no_draft
   });
 
+  test('diffing an unvalidated draft ({} or in-progress) is a clean 422, not a 500', async () => {
+    // A freshly created workflow's draft is the default '{}', which is not a complete IR.
+    const wf = (await auth.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'Fresh' } })).json<{ id: string }>();
+    const r = await auth.inject({ method: 'GET', url: `/v1/workflows/${wf.id}/diff?from=draft&to=draft` });
+    expect(r.statusCode).toBe(422);
+  });
+
+  test('rejects a repeated query param and a non-uuid ref without a 500', async () => {
+    const wf = (await auth.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'Q' } })).json<{ id: string; draftRevision: number }>();
+    await publish(wf.id, ir(true), wf.draftRevision);
+    // ?from=a&from=b → an array reaching the resolver must be a 400, not a DB 500.
+    expect((await auth.inject({ method: 'GET', url: `/v1/workflows/${wf.id}/diff?from=a&from=b&to=draft` })).statusCode).toBe(400);
+    // a non-UUID version ref → 400 (diff) / 404 (rollback), never a pg 22P02 500.
+    expect((await auth.inject({ method: 'GET', url: `/v1/workflows/${wf.id}/diff?from=not-a-uuid&to=draft` })).statusCode).toBe(400);
+    expect((await auth.inject({ method: 'POST', url: `/v1/workflows/${wf.id}/versions/not-a-uuid/rollback` })).statusCode).toBe(404);
+  });
+
   test('cross-workspace diff is 404', async () => {
     const other = await createAuthedUser(app);
     const wf = (await other.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'X' } })).json<{ id: string; draftRevision: number }>();

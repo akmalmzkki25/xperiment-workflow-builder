@@ -43,6 +43,24 @@ describe('diffWorkflows', () => {
     expect(diffWorkflows(base, reordered).changed).toBe(false);
   });
 
+  test('nested parameter key reordering is not a change (recursive stable stringify)', () => {
+    const from = clone(base);
+    from.nodes[1]!.parameters = { cfg: { a: 1, b: 2 }, list: [{ x: 1, y: 2 }] };
+    const to = clone(base);
+    to.nodes[1]!.parameters = { list: [{ y: 2, x: 1 }], cfg: { b: 2, a: 1 } }; // same content, keys reordered at every level
+    expect(diffWorkflows(from, to).changed).toBe(false);
+  });
+
+  test('a kind-only change and an operationVersion-only change are each detected', () => {
+    const kindOnly = clone(base);
+    kindOnly.nodes[1]!.kind = 'action';
+    expect(diffWorkflows(base, kindOnly).nodes.modified).toEqual([{ nodeId: 'a', changedFields: ['kind'] }]);
+
+    const opVersionOnly = clone(base);
+    opVersionOnly.nodes[1]!.operationVersion = '0.2.0';
+    expect(diffWorkflows(base, opVersionOnly).nodes.modified).toEqual([{ nodeId: 'a', changedFields: ['operationVersion'] }]);
+  });
+
   test('type + connectionRef changes are listed', () => {
     const to = clone(base);
     to.nodes[1]!.type = 'postgres.query';

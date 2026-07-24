@@ -19,6 +19,8 @@ import { authOf, roleGate } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const createSchema = z.object({ name: z.string().min(1).max(200) }).strict();
 const draftSchema = z.object({ definition: z.unknown() }).strict();
 const listQuerySchema = z.object({
@@ -160,8 +162,13 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
   app.get('/v1/workflows/:id/diff', async (req, reply) => {
     const ctx = authOf(req);
     const { id } = req.params as { id: string };
-    const { from, to } = (req.query ?? {}) as { from?: string; to?: string };
-    if (!from || !to) return sendProblem(reply, 400, 'Missing from/to', 'Both from and to are required');
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const from = q['from'];
+    const to = q['to'];
+    // Reject missing or repeated (?from=a&from=b → array) query params before they reach the DB.
+    if (typeof from !== 'string' || typeof to !== 'string') {
+      return sendProblem(reply, 400, 'Missing from/to', 'Both from and to must be a single value');
+    }
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
 
@@ -171,6 +178,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
         if (!draft) return { error: 'no_draft' };
         return { label: 'draft', ir: draft.definition };
       }
+      if (!UUID_RE.test(ref)) return { error: 'foreign_version' }; // non-UUID would raise pg 22P02
       const v = await getVersion(deps.pool, ref);
       if (!v || v.workflowId !== id) return { error: 'foreign_version' };
       return { label: String(v.versionNumber), ir: v.definition };
@@ -179,9 +187,12 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
     if ('error' in a) return sendProblem(reply, 400, 'Invalid from', a.error);
     const b = await resolve(to);
     if ('error' in b) return sendProblem(reply, 400, 'Invalid to', b.error);
-    const fromIr = workflowIrSchema.parse(a.ir);
-    const toIr = workflowIrSchema.parse(b.ir);
-    return { from: a.label, to: b.label, diff: diffWorkflows(fromIr, toIr) };
+    // A draft (or any unvalidated definition) may not be a complete IR → clean 422, not a 500.
+    const fromIr = workflowIrSchema.safeParse(a.ir);
+    if (!fromIr.success) return sendProblem(reply, 422, 'from is not a valid workflow', 'The "from" side is not a complete workflow (e.g. an unpublished draft)');
+    const toIr = workflowIrSchema.safeParse(b.ir);
+    if (!toIr.success) return sendProblem(reply, 422, 'to is not a valid workflow', 'The "to" side is not a complete workflow (e.g. an unpublished draft)');
+    return { from: a.label, to: b.label, diff: diffWorkflows(fromIr.data, toIr.data) };
   });
 
   app.post('/v1/workflows/:id/versions/:versionId/rollback', async (req, reply) => {
@@ -190,6 +201,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
     const { id, versionId } = req.params as { id: string; versionId: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
+    if (!UUID_RE.test(versionId)) return sendProblem(reply, 404, 'Version not found'); // avoid a pg 22P02 500
     const version = await getVersion(deps.pool, versionId);
     if (!version || version.workflowId !== id) return sendProblem(reply, 404, 'Version not found');
     const created = await createVersion(deps.pool, {
