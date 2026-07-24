@@ -20,7 +20,9 @@ export const CONNECTION_PAYLOAD_SCHEMAS = {
       user: z.string().min(1),
       password: z.string().min(1),
       from: z.string().min(1),
-      secure: z.coerce.boolean().optional(),
+      // A real JSON boolean, or the web form's "true"/"false" string. NOT
+      // z.coerce.boolean(), which turns any non-empty string (incl. "false") into true.
+      secure: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]).optional(),
     })
     .strict(),
   googleSheets: z

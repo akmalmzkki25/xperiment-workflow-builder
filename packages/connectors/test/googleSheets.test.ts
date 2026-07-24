@@ -12,6 +12,7 @@ let baseUrl: string;
 let lastToken: string | undefined;
 let lastSheetsReq: { path: string; method: string; auth: string | undefined; body: unknown } | null = null;
 let sheetsResponse: unknown = { updates: { updatedRange: 'Sheet1!A1', updatedRows: 1 } };
+let sheetsResponseStatus = 200;
 let tokenStatus = 200;
 let tokenResponse: unknown = { access_token: 'ya29.fake-token', expires_in: 3600 };
 
@@ -52,6 +53,7 @@ beforeAll(async () => {
         auth: req.headers['authorization'],
         body: raw.length ? JSON.parse(raw) : null,
       };
+      res.statusCode = sheetsResponseStatus;
       res.end(JSON.stringify(sheetsResponse));
     });
   });
@@ -66,6 +68,7 @@ beforeEach(() => {
   lastToken = undefined;
   lastSheetsReq = null;
   sheetsResponse = { updates: { updatedRange: 'Sheet1!A1', updatedRows: 1 } };
+  sheetsResponseStatus = 200;
   tokenStatus = 200;
   tokenResponse = { access_token: 'ya29.fake-token', expires_in: 3600 };
 });
@@ -87,9 +90,31 @@ describe('buildServiceAccountJwt', () => {
       Buffer.from(signature!, 'base64url'),
     );
     expect(ok).toBe(true);
-    const decoded = JSON.parse(Buffer.from(claims!, 'base64url').toString()) as { iss: string; iat: number; exp: number };
+    const decoded = JSON.parse(Buffer.from(claims!, 'base64url').toString()) as {
+      iss: string;
+      iat: number;
+      exp: number;
+      aud: string;
+    };
     expect(decoded.iss).toBe('svc@x.iam');
-    expect(decoded.exp - decoded.iat).toBe(3600);
+    expect(decoded.aud).toBe('https://oauth2.googleapis.com/token');
+    expect(decoded.exp - decoded.iat).toBe(3600); // seconds, not ms
+  });
+
+  test('normalizes an escaped-\\n private key (as it appears in a JSON key file)', () => {
+    // Same key, but with literal backslash-n instead of real newlines.
+    const escaped = PRIVATE_PEM.replace(/\n/g, '\\n');
+    const jwt = buildServiceAccountJwt({
+      email: 'svc@x.iam',
+      privateKey: escaped,
+      scope: 's',
+      aud: 'a',
+      now: 1_700_000_000_000,
+    });
+    const [header, claims, signature] = jwt.split('.');
+    expect(verify('RSA-SHA256', Buffer.from(`${header}.${claims}`), publicKey, Buffer.from(signature!, 'base64url'))).toBe(
+      true,
+    );
   });
 });
 
@@ -107,6 +132,20 @@ describe('sheets.appendRow', () => {
   test('an invalid service-account key fails with connection_invalid', async () => {
     const badCtx = { ...ctx({ spreadsheetId: 's', range: 'A1', values: [] }), connection: { ...conn(), privateKey: 'not-a-key' } };
     await expect(sheetsAppendRow.run(badCtx)).rejects.toMatchObject({ code: 'connection_invalid' });
+  });
+
+  test('a non-2xx from the sheets data call maps to provider_error and the output never leaks the key', async () => {
+    sheetsResponseStatus = 403;
+    sheetsResponse = { error: { message: 'forbidden' } };
+    const err = await sheetsAppendRow.run(ctx({ spreadsheetId: 's', range: 'A1', values: [1] })).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NodeRunError);
+    expect((err as NodeRunError).code).toBe('http_error');
+  });
+
+  test('append with an empty updates block falls back to null/0', async () => {
+    sheetsResponse = {};
+    const out = await sheetsAppendRow.run(ctx({ spreadsheetId: 's', range: 'A1', values: [1] }));
+    expect(out.output).toEqual({ updatedRange: null, updatedRows: 0 });
   });
 
   test('never leaks the private key material in an error', async () => {

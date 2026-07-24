@@ -38,6 +38,20 @@ function transportOptions(conn: z.infer<(typeof CONNECTION_PAYLOAD_SCHEMAS)['smt
   };
 }
 
+/**
+ * Transient SMTP failures (connection/timeout, or a 4xx response) are worth
+ * retrying; permanent ones (bad auth EAUTH/535, bad envelope 5xx) are not, so we
+ * don't burn the retry budget on a doomed send. The error text is never surfaced
+ * (it can echo credentials — CON-020).
+ */
+function isTransientSmtpError(err: unknown): boolean {
+  const e = err as { code?: string; responseCode?: number };
+  const transientCodes = ['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'EDNS', 'ECONNREFUSED', 'ECONNRESET'];
+  if (e.code && transientCodes.includes(e.code)) return true;
+  if (typeof e.responseCode === 'number') return e.responseCode >= 400 && e.responseCode < 500;
+  return false;
+}
+
 export function createEmailSend(deps: EmailDeps = {}): ConnectorDefinition {
   const factory = deps.transportFactory ?? ((opts) => nodemailer.createTransport(opts as never) as unknown as MailTransport);
   return {
@@ -62,9 +76,9 @@ export function createEmailSend(deps: EmailDeps = {}): ConnectorDefinition {
           ...(parsed.data.html !== undefined ? { html: parsed.data.html } : {}),
         });
         return { output: { messageId: result.messageId, accepted: result.accepted } };
-      } catch {
+      } catch (err) {
         // Never surface SMTP error text — it can echo credentials.
-        throw new NodeRunError('provider_error', 'smtp send failed', true);
+        throw new NodeRunError('provider_error', 'smtp send failed', isTransientSmtpError(err));
       } finally {
         transport.close?.();
       }
@@ -74,6 +88,9 @@ export function createEmailSend(deps: EmailDeps = {}): ConnectorDefinition {
       const transport = factory(transportOptions(conn));
       try {
         await transport.verify();
+      } catch {
+        // Sanitize like run() — the raw verify() error can echo the password.
+        throw new Error('smtp connection test failed');
       } finally {
         transport.close?.();
       }

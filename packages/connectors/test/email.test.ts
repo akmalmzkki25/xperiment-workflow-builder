@@ -43,6 +43,23 @@ describe('email.send', () => {
     expect(out.output).toEqual({ messageId: 'msg-1', accepted: ['a@b.co'] });
     expect(sent[0]).toMatchObject({ from: 'bot@xperiment.test', to: 'a@b.co', subject: 'Hi', text: 'hello' });
     expect(seenOpts?.auth).toEqual({ user: 'u', pass: 'smtp-secret-pass' });
+    // Transport TLS/port derivation: port 587 → STARTTLS (secure:false); output carries no secret.
+    expect(seenOpts?.port).toBe(587);
+    expect(seenOpts?.secure).toBe(false);
+    expect(JSON.stringify(out.output)).not.toContain('smtp-secret-pass');
+  });
+
+  test('secure defaults to true on the implicit-TLS port 465', async () => {
+    let seenOpts: { secure: boolean } | undefined;
+    const connector = createEmailSend({
+      transportFactory: (opts) => {
+        seenOpts = opts as typeof seenOpts;
+        return fakeTransport().transport;
+      },
+    });
+    const c465 = { ...ctx({ to: 'a@b.co', subject: 'x', text: 'y' }), connection: { ...conn(), port: 465 } };
+    await connector.run(c465);
+    expect(seenOpts?.secure).toBe(true);
   });
 
   test('requires text or html', async () => {
@@ -50,19 +67,35 @@ describe('email.send', () => {
     await expect(connector.run(ctx({ to: 'a@b.co', subject: 'x' }))).rejects.toBeInstanceOf(NodeRunError);
   });
 
-  test('maps a send failure to a retryable provider_error without leaking the password', async () => {
+  test('a permanent auth failure is non-retryable and secret-free', async () => {
     const connector = createEmailSend({
       transportFactory: () =>
         fakeTransport({
           sendMail: async () => {
-            throw new Error('535 auth failed for smtp-secret-pass');
+            throw Object.assign(new Error('535 auth failed for smtp-secret-pass'), {
+              code: 'EAUTH',
+              responseCode: 535,
+            });
           },
         }).transport,
     });
     const err = await connector.run(ctx({ to: 'a@b.co', subject: 'x', text: 'y' })).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(NodeRunError);
-    expect((err as NodeRunError).retryable).toBe(true);
+    expect((err as NodeRunError).retryable).toBe(false); // don't burn the retry budget on a doomed send
     expect((err as NodeRunError).message).not.toContain('smtp-secret-pass');
+  });
+
+  test('a transient connection failure is retryable', async () => {
+    const connector = createEmailSend({
+      transportFactory: () =>
+        fakeTransport({
+          sendMail: async () => {
+            throw Object.assign(new Error('connection refused'), { code: 'ECONNECTION' });
+          },
+        }).transport,
+    });
+    const err = await connector.run(ctx({ to: 'a@b.co', subject: 'x', text: 'y' })).catch((e: unknown) => e);
+    expect((err as NodeRunError).retryable).toBe(true);
   });
 
   test('invalid connection payload fails with connection_invalid', async () => {

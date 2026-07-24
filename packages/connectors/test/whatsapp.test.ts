@@ -51,19 +51,28 @@ beforeEach(() => {
 });
 
 describe('whatsapp.sendMessage', () => {
-  test('sends a text message and returns the message id', async () => {
+  test('sends a text message with the full messaging payload and returns the message id', async () => {
     const out = await whatsappSendMessage.run(ctx({ to: '628123', text: 'Halo' }));
     expect(out.output).toEqual({ messageId: 'wamid.ABC' });
     expect(lastReq?.path).toBe('/v20.0/555001/messages');
     expect(lastReq?.auth).toBe('Bearer whatsapp-secret-token');
-    expect((lastReq?.body as { type: string }).type).toBe('text');
+    expect(lastReq?.body).toEqual({
+      messaging_product: 'whatsapp',
+      to: '628123',
+      type: 'text',
+      text: { body: 'Halo' },
+    });
   });
 
-  test('sends a template message', async () => {
+  test('sends a template message, defaulting the language code to en_US', async () => {
     await whatsappSendMessage.run(ctx({ to: '628123', templateName: 'welcome', templateLangCode: 'id' }));
     const body = lastReq?.body as { type: string; template: { name: string; language: { code: string } } };
     expect(body.type).toBe('template');
     expect(body.template).toEqual({ name: 'welcome', language: { code: 'id' } });
+
+    await whatsappSendMessage.run(ctx({ to: '628123', templateName: 'welcome' }));
+    const defaulted = lastReq?.body as { template: { language: { code: string } } };
+    expect(defaulted.template.language.code).toBe('en_US');
   });
 
   test('requires exactly one of text or templateName', async () => {
