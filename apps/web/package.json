@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
+    "@xperiment/connectors": "workspace:^",
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

@@ -253,6 +253,9 @@ importers:
       '@playwright/test':
         specifier: ^1.45.0
         version: 1.61.1
+      '@xperiment/connectors':
+        specifier: workspace:^
+        version: link:../../packages/connectors
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.43
