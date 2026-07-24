@@ -15,6 +15,7 @@ import {
 import { nextFireAt } from '@xperiment/engine-core';
 import { workflowIrSchema, type IRNode } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
+import { authOf, roleGate } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -36,8 +37,10 @@ function triggerView(t: TriggerRow, gatewayUrl: string, key: Buffer) {
 
 export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workflows/:id/activate', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
     const { id } = req.params as { id: string };
-    const wf = await getWorkflow(deps.pool, id);
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     if (!wf.activeVersionId) return sendProblem(reply, 409, 'No published version', 'Publish before activating');
     const version = await getVersion(deps.pool, wf.activeVersionId);
@@ -82,8 +85,10 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
   });
 
   app.post('/v1/workflows/:id/deactivate', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
     const { id } = req.params as { id: string };
-    const wf = await getWorkflow(deps.pool, id);
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     await setTriggersActive(deps.pool, id, false);
     await setWorkflowActive(deps.pool, id, false);
@@ -91,15 +96,18 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
   });
 
   app.get('/v1/workflows/:id/triggers', async (req, reply) => {
+    const ctx = authOf(req);
     const { id } = req.params as { id: string };
-    const wf = await getWorkflow(deps.pool, id);
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     const rows = await listTriggers(deps.pool, id);
     return { triggers: rows.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerKey)) };
   });
 
   app.get('/v1/workflows/:id/triggers/:nodeId/samples', async (req, reply) => {
+    const ctx = authOf(req);
     const { id, nodeId } = req.params as { id: string; nodeId: string };
+    if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
     const rows = await listTriggers(deps.pool, id);
     if (!rows.some((t) => t.nodeId === nodeId)) return sendProblem(reply, 404, 'Trigger not found');
     return { samples: await recentTestTriggerPayloads(deps.pool, id, 5) };

@@ -1,7 +1,6 @@
 import { CONNECTION_PAYLOAD_SCHEMAS, type ConnectorKey } from '@xperiment/connectors';
 import {
   countPublishedRefs,
-  DEFAULT_WORKSPACE_ID,
   createConnection,
   decryptSecret,
   deleteConnection,
@@ -11,6 +10,7 @@ import {
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { authOf, roleGate } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -24,6 +24,7 @@ const createSchema = z
 
 export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/connections', async (req, reply) => {
+    if (!roleGate(reply, authOf(req), 'builder')) return;
     const parsed = createSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     const schema = CONNECTION_PAYLOAD_SCHEMAS[parsed.data.connectorKey as ConnectorKey];
@@ -31,7 +32,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
     const payload = schema.safeParse(parsed.data.payload);
     if (!payload.success) return sendProblem(reply, 400, 'Invalid connection payload', payload.error.message);
     const row = await createConnection(deps.pool, {
-      workspaceId: DEFAULT_WORKSPACE_ID,
+      workspaceId: authOf(req).workspaceId,
       connectorKey: parsed.data.connectorKey,
       name: parsed.data.name,
       encryptedPayload: encryptSecret(JSON.stringify(payload.data), deps.credentialsKey),
@@ -39,24 +40,25 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
     return reply.status(201).send(row);
   });
 
-  app.get('/v1/connections', async () => {
-    return { items: await listConnections(deps.pool, DEFAULT_WORKSPACE_ID) };
+  app.get('/v1/connections', async (req) => {
+    return { items: await listConnections(deps.pool, authOf(req).workspaceId) };
   });
 
   app.delete('/v1/connections/:id', async (req, reply) => {
+    if (!roleGate(reply, authOf(req), 'builder')) return;
     const { id } = req.params as { id: string };
     const refs = await countPublishedRefs(deps.pool, id);
     if (refs > 0) {
       return sendProblem(reply, 409, 'Connection in use', `Referenced by ${refs} published workflow version(s)`);
     }
-    const deleted = await deleteConnection(deps.pool, id, DEFAULT_WORKSPACE_ID);
+    const deleted = await deleteConnection(deps.pool, id, authOf(req).workspaceId);
     if (!deleted) return sendProblem(reply, 404, 'Connection not found');
     return reply.status(204).send();
   });
 
   app.post('/v1/connections/:id/test', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const row = await getConnectionWithPayload(deps.pool, id);
+    const row = await getConnectionWithPayload(deps.pool, id, authOf(req).workspaceId);
     if (!row) return sendProblem(reply, 404, 'Connection not found');
     const def = deps.registry
       .list()

@@ -1,6 +1,5 @@
 import {
   createVersion,
-  DEFAULT_WORKSPACE_ID,
   createWorkflow,
   getDraft,
   getWorkflow,
@@ -11,8 +10,9 @@ import {
 import { canonicalHash, validateWorkflow, type WorkflowIR } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { authOf, roleGate } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
-import type { ServerDeps } from './deps.js';
+import type { ResolvedServerDeps } from './deps.js';
 
 const createSchema = z.object({ name: z.string().min(1).max(200) }).strict();
 const draftSchema = z.object({ definition: z.unknown() }).strict();
@@ -21,23 +21,31 @@ const listQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
-export function registerWorkflowRoutes(app: FastifyInstance, deps: ServerDeps): void {
+export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workflows', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
     const parsed = createSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    const wf = await createWorkflow(deps.pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: parsed.data.name });
+    const wf = await createWorkflow(deps.pool, { workspaceId: ctx.workspaceId, name: parsed.data.name });
     return reply.status(201).send(wf);
   });
 
   app.get('/v1/workflows', async (req, reply) => {
+    const ctx = authOf(req);
     const q = listQuerySchema.safeParse(req.query ?? {});
     if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
-    return listWorkflows(deps.pool, { workspaceId: DEFAULT_WORKSPACE_ID, limit: q.data.limit, ...(q.data.cursor ? { cursor: q.data.cursor } : {}) });
+    return listWorkflows(deps.pool, {
+      workspaceId: ctx.workspaceId,
+      limit: q.data.limit,
+      ...(q.data.cursor ? { cursor: q.data.cursor } : {}),
+    });
   });
 
   app.get('/v1/workflows/:id', async (req, reply) => {
+    const ctx = authOf(req);
     const { id } = req.params as { id: string };
-    const wf = await getWorkflow(deps.pool, id);
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     const draft = await getDraft(deps.pool, id);
     const versions = await deps.pool.query(
@@ -57,8 +65,10 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ServerDeps): 
   });
 
   app.put('/v1/workflows/:id/draft', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
     const { id } = req.params as { id: string };
-    const wf = await getWorkflow(deps.pool, id);
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     const ifMatch = req.headers['if-match'];
     if (typeof ifMatch !== 'string' || ifMatch.length === 0) {
@@ -77,27 +87,34 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ServerDeps): 
     return { revision };
   });
 
-  const workspaceConnections = async () =>
-    (await listConnections(deps.pool, DEFAULT_WORKSPACE_ID)).map((c) => ({ id: c.id, connectorKey: c.connectorKey }));
+  const workspaceConnections = async (workspaceId: string) =>
+    (await listConnections(deps.pool, workspaceId)).map((c) => ({ id: c.id, connectorKey: c.connectorKey }));
 
   app.post('/v1/workflows/:id/validate', async (req, reply) => {
+    const ctx = authOf(req);
     const { id } = req.params as { id: string };
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
+    if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     const draft = await getDraft(deps.pool, id);
     if (!draft) return sendProblem(reply, 404, 'Workflow not found');
     const result = validateWorkflow(draft.definition, {
       registry: deps.registry,
-      connections: await workspaceConnections(),
+      connections: await workspaceConnections(ctx.workspaceId),
     });
     return { valid: result.valid, findings: result.findings };
   });
 
   app.post('/v1/workflows/:id/publish', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
     const { id } = req.params as { id: string };
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
+    if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     const draft = await getDraft(deps.pool, id);
     if (!draft) return sendProblem(reply, 404, 'Workflow not found');
     const result = validateWorkflow(draft.definition, {
       registry: deps.registry,
-      connections: await workspaceConnections(),
+      connections: await workspaceConnections(ctx.workspaceId),
     });
     if (!result.valid || !result.ir) {
       return sendProblem(reply, 422, 'Draft failed validation', undefined, result.findings);

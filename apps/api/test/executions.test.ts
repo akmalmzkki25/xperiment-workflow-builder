@@ -4,15 +4,18 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildServer } from '../src/server.js';
+import { createAuthedUser, type AuthedUser } from './authHelpers.js';
 import { leadCheckIr } from './fixtures.js';
 
 let pool: Pool;
 let app: FastifyInstance;
+let auth: AuthedUser;
 
 beforeAll(async () => {
   pool = createPool();
   await runMigrations(pool);
   app = buildServer({ pool, registry: createDefaultRegistry({ allowPrivateIps: true }) });
+  auth = await createAuthedUser(app);
 });
 afterAll(async () => {
   await app.close();
@@ -25,22 +28,22 @@ beforeEach(async () => {
 });
 
 async function publishedWorkflow(): Promise<string> {
-  const created = await app.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'Lead' } });
+  const created = await auth.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'Lead' } });
   const id = created.json<{ id: string }>().id;
-  await app.inject({
+  await auth.inject({
     method: 'PUT',
     url: `/v1/workflows/${id}/draft`,
     headers: { 'if-match': '1' },
     payload: { definition: leadCheckIr() },
   });
-  await app.inject({ method: 'POST', url: `/v1/workflows/${id}/publish` });
+  await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/publish` });
   return id;
 }
 
 describe('execute and inspect', () => {
   test('execute creates a CREATED execution with PENDING nodes and outbox rows', async () => {
     const id = await publishedWorkflow();
-    const r = await app.inject({
+    const r = await auth.inject({
       method: 'POST',
       url: `/v1/workflows/${id}/execute`,
       payload: { name: 'Budi', total: 150 },
@@ -50,7 +53,7 @@ describe('execute and inspect', () => {
     expect(body.status).toBe('CREATED');
     expect(body.created).toBe(true);
 
-    const detail = await app.inject({ method: 'GET', url: `/v1/executions/${body.executionId}` });
+    const detail = await auth.inject({ method: 'GET', url: `/v1/executions/${body.executionId}` });
     const d = detail.json<{ execution: { status: string }; nodes: { status: string }[]; events: unknown[] }>();
     expect(d.execution.status).toBe('CREATED');
     expect(d.nodes).toHaveLength(4); // t, branch, notify, archive
@@ -63,13 +66,13 @@ describe('execute and inspect', () => {
 
   test('duplicate Idempotency-Key returns 200 with the same execution', async () => {
     const id = await publishedWorkflow();
-    const first = await app.inject({
+    const first = await auth.inject({
       method: 'POST',
       url: `/v1/workflows/${id}/execute`,
       headers: { 'idempotency-key': 'dup-1' },
       payload: { name: 'Budi' },
     });
-    const second = await app.inject({
+    const second = await auth.inject({
       method: 'POST',
       url: `/v1/workflows/${id}/execute`,
       headers: { 'idempotency-key': 'dup-1' },
@@ -83,35 +86,35 @@ describe('execute and inspect', () => {
   });
 
   test('execute without a published version is a 409 problem', async () => {
-    const created = await app.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'X' } });
+    const created = await auth.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'X' } });
     const id = created.json<{ id: string }>().id;
-    const r = await app.inject({ method: 'POST', url: `/v1/workflows/${id}/execute`, payload: {} });
+    const r = await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/execute`, payload: {} });
     expect(r.statusCode).toBe(409);
   });
 
   test('executions list filters by workflowId', async () => {
     const id = await publishedWorkflow();
     for (let i = 0; i < 3; i += 1) {
-      await app.inject({
+      await auth.inject({
         method: 'POST',
         url: `/v1/workflows/${id}/execute`,
         headers: { 'idempotency-key': `k${i}` },
         payload: {},
       });
     }
-    const r = await app.inject({ method: 'GET', url: `/v1/executions?workflowId=${id}&limit=2` });
+    const r = await auth.inject({ method: 'GET', url: `/v1/executions?workflowId=${id}&limit=2` });
     const body = r.json<{ items: unknown[]; nextCursor: string | null }>();
     expect(body.items).toHaveLength(2);
     expect(body.nextCursor).not.toBeNull();
   });
 
   test('unknown execution is 404', async () => {
-    const r = await app.inject({ method: 'GET', url: '/v1/executions/00000000-0000-0000-0000-0000000000bb' });
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions/00000000-0000-0000-0000-0000000000bb' });
     expect(r.statusCode).toBe(404);
   });
 
   test('execute on unknown workflow is 404', async () => {
-    const r = await app.inject({
+    const r = await auth.inject({
       method: 'POST',
       url: '/v1/workflows/00000000-0000-0000-0000-0000000000cc/execute',
       payload: {},
@@ -120,20 +123,20 @@ describe('execute and inspect', () => {
   });
 
   test('executions list rejects invalid query and follows cursors', async () => {
-    const bad = await app.inject({ method: 'GET', url: '/v1/executions?limit=0' });
+    const bad = await auth.inject({ method: 'GET', url: '/v1/executions?limit=0' });
     expect(bad.statusCode).toBe(400);
     const id = await publishedWorkflow();
     for (let i = 0; i < 3; i += 1) {
-      await app.inject({
+      await auth.inject({
         method: 'POST',
         url: `/v1/workflows/${id}/execute`,
         headers: { 'idempotency-key': `cur${i}` },
         payload: {},
       });
     }
-    const all = await app.inject({ method: 'GET', url: '/v1/executions?limit=2' });
+    const all = await auth.inject({ method: 'GET', url: '/v1/executions?limit=2' });
     const page1 = all.json<{ items: unknown[]; nextCursor: string }>();
-    const page2 = await app.inject({
+    const page2 = await auth.inject({
       method: 'GET',
       url: `/v1/executions?limit=2&cursor=${encodeURIComponent(page1.nextCursor)}`,
     });
@@ -141,7 +144,7 @@ describe('execute and inspect', () => {
   });
 
   test('workflows list rejects invalid query', async () => {
-    const r = await app.inject({ method: 'GET', url: '/v1/workflows?limit=0' });
+    const r = await auth.inject({ method: 'GET', url: '/v1/workflows?limit=0' });
     expect(r.statusCode).toBe(400);
   });
 });

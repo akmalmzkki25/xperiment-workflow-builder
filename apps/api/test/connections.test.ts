@@ -5,9 +5,11 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildServer } from '../src/server.js';
+import { createAuthedUser, type AuthedUser } from './authHelpers.js';
 
 let pool: Pool;
 let app: FastifyInstance;
+let auth: AuthedUser;
 let stub: Server;
 let stubUrl: string;
 let stubStatus = 200;
@@ -18,6 +20,7 @@ beforeAll(async () => {
   pool = createPool();
   await runMigrations(pool);
   app = buildServer({ pool, registry: createDefaultRegistry({ allowPrivateIps: true }) });
+  auth = await createAuthedUser(app);
   stub = createServer((_req, res) => {
     res.statusCode = stubStatus;
     res.setHeader('content-type', 'application/json');
@@ -40,7 +43,7 @@ beforeEach(async () => {
 });
 
 async function createTelegramConnection(): Promise<string> {
-  const r = await app.inject({
+  const r = await auth.inject({
     method: 'POST',
     url: '/v1/connections',
     payload: { connectorKey: 'telegram', name: 'Bot', payload: { botToken: 'SECRET-TOKEN', baseUrl: stubUrl } },
@@ -56,20 +59,20 @@ describe('connections API', () => {
     expect((raw.rows[0] as { encrypted_payload: Buffer }).encrypted_payload.toString('utf8')).not.toContain(
       'SECRET-TOKEN',
     );
-    const list = await app.inject({ method: 'GET', url: '/v1/connections' });
+    const list = await auth.inject({ method: 'GET', url: '/v1/connections' });
     const items = list.json<{ items: Record<string, unknown>[] }>().items;
     expect(items).toHaveLength(1);
     expect(JSON.stringify(items)).not.toContain('SECRET-TOKEN');
   });
 
   test('create rejects bad payloads and unknown connector keys', async () => {
-    const bad = await app.inject({
+    const bad = await auth.inject({
       method: 'POST',
       url: '/v1/connections',
       payload: { connectorKey: 'telegram', name: 'x', payload: { nope: true } },
     });
     expect(bad.statusCode).toBe(400);
-    const unknown = await app.inject({
+    const unknown = await auth.inject({
       method: 'POST',
       url: '/v1/connections',
       payload: { connectorKey: 'fax', name: 'x', payload: {} },
@@ -79,10 +82,10 @@ describe('connections API', () => {
 
   test('test route reports ok and generic failure', async () => {
     const id = await createTelegramConnection();
-    const ok = await app.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
+    const ok = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
     expect(ok.json()).toEqual({ ok: true });
     stubStatus = 401;
-    const fail = await app.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
+    const fail = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
     const body = fail.json<{ ok: boolean; error: string }>();
     expect(body.ok).toBe(false);
     expect(body.error).toBe('connection test failed');
@@ -91,7 +94,7 @@ describe('connections API', () => {
 
   test('delete works but conflicts when referenced by a published version', async () => {
     const id = await createTelegramConnection();
-    const created = await app.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'W' } });
+    const created = await auth.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'W' } });
     const wfId = created.json<{ id: string }>().id;
     const definition = {
       schemaVersion: '0.1',
@@ -110,23 +113,23 @@ describe('connections API', () => {
       ],
       edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'send', port: 'input' } }],
     };
-    await app.inject({
+    await auth.inject({
       method: 'PUT',
       url: `/v1/workflows/${wfId}/draft`,
       headers: { 'if-match': '1' },
       payload: { definition },
     });
-    const pub = await app.inject({ method: 'POST', url: `/v1/workflows/${wfId}/publish` });
+    const pub = await auth.inject({ method: 'POST', url: `/v1/workflows/${wfId}/publish` });
     expect(pub.statusCode).toBe(201);
-    const conflict = await app.inject({ method: 'DELETE', url: `/v1/connections/${id}` });
+    const conflict = await auth.inject({ method: 'DELETE', url: `/v1/connections/${id}` });
     expect(conflict.statusCode).toBe(409);
     const other = await createTelegramConnection();
-    const gone = await app.inject({ method: 'DELETE', url: `/v1/connections/${other}` });
+    const gone = await auth.inject({ method: 'DELETE', url: `/v1/connections/${other}` });
     expect(gone.statusCode).toBe(204);
   });
 
   test('publish blocks a credentialed node without connectionRef; passes once set', async () => {
-    const created = await app.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'W2' } });
+    const created = await auth.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'W2' } });
     const wfId = created.json<{ id: string }>().id;
     const definition = {
       schemaVersion: '0.1',
@@ -144,13 +147,13 @@ describe('connections API', () => {
       ],
       edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'send', port: 'input' } }],
     };
-    await app.inject({
+    await auth.inject({
       method: 'PUT',
       url: `/v1/workflows/${wfId}/draft`,
       headers: { 'if-match': '1' },
       payload: { definition },
     });
-    const blocked = await app.inject({ method: 'POST', url: `/v1/workflows/${wfId}/publish` });
+    const blocked = await auth.inject({ method: 'POST', url: `/v1/workflows/${wfId}/publish` });
     expect(blocked.statusCode).toBe(422);
     expect(blocked.json<{ errors: { code: string }[] }>().errors.some((e) => e.code === 'connection_required')).toBe(
       true,
@@ -159,24 +162,24 @@ describe('connections API', () => {
     const connId = await createTelegramConnection();
     const withRef = structuredClone(definition) as { nodes: Record<string, unknown>[] };
     withRef.nodes[1]!['connectionRef'] = connId;
-    await app.inject({
+    await auth.inject({
       method: 'PUT',
       url: `/v1/workflows/${wfId}/draft`,
       headers: { 'if-match': '2' },
       payload: { definition: withRef },
     });
-    const okPub = await app.inject({ method: 'POST', url: `/v1/workflows/${wfId}/publish` });
+    const okPub = await auth.inject({ method: 'POST', url: `/v1/workflows/${wfId}/publish` });
     expect(okPub.statusCode).toBe(201);
   });
 
   test('postgres connection test against the real database', async () => {
-    const r = await app.inject({
+    const r = await auth.inject({
       method: 'POST',
       url: '/v1/connections',
       payload: { connectorKey: 'postgres', name: 'DB', payload: { connectionString: DB_URL } },
     });
     const id = r.json<{ id: string }>().id;
-    const ok = await app.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
+    const ok = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
     expect(ok.json()).toEqual({ ok: true });
   });
 });
