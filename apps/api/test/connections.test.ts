@@ -14,7 +14,7 @@ let stub: Server;
 let stubUrl: string;
 let stubStatus = 200;
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgres://xperiment:xperiment@localhost:5432/xperiment';
+const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:dev_password_change_me@localhost:5432/xperiment';
 
 beforeAll(async () => {
   pool = createPool();

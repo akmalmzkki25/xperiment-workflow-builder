@@ -1,6 +1,6 @@
 import pg from 'pg';
 
-export const DEFAULT_DATABASE_URL = 'postgres://xperiment:xperiment@localhost:5432/xperiment';
+export const DEFAULT_DATABASE_URL = 'postgresql://postgres:dev_password_change_me@localhost:5432/xperiment';
 export const DEFAULT_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
 
 export type Db = pg.Pool | pg.PoolClient;

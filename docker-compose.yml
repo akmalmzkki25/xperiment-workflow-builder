@@ -2,23 +2,23 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: xperiment
-      POSTGRES_PASSWORD: xperiment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev_password_change_me
       POSTGRES_DB: xperiment
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U xperiment"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
       timeout: 2s
       retries: 30
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "dev_password_change_me"]
     ports:
-      # 6379 falls inside a Windows excluded port range (WinNAT); 16379 avoids it
-      - "16379:6379"
+      - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "dev_password_change_me", "ping"]
       interval: 2s
       timeout: 2s
       retries: 30

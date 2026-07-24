@@ -52,9 +52,9 @@ with `payload.json` like `{ "name": "Budi", "total": 150 }`.
 Set `HTTP_ALLOW_PRIVATE_IPS=true` on the worker when your workflow calls
 localhost URLs (the SSRF guard blocks private ranges by default).
 
-Note: Redis is exposed on host port **16379** (not 6379 — that port falls in a
-Windows reserved range on the reference dev machine); `REDIS_URL` defaults
-accordingly.
+Defaults point at the local stack: `DATABASE_URL=postgresql://postgres:dev_password_change_me@localhost:5432/xperiment`
+and `REDIS_URL=redis://:dev_password_change_me@localhost:6379/0` (see `.env.example`; the
+committed docker-compose recreates the same services).
 
 ## Tests
 

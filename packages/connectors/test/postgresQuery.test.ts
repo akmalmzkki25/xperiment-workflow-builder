@@ -3,7 +3,7 @@ import { createDefaultRegistry, type NodeRunContext } from '../src/index.js';
 
 const registry = createDefaultRegistry();
 const def = () => registry.get('postgres.query')!;
-const CONN = { connectionString: process.env['DATABASE_URL'] ?? 'postgres://xperiment:xperiment@localhost:5432/xperiment' };
+const CONN = { connectionString: process.env['DATABASE_URL'] ?? 'postgresql://postgres:dev_password_change_me@localhost:5432/xperiment' };
 
 function ctx(parameters: unknown, connection: unknown = CONN): NodeRunContext {
   return {

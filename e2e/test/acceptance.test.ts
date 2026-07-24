@@ -15,7 +15,7 @@ import {
   waitForTerminal,
 } from './helpers.js';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgres://xperiment:xperiment@localhost:5432/xperiment';
+const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:dev_password_change_me@localhost:5432/xperiment';
 
 let pool: Pool;
 let services: ChildProcess[] = [];
@@ -226,6 +226,6 @@ describe('PRD acceptance scenario', () => {
     const inputs = (stored.rows[0] as { inputs: string }).inputs;
     expect(inputs).not.toContain('stub-key');
     expect(inputs).not.toContain('stub-token');
-    expect(inputs).not.toContain('xperiment:xperiment@');
+    expect(inputs).not.toContain('dev_password_change_me');
   }, 90000);
 });

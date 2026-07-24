@@ -18,7 +18,7 @@ import { queueNode, seedExecution, truncateAll } from './helpers.js';
 let pool: Pool;
 let deps: WorkerDeps;
 const credentialsKey = deriveTriggerKey('xperiment-dev-credentials-secret-change-me');
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgres://xperiment:xperiment@localhost:5432/xperiment';
+const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:dev_password_change_me@localhost:5432/xperiment';
 
 beforeAll(async () => {
   pool = createPool();
@@ -83,7 +83,7 @@ describe('worker connection resolution', () => {
       `SELECT input_json::text AS t FROM execution_nodes WHERE execution_id = $1 AND node_id = 'q'`,
       [executionId],
     );
-    expect((input.rows[0] as { t: string }).t).not.toContain('xperiment:xperiment'); // no conn string stored
+    expect((input.rows[0] as { t: string }).t).not.toContain('dev_password_change_me'); // no conn string stored
   });
 
   test('missing connectionRef fails non-retryably with connection_required', async () => {
