@@ -106,6 +106,21 @@ pnpm --filter @xperiment/gateway dev
 pnpm --filter @xperiment/scheduler dev
 ```
 
+## Connections (Phase 1B)
+
+Credentialed connectors (`postgres.query`, `telegram.sendMessage`, `openai.chat`,
+`gemini.generate`) reference stored connections instead of embedding secrets:
+
+1. `POST /v1/connections` with `{ connectorKey, name, payload }` — payloads are
+   validated per connector, AES-256-GCM encrypted at rest, and never returned by the
+   API. `POST /v1/connections/:id/test` verifies against the provider.
+2. Reference the connection from a node via `connectionRef: "<connection id>"` in the
+   IR. Publish fails with `connection_required` / `connection_not_found` /
+   `connection_wrong_type` findings until every credentialed node resolves.
+3. The worker decrypts just-in-time and passes the payload in memory only — it never
+   appears in stored inputs, events, or logs. Provider `baseUrl` overrides in the
+   payload support stubbed testing.
+
 ## Layout
 
 ```text

@@ -20,6 +20,7 @@ const SERVICE_ENV = {
   SCHEDULER_INTERVAL_MS: '500',
   GATEWAY_URL: 'http://127.0.0.1:3103',
   TRIGGER_SECRET_KEY: 'xperiment-e2e-trigger-secret',
+  CREDENTIALS_SECRET_KEY: 'xperiment-e2e-credentials-secret',
   HTTP_ALLOW_PRIVATE_IPS: 'true',
   WORKER_LOCK_DURATION: '2000',
   WORKER_STALLED_INTERVAL: '500',
