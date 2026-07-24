@@ -1,0 +1,274 @@
+import { clearToken, getToken, getWorkspace } from './auth';
+
+export interface ConnectorItem {
+  type: string;
+  kind: 'trigger' | 'action' | 'logic';
+  operationVersion: string;
+  defaultEffectClass: 'pure' | 'read' | 'write';
+  outputPorts: string[];
+  requiresConnection?: string;
+  paramsJsonSchema: unknown;
+}
+
+export interface WorkflowSummary {
+  id: string;
+  name: string;
+  status: string;
+  activeVersionId: string | null;
+  draftRevision: number;
+  active: boolean;
+}
+
+export interface WorkflowVersionInfo {
+  id: string;
+  versionNumber: number;
+  definitionHash: string;
+  publishedAt: string;
+}
+
+export interface WorkflowDetail extends WorkflowSummary {
+  draft: { definition: unknown; revision: number } | null;
+  versions: WorkflowVersionInfo[];
+}
+
+export interface Finding {
+  layer: 'schema' | 'graph' | 'parameters' | 'expressions' | 'connections';
+  code: string;
+  message: string;
+  nodeId?: string;
+  path?: string;
+  position?: number;
+}
+
+export interface TriggerView {
+  nodeId: string;
+  type: 'webhook' | 'schedule';
+  active: boolean;
+  url?: string;
+  testUrl?: string;
+  authMode?: string | null;
+  secret?: string | null;
+  cron?: string | null;
+  timezone?: string | null;
+  nextFireAt?: string | null;
+}
+
+export interface ConnectionRow {
+  id: string;
+  connectorKey: string;
+  name: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface ExecutionRow {
+  id: string;
+  workflowId: string;
+  workflowVersionId: string;
+  status: string;
+  errorSummary: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+export interface ExecutionNodeRow {
+  nodeId: string;
+  status: string;
+  attempt: number;
+  outputPort: string | null;
+  errorJson: unknown;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface ExecutionEventRow {
+  sequence: number;
+  eventType: string;
+  nodeId: string | null;
+  payload: unknown;
+  createdAt: string;
+}
+
+export interface ExecutionDetail {
+  execution: ExecutionRow;
+  nodes: ExecutionNodeRow[];
+  events: ExecutionEventRow[];
+}
+
+export interface MeResponse {
+  user: { id: string };
+  currentWorkspaceId: string;
+  workspaces: { id: string; name: string; role: string }[];
+}
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly title: string,
+    public readonly detail?: string,
+  ) {
+    super(detail ? `${title}: ${detail}` : title);
+    this.name = 'ApiError';
+  }
+}
+
+export interface ClientDeps {
+  baseUrl: string;
+  getToken: () => string | null;
+  getWorkspace?: () => string | null;
+  onUnauthorized?: () => void;
+  fetchImpl?: typeof fetch;
+}
+
+interface RequestOptions {
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
+async function parseProblem(res: Response): Promise<{ title: string; detail?: string }> {
+  try {
+    const body = (await res.json()) as { title?: string; detail?: string };
+    if (body.title) return { title: body.title, ...(body.detail ? { detail: body.detail } : {}) };
+  } catch {
+    // fall through to the generic title
+  }
+  return { title: `HTTP ${res.status}` };
+}
+
+export class ApiClient {
+  constructor(private readonly deps: ClientDeps) {}
+
+  async request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+    const headers: Record<string, string> = { ...opts.headers };
+    const token = this.deps.getToken();
+    if (token) headers['authorization'] = `Bearer ${token}`;
+    const workspace = this.deps.getWorkspace?.();
+    if (workspace) headers['x-xperiment-workspace'] = workspace;
+    const init: RequestInit = { method, headers };
+    if (opts.body !== undefined) {
+      headers['content-type'] = 'application/json';
+      init.body = JSON.stringify(opts.body);
+    }
+    const fetchImpl = this.deps.fetchImpl ?? fetch;
+    const res = await fetchImpl(`${this.deps.baseUrl}${path}`, init);
+    if (res.status === 401) this.deps.onUnauthorized?.();
+    if (!res.ok) {
+      const problem = await parseProblem(res);
+      throw new ApiError(res.status, problem.title, problem.detail);
+    }
+    if (res.status === 204) return undefined as T;
+    return (await res.json()) as T;
+  }
+
+  register(email: string, password: string): Promise<{ token: string }> {
+    return this.request('POST', '/v1/auth/register', { body: { email, password } });
+  }
+
+  login(email: string, password: string): Promise<{ token: string }> {
+    return this.request('POST', '/v1/auth/login', { body: { email, password } });
+  }
+
+  me(): Promise<MeResponse> {
+    return this.request('GET', '/v1/auth/me');
+  }
+
+  logout(): Promise<void> {
+    return this.request('POST', '/v1/auth/logout');
+  }
+
+  listConnectors(): Promise<{ items: ConnectorItem[] }> {
+    return this.request('GET', '/v1/connectors');
+  }
+
+  listWorkflows(): Promise<{ items: WorkflowSummary[]; nextCursor: string | null }> {
+    return this.request('GET', '/v1/workflows');
+  }
+
+  createWorkflow(name: string): Promise<WorkflowSummary> {
+    return this.request('POST', '/v1/workflows', { body: { name } });
+  }
+
+  getWorkflow(id: string): Promise<WorkflowDetail> {
+    return this.request('GET', `/v1/workflows/${id}`);
+  }
+
+  putDraft(id: string, definition: unknown, revision: number): Promise<{ revision: number }> {
+    return this.request('PUT', `/v1/workflows/${id}/draft`, {
+      body: { definition },
+      headers: { 'if-match': String(revision) },
+    });
+  }
+
+  validate(id: string): Promise<{ valid: boolean; findings: Finding[] }> {
+    return this.request('POST', `/v1/workflows/${id}/validate`);
+  }
+
+  publish(id: string): Promise<{ id: string; versionNumber: number; definitionHash: string }> {
+    return this.request('POST', `/v1/workflows/${id}/publish`);
+  }
+
+  activate(id: string): Promise<{ active: true; triggers: TriggerView[] }> {
+    return this.request('POST', `/v1/workflows/${id}/activate`);
+  }
+
+  deactivate(id: string): Promise<{ active: false }> {
+    return this.request('POST', `/v1/workflows/${id}/deactivate`);
+  }
+
+  listTriggers(id: string): Promise<{ triggers: TriggerView[] }> {
+    return this.request('GET', `/v1/workflows/${id}/triggers`);
+  }
+
+  execute(id: string): Promise<{ executionId: string; status: string; created: boolean }> {
+    return this.request('POST', `/v1/workflows/${id}/execute`);
+  }
+
+  listConnections(): Promise<{ items: ConnectionRow[] }> {
+    return this.request('GET', '/v1/connections');
+  }
+
+  createConnection(connectorKey: string, name: string, payload: unknown): Promise<ConnectionRow> {
+    return this.request('POST', '/v1/connections', { body: { connectorKey, name, payload } });
+  }
+
+  deleteConnection(id: string): Promise<void> {
+    return this.request('DELETE', `/v1/connections/${id}`);
+  }
+
+  testConnection(id: string): Promise<{ ok: boolean; error?: string }> {
+    return this.request('POST', `/v1/connections/${id}/test`);
+  }
+
+  listExecutions(q?: {
+    workflowId?: string;
+    limit?: number;
+  }): Promise<{ items: ExecutionRow[]; nextCursor: string | null }> {
+    const params = new URLSearchParams();
+    if (q?.workflowId) params.set('workflowId', q.workflowId);
+    if (q?.limit) params.set('limit', String(q.limit));
+    const qs = params.toString();
+    return this.request('GET', `/v1/executions${qs ? `?${qs}` : ''}`);
+  }
+
+  getExecution(id: string): Promise<ExecutionDetail> {
+    return this.request('GET', `/v1/executions/${id}`);
+  }
+}
+
+let browserClient: ApiClient | null = null;
+
+export function getBrowserClient(): ApiClient {
+  browserClient ??= new ApiClient({
+    baseUrl: process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000',
+    getToken,
+    getWorkspace,
+    onUnauthorized: () => {
+      clearToken();
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
+    },
+  });
+  return browserClient;
+}
