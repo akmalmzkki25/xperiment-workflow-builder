@@ -3,6 +3,7 @@ import {
   createWorkflow,
   getDraft,
   getWorkflow,
+  listConnections,
   listWorkflows,
   updateDraft,
 } from '@xperiment/db';
@@ -75,11 +76,17 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ServerDeps): 
     return { revision };
   });
 
+  const workspaceConnections = async () =>
+    (await listConnections(deps.pool)).map((c) => ({ id: c.id, connectorKey: c.connectorKey }));
+
   app.post('/v1/workflows/:id/validate', async (req, reply) => {
     const { id } = req.params as { id: string };
     const draft = await getDraft(deps.pool, id);
     if (!draft) return sendProblem(reply, 404, 'Workflow not found');
-    const result = validateWorkflow(draft.definition, { registry: deps.registry });
+    const result = validateWorkflow(draft.definition, {
+      registry: deps.registry,
+      connections: await workspaceConnections(),
+    });
     return { valid: result.valid, findings: result.findings };
   });
 
@@ -87,7 +94,10 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ServerDeps): 
     const { id } = req.params as { id: string };
     const draft = await getDraft(deps.pool, id);
     if (!draft) return sendProblem(reply, 404, 'Workflow not found');
-    const result = validateWorkflow(draft.definition, { registry: deps.registry });
+    const result = validateWorkflow(draft.definition, {
+      registry: deps.registry,
+      connections: await workspaceConnections(),
+    });
     if (!result.valid || !result.ir) {
       return sendProblem(reply, 422, 'Draft failed validation', undefined, result.findings);
     }

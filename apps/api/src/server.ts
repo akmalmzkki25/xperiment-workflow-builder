@@ -3,6 +3,7 @@ import type { ConnectorRegistry } from '@xperiment/connectors';
 import { deriveTriggerKey } from '@xperiment/db';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import { registerConnectionRoutes } from './routes/connections.js';
 import { registerExecutionRoutes } from './routes/executions.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerTriggerRoutes } from './routes/triggers.js';
@@ -13,6 +14,7 @@ export interface ServerDeps {
   registry: ConnectorRegistry;
   gatewayUrl?: string;
   triggerKey?: Buffer;
+  credentialsKey?: Buffer;
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -29,10 +31,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     gatewayUrl: deps.gatewayUrl ?? process.env['GATEWAY_URL'] ?? 'http://localhost:3003',
     triggerKey:
       deps.triggerKey ?? deriveTriggerKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+    credentialsKey:
+      deps.credentialsKey ??
+      deriveTriggerKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
   };
   registerHealthRoutes(app);
   registerWorkflowRoutes(app, deps);
   registerExecutionRoutes(app, deps);
   registerTriggerRoutes(app, resolvedDeps);
+  registerConnectionRoutes(app, resolvedDeps);
   return app;
 }

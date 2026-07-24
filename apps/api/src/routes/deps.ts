@@ -5,4 +5,5 @@ export interface ResolvedServerDeps {
   registry: import('@xperiment/connectors').ConnectorRegistry;
   gatewayUrl: string;
   triggerKey: Buffer;
+  credentialsKey: Buffer;
 }
