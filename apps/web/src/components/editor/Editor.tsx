@@ -6,6 +6,7 @@ import {
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -53,6 +54,8 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     return () => reset();
   }, [reset, workflowId]);
 
+  const flow = useReactFlow();
+
   useEffect(() => {
     if (initializedRef.current || !workflowQ.data) return;
     const draft = workflowQ.data.draft;
@@ -62,7 +65,13 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     setRevision(draft?.revision ?? 1);
     previousDefinitionRef.current = draft?.definition ?? {};
     initializedRef.current = true;
-  }, [workflowQ.data, setNodes, setEdges]);
+    if (canvas.nodes.length > 0) {
+      // Fit only for pre-existing graphs, after React Flow has measured them.
+      // (A declarative fitView prop would fire late and shift the viewport
+      // under the user's pointer on freshly-created canvases.)
+      setTimeout(() => void flow.fitView({ padding: 0.3, maxZoom: 1 }), 80);
+    }
+  }, [workflowQ.data, setNodes, setEdges, flow]);
 
   const catalogByType = useMemo(
     () => new Map((catalogQ.data?.items ?? []).map((i) => [i.type, i])),
@@ -249,6 +258,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
           />
           {selectedNode ? (
             <Inspector
+              key={selectedNode.id}
               ir={selectedNode.data.ir}
               allNodeIds={nodes.map((n) => n.id)}
               onRename={onRename}

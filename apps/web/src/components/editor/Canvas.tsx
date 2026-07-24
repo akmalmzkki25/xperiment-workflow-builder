@@ -38,8 +38,7 @@ export function Canvas({ nodes, edges, onNodesChange, onEdgesChange, onConnect, 
         onNodeClick={(_, node) => onSelect(node.id)}
         onPaneClick={() => onSelect(null)}
         deleteKeyCode={['Delete', 'Backspace']}
-        fitView
-        fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
+        connectionRadius={48}
         minZoom={0.25}
         maxZoom={2}
       >
