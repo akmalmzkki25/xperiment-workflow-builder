@@ -138,6 +138,42 @@ describe('workspaces, invites, roles, api keys', () => {
     expect(denied.statusCode).toBe(403);
   });
 
+  test('workspace create/list and invalid bodies', async () => {
+    const user = await createAuthedUser(app);
+    const created = await user.inject({ method: 'POST', url: '/v1/workspaces', payload: { name: 'Second' } });
+    expect(created.statusCode).toBe(201);
+    const list = await user.inject({ method: 'GET', url: '/v1/workspaces' });
+    expect(list.json<{ items: unknown[] }>().items).toHaveLength(2);
+    expect((await user.inject({ method: 'POST', url: '/v1/workspaces', payload: {} })).statusCode).toBe(400);
+    expect(
+      (await user.inject({ method: 'POST', url: '/v1/workspaces/invites', payload: { role: 'owner' } })).statusCode,
+    ).toBe(400); // owner not invitable
+    expect(
+      (await user.inject({ method: 'POST', url: '/v1/invites/accept', payload: {} })).statusCode,
+    ).toBe(400);
+    expect(
+      (await user.inject({ method: 'POST', url: '/v1/api-keys', payload: {} })).statusCode,
+    ).toBe(400);
+    expect(
+      (await user.inject({ method: 'DELETE', url: `/v1/api-keys/00000000-0000-0000-0000-0000000000aa` })).statusCode,
+    ).toBe(404);
+  });
+
+  test('api-key contexts are rejected from session-only workspace routes', async () => {
+    const user = await createAuthedUser(app);
+    const created = await user.inject({ method: 'POST', url: '/v1/api-keys', payload: { name: 'k' } });
+    const key = created.json<{ key: string }>().key;
+    const viaKey = (url: string, method = 'POST', payload?: unknown) =>
+      app.inject({ method: method as 'POST', url, headers: { authorization: `Bearer ${key}` }, ...(payload ? { payload } : {}) });
+    expect((await viaKey('/v1/workspaces', 'POST', { name: 'x' })).statusCode).toBe(400);
+    expect((await viaKey('/v1/workspaces', 'GET')).statusCode).toBe(400);
+    expect((await viaKey('/v1/invites/accept', 'POST', { token: 'x' })).statusCode).toBe(400);
+    expect((await viaKey('/v1/auth/logout-all', 'POST')).statusCode).toBe(400);
+    // API key has builder role -> admin-gated routes are 403.
+    expect((await viaKey('/v1/api-keys', 'GET')).statusCode).toBe(403);
+    expect((await viaKey('/v1/workspaces/invites', 'POST', { role: 'viewer' })).statusCode).toBe(403);
+  });
+
   test('api keys: shown once, authenticate as builder, revocable', async () => {
     const owner = await createAuthedUser(app);
     const created = await owner.inject({ method: 'POST', url: '/v1/api-keys', payload: { name: 'ci' } });

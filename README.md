@@ -106,6 +106,26 @@ pnpm --filter @xperiment/gateway dev
 pnpm --filter @xperiment/scheduler dev
 ```
 
+## Authentication (Phase 1C)
+
+Every control-plane API call requires a bearer token; the data plane (webhook
+gateway, scheduler, workers) inherits tenant context from the rows it processes.
+
+1. `POST /v1/auth/register` `{ email, password }` → a session token (`qs_…`) and your
+   personal workspace. `POST /v1/auth/login` re-issues; `POST /v1/auth/logout-all`
+   revokes every session. Login is rate-limited and audited.
+2. Send `Authorization: Bearer <token>`; switch workspaces with the
+   `X-Xperiment-Workspace` header (requires membership). Roles: viewer < builder <
+   admin < owner; writes need builder, member/key management needs admin.
+3. `POST /v1/workspaces/invites` (admin) returns a one-time token another logged-in
+   user redeems via `POST /v1/invites/accept` (email delivery lands later).
+4. `POST /v1/api-keys` (admin) issues a `qk_…` key shown once — it authenticates as a
+   builder for programmatic access. CLI: `pnpm xperiment login --email … --password …`
+   stores the token in `~/.xperiment/credentials.json` (`XPERIMENT_TOKEN` env overrides).
+
+Cross-tenant isolation is enforced by workspace-scoped repositories and proven by an
+IDOR test matrix (`apps/api/test/isolation.test.ts`, `e2e/test/isolation.test.ts`).
+
 ## Connections (Phase 1B)
 
 Credentialed connectors (`postgres.query`, `telegram.sendMessage`, `openai.chat`,
