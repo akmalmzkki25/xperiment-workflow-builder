@@ -17,12 +17,24 @@ export interface OpenRouterConfig {
   fetchImpl?: typeof fetch;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface ChatResult {
+  content: string;
+  usage: TokenUsage;
+}
+
 export interface ChatClient {
-  chat(messages: ChatMessage[], opts?: { responseSchema?: unknown }): Promise<string>;
+  chat(messages: ChatMessage[], opts?: { responseSchema?: unknown }): Promise<ChatResult>;
 }
 
 interface ChatCompletion {
   choices?: { message?: { content?: string } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
 export function createOpenRouterClient(cfg: OpenRouterConfig): ChatClient {
@@ -58,7 +70,15 @@ export function createOpenRouterClient(cfg: OpenRouterConfig): ChatClient {
       if (typeof content !== 'string') {
         throw new AiProviderError(null, 'AI provider returned no completion');
       }
-      return content;
+      const u = data.usage ?? {};
+      return {
+        content,
+        usage: {
+          promptTokens: u.prompt_tokens ?? 0,
+          completionTokens: u.completion_tokens ?? 0,
+          totalTokens: u.total_tokens ?? 0,
+        },
+      };
     },
   };
 }

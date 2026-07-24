@@ -52,7 +52,12 @@ beforeAll(async () => {
         return;
       }
       const content = scripted.shift() ?? '{}';
-      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }));
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content } }],
+          usage: { prompt_tokens: 30, completion_tokens: 12, total_tokens: 42 },
+        }),
+      );
     });
   });
   await new Promise<void>((r) => stub.listen(0, '127.0.0.1', r));
@@ -80,6 +85,21 @@ describe('POST /v1/ai/generate', () => {
     expect(body.ir.nodes).toHaveLength(2);
     expect(body.attempts).toBe(1);
     expect(lastAuthHeader).toBe(`Bearer ${FAKE_KEY}`);
+    await app.close();
+  });
+
+  test('records an ai_tokens usage row for a successful generation', async () => {
+    const app = buildAiServer(FAKE_KEY);
+    const auth = await createAuthedUser(app);
+    scripted = [JSON.stringify(validIr())];
+    await auth.inject({ method: 'POST', url: '/v1/ai/generate', payload: { prompt: 'build it' } });
+    const rows = await pool.query(
+      `SELECT quantity, metadata->>'kind' AS kind FROM usage_events WHERE workspace_id=$1 AND metric='ai_tokens'`,
+      [auth.workspaceId],
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(Number((rows.rows[0] as { quantity: string }).quantity)).toBe(42);
+    expect((rows.rows[0] as { kind: string }).kind).toBe('generate');
     await app.close();
   });
 

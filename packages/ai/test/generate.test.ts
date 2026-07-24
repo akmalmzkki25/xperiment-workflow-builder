@@ -26,6 +26,8 @@ function validIr(name = 'AI flow'): unknown {
   };
 }
 
+const USAGE_PER_CALL = 7; // fixed per-call token cost so tokensUsed accumulation is assertable
+
 /** ChatClient that returns queued strings in order, recording the messages it saw. */
 function scriptedClient(responses: string[]): { client: ChatClient; seen: ChatMessage[][] } {
   const seen: ChatMessage[][] = [];
@@ -35,7 +37,7 @@ function scriptedClient(responses: string[]): { client: ChatClient; seen: ChatMe
       seen.push(messages);
       const r = responses[i] ?? '{}';
       i += 1;
-      return r;
+      return { content: r, usage: { promptTokens: 4, completionTokens: 3, totalTokens: USAGE_PER_CALL } };
     },
   };
   return { client, seen };
@@ -53,6 +55,14 @@ describe('generateWorkflow', () => {
     expect(result.attempts).toBe(1);
     expect(result.findings).toEqual([]);
     expect(result.ir?.nodes).toHaveLength(2);
+  });
+
+  test('accumulates tokensUsed across attempts', async () => {
+    const broken = { schemaVersion: '0.1', workflow: { id: 'w', name: 'n' }, entrypoints: ['ghost'], nodes: [], edges: [] };
+    const { client } = scriptedClient([JSON.stringify(broken), JSON.stringify(validIr())]);
+    const result = await generateWorkflow('build it', { ...deps, client });
+    expect(result.attempts).toBe(2);
+    expect(result.tokensUsed).toBe(USAGE_PER_CALL * 2); // one call per attempt
   });
 
   test('repairs an invalid draft then succeeds, feeding findings back', async () => {

@@ -17,6 +17,7 @@ export interface GenerateResult {
   ir?: WorkflowIR;
   findings: ValidationFinding[];
   attempts: number;
+  tokensUsed: number;
 }
 
 export async function generateWorkflow(
@@ -32,8 +33,11 @@ export async function generateWorkflow(
   ];
 
   let lastFindings: ValidationFinding[] = [];
+  let tokensUsed = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const content = await deps.client.chat(messages);
+    const res = await deps.client.chat(messages);
+    tokensUsed += res.usage.totalTokens;
+    const content = res.content;
 
     let candidate: unknown;
     try {
@@ -50,7 +54,7 @@ export async function generateWorkflow(
 
     const result = validateWorkflow(candidate, { registry: deps.registry, connections: connectionSummaries });
     if (result.valid && result.ir) {
-      return { ir: result.ir, findings: [], attempts: attempt };
+      return { ir: result.ir, findings: [], attempts: attempt, tokensUsed };
     }
     lastFindings = result.findings;
     if (attempt < maxAttempts) {
@@ -58,5 +62,5 @@ export async function generateWorkflow(
     }
   }
 
-  return { findings: lastFindings, attempts: maxAttempts };
+  return { findings: lastFindings, attempts: maxAttempts, tokensUsed };
 }

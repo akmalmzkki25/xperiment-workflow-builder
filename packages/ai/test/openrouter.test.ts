@@ -24,6 +24,10 @@ const messages: ChatMessage[] = [
 ];
 
 const completion = (content: string) => ({ choices: [{ message: { role: 'assistant', content } }] });
+const completionWithUsage = (content: string) => ({
+  choices: [{ message: { role: 'assistant', content } }],
+  usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+});
 
 describe('createOpenRouterClient', () => {
   test('posts to the chat-completions endpoint with auth + app headers', async () => {
@@ -37,7 +41,7 @@ describe('createOpenRouterClient', () => {
       fetchImpl,
     });
     const out = await client.chat(messages);
-    expect(out).toBe('{"ok":true}');
+    expect(out.content).toBe('{"ok":true}');
     expect(calls[0]!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
     const headers = new Headers(calls[0]!.init.headers);
     expect(headers.get('authorization')).toBe('Bearer sk-secret-xyz');
@@ -47,6 +51,18 @@ describe('createOpenRouterClient', () => {
     expect(sent.model).toBe('google/gemini-3.1-flash-lite');
     expect(sent.messages).toEqual(messages);
     expect(sent.response_format).toBeUndefined();
+  });
+
+  test('surfaces the provider token usage (zeroed when the field is absent)', async () => {
+    const withUsage = fakeFetch(200, completionWithUsage('{}'));
+    const c1 = createOpenRouterClient({ apiKey: 'k', model: 'm', baseUrl: 'https://openrouter.ai', fetchImpl: withUsage.fetchImpl });
+    const r1 = await c1.chat(messages);
+    expect(r1.usage).toEqual({ promptTokens: 12, completionTokens: 8, totalTokens: 20 });
+
+    const noUsage = fakeFetch(200, completion('{}'));
+    const c2 = createOpenRouterClient({ apiKey: 'k', model: 'm', baseUrl: 'https://openrouter.ai', fetchImpl: noUsage.fetchImpl });
+    const r2 = await c2.chat(messages);
+    expect(r2.usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
   });
 
   test('includes strict json_schema response_format only when a schema is passed', async () => {

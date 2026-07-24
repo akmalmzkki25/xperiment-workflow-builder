@@ -1,6 +1,6 @@
 import { generateWorkflow, type CatalogEntry } from '@xperiment/ai';
 import { connectorCatalog } from '@xperiment/connectors';
-import { listConnections } from '@xperiment/db';
+import { listConnections, recordAiUsage } from '@xperiment/db';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { authOf, roleGate } from '../auth/plugin.js';
@@ -16,6 +16,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
   async function handle(
     reply: FastifyReply,
     workspaceId: string,
+    kind: 'generate' | 'edit',
     prompt: string,
     currentIr?: unknown,
   ): Promise<void> {
@@ -52,6 +53,12 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
         attempts: result.attempts,
       });
     }
+    try {
+      await recordAiUsage(deps.pool, { workspaceId, tokens: result.tokensUsed, model: deps.ai.model, kind });
+    } catch (e) {
+      // Best-effort: a metering write must never fail the user's generation.
+      reply.log.warn({ err: (e as Error).message }, 'usage.ai_record_failed');
+    }
     return reply.status(200).send({ ir: result.ir, attempts: result.attempts });
   }
 
@@ -60,7 +67,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
     if (!roleGate(reply, ctx, 'builder')) return;
     const parsed = generateSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    return handle(reply, ctx.workspaceId, parsed.data.prompt);
+    return handle(reply, ctx.workspaceId, 'generate', parsed.data.prompt);
   });
 
   app.post('/v1/ai/edit', async (req, reply) => {
@@ -68,6 +75,6 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
     if (!roleGate(reply, ctx, 'builder')) return;
     const parsed = editSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    return handle(reply, ctx.workspaceId, parsed.data.prompt, parsed.data.definition);
+    return handle(reply, ctx.workspaceId, 'edit', parsed.data.prompt, parsed.data.definition);
   });
 }
