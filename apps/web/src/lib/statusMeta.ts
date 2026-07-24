@@ -15,6 +15,7 @@ const STATUS_META: Record<string, StatusMeta> = {
   FAILED: { label: 'Failed', glyph: '✕', colorVar: '--status-failed' },
   TIMED_OUT: { label: 'Timed out', glyph: '⏱', colorVar: '--status-failed' },
   RUNNING: { label: 'Running', glyph: '●', colorVar: '--status-running', pulse: true },
+  WAITING: { label: 'Waiting', glyph: '⏸', colorVar: '--status-retry' },
   QUEUED: { label: 'Queued', glyph: '◌', colorVar: '--status-neutral' },
   CREATED: { label: 'Created', glyph: '◌', colorVar: '--status-neutral' },
   PENDING: { label: 'Pending', glyph: '◌', colorVar: '--status-neutral' },

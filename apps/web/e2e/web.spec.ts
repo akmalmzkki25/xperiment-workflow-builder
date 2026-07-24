@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-import { AI_FAIL_MARKER, TELEGRAM_STUB_PORT } from './services';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { AI_FAIL_MARKER, API_URL, TELEGRAM_STUB_PORT } from './services';
 
 const runId = Date.now();
 const EMAIL = `web-${runId}@xperiment.test`;
@@ -162,4 +162,69 @@ test('the AI dock generates a workflow onto the canvas', async ({ page }) => {
   await page.getByTestId('ai-prompt').fill(`please ${AI_FAIL_MARKER}`);
   await page.getByTestId('ai-generate').click();
   await expect(page.getByTestId('ai-error')).toBeVisible();
+});
+
+const approvalIr = (workflowId: string) => ({
+  schemaVersion: '0.1',
+  workflow: { id: workflowId, name: 'Refund approval' },
+  entrypoints: ['hook'],
+  nodes: [
+    { id: 'hook', kind: 'trigger', type: 'webhook.trigger', operationVersion: '0.1.0', parameters: { authMode: 'none' } },
+    { id: 'gate', kind: 'logic', type: 'core.approval', operationVersion: '0.1.0', parameters: { message: 'Approve the refund?', ttlMs: 3_600_000, fallback: 'reject' } },
+    { id: 'done', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: { released: true } } },
+  ],
+  edges: [
+    { id: 'e_hook_main_gate', from: { nodeId: 'hook', port: 'main' }, to: { nodeId: 'gate', port: 'input' } },
+    { id: 'e_gate_approved_done', from: { nodeId: 'gate', port: 'approved' }, to: { nodeId: 'done', port: 'input' } },
+  ],
+});
+
+async function api(
+  request: APIRequestContext,
+  method: 'get' | 'post' | 'put',
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+) {
+  const headers: Record<string, string> = { authorization: `Bearer ${token}`, ...extraHeaders };
+  // Only send content-type with an actual body — Fastify 400s on an empty JSON body.
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  return request[method](`${API_URL}${path}`, { headers, ...(body !== undefined ? { data: body } : {}) });
+}
+
+test('a human approval suspends a run until approved from the panel', async ({ page, request }) => {
+  // Build + activate the approval workflow via the API using the captured token.
+  const created = await api(request, 'post', '/v1/workflows', { name: 'Refund approval' });
+  const { id: workflowId } = (await created.json()) as { id: string };
+  await api(request, 'put', `/v1/workflows/${workflowId}/draft`, { definition: approvalIr(workflowId) }, { 'if-match': '1' });
+  const published = await api(request, 'post', `/v1/workflows/${workflowId}/publish`);
+  expect(published.status()).toBe(201);
+  const activated = await api(request, 'post', `/v1/workflows/${workflowId}/activate`);
+  const { triggers } = (await activated.json()) as { triggers: { url?: string }[] };
+  const webhookUrl2 = triggers.find((t) => t.url)?.url;
+  expect(webhookUrl2).toBeTruthy();
+
+  // Fire it — the run should suspend at the approval node.
+  await request.post(webhookUrl2!, { data: { amount: 500 } });
+
+  // Approve from the browser panel.
+  await loginWithToken(page);
+  await page.getByTestId('nav-approvals').click();
+  await expect(page.getByTestId('approvals-row-gate')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('approval-comment-gate').fill('looks fine');
+  await page.getByTestId('approve-gate').click();
+  await expect(page.getByTestId('approvals-row-gate')).toHaveCount(0, { timeout: 20_000 });
+  await page.screenshot({ path: `${ARTIFACTS}/07-approvals.png` });
+
+  // The run should complete once approved.
+  await expect
+    .poll(
+      async () => {
+        const execs = await api(request, 'get', `/v1/executions?workflowId=${workflowId}`);
+        const { items } = (await execs.json()) as { items: { id: string; status: string }[] };
+        return items[0]?.status;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe('SUCCEEDED');
 });

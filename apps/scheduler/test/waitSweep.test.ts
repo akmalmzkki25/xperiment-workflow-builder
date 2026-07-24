@@ -84,6 +84,41 @@ describe('runWaitSweep', () => {
     expect((node.rows[0] as { output_port: string }).output_port).toBe('rejected');
   });
 
+  test('approve fallback resumes on the approved port; fail fallback fails the node', async () => {
+    const approveExec = await seedWaitingExecution('a1');
+    await openWait(pool, {
+      executionId: approveExec,
+      nodeId: 'a1',
+      attempt: 1,
+      kind: 'approval',
+      resumeToken: 'tok-exp-approve',
+      expiresAt: new Date(Date.now() - 1000),
+      fallback: 'approve',
+      message: 'x',
+    });
+    const failExec = await seedWaitingExecution('a2');
+    await openWait(pool, {
+      executionId: failExec,
+      nodeId: 'a2',
+      attempt: 1,
+      kind: 'approval',
+      resumeToken: 'tok-exp-fail',
+      expiresAt: new Date(Date.now() - 1000),
+      fallback: 'fail',
+      message: 'x',
+    });
+
+    await runWaitSweep({ pool, log: () => {} });
+
+    const approved = await pool.query(
+      `SELECT status, output_port FROM execution_nodes WHERE execution_id=$1 AND node_id='a1'`,
+      [approveExec],
+    );
+    expect((approved.rows[0] as { status: string; output_port: string }).status).toBe('SUCCEEDED');
+    expect((approved.rows[0] as { output_port: string }).output_port).toBe('approved');
+    expect(await status(failExec, 'a2')).toBe('FAILED');
+  });
+
   test('fails the node when an event wait times out', async () => {
     const executionId = await seedWaitingExecution('evt');
     await openWait(pool, {

@@ -18,6 +18,7 @@ describe('statusMeta', () => {
     expect(statusMeta('QUEUED').colorVar).toBe('--status-neutral');
     expect(statusMeta('PENDING').colorVar).toBe('--status-neutral');
     expect(statusMeta('RETRY_SCHEDULED')).toEqual({ label: 'Retrying', glyph: '↻', colorVar: '--status-retry' });
+    expect(statusMeta('WAITING')).toEqual({ label: 'Waiting', glyph: '⏸', colorVar: '--status-retry' });
     expect(statusMeta('SKIPPED')).toEqual({ label: 'Skipped', glyph: '○', colorVar: '--status-neutral' });
   });
 

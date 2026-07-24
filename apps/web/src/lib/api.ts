@@ -262,6 +262,31 @@ export class ApiClient {
   aiEdit(prompt: string, definition: unknown): Promise<{ ir: unknown; attempts: number }> {
     return this.request('POST', '/v1/ai/edit', { body: { prompt, definition } });
   }
+
+  listApprovals(): Promise<{ items: ApprovalItem[] }> {
+    return this.request('GET', '/v1/approvals');
+  }
+
+  decideApproval(
+    executionId: string,
+    nodeId: string,
+    decision: 'approve' | 'reject',
+    comment?: string,
+  ): Promise<{ resolved: boolean }> {
+    return this.request('POST', `/v1/executions/${executionId}/approvals/${nodeId}`, {
+      body: { decision, ...(comment ? { comment } : {}) },
+    });
+  }
+}
+
+export interface ApprovalItem {
+  waitId: string;
+  executionId: string;
+  workflowId: string;
+  nodeId: string;
+  message: string | null;
+  expiresAt: string | null;
+  createdAt: string;
 }
 
 let browserClient: ApiClient | null = null;

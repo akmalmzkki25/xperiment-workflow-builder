@@ -167,6 +167,31 @@ pnpm --filter @xperiment/web e2e
 
 Flow screenshots land in `apps/web/e2e/artifacts/`.
 
+## Wait & Human Approval (Phase 2F)
+
+Three logic nodes suspend an execution **without holding a worker**, and resume
+durably (surviving a restart):
+
+- `core.delay` — wait a fixed duration, then continue.
+- `core.waitForEvent` — suspend until an external system calls the resume URL.
+- `core.approval` — suspend until a human approves or rejects, with an expiry and a
+  fallback decision (`approve` / `reject` / `fail`). Output ports `approved` / `rejected`.
+
+A suspended node becomes `WAITING`; timers and expiries are swept by the scheduler
+(durable, DB-backed). Resume happens three ways, all through one code path:
+
+- **Approvals** — `GET /v1/approvals` lists pending approvals; `POST
+  /v1/executions/:id/approvals/:nodeId` `{ decision, comment }` (builder role,
+  workspace-scoped, audited) resolves one. The web **Approvals** page drives this.
+- **External event** — the gateway `POST /r/:resumeToken` resumes a `waitForEvent`
+  node with the request body as its output. The resume URL appears in the execution
+  detail's `waits[]` while the wait is open.
+- **Timer / expiry** — the scheduler resumes due delays and applies the approval
+  fallback when one expires.
+
+Nothing auto-approves: an execution with an open wait is skipped by the global
+watchdog and bounded only by its own expiry.
+
 ## AI Builder (Phase 1E)
 
 Describe a workflow in plain language and get a validated draft on the canvas.
