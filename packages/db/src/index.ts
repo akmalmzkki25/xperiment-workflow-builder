@@ -8,4 +8,5 @@ export { deriveTriggerKey, encryptSecret, decryptSecret } from './crypto.js';
 export * from './repos/triggers.js';
 export * from './repos/connections.js';
 export * from './repos/auth.js';
+export * from './repos/waits.js';
 export { hashPassword, verifyPassword, generateToken, hashToken } from './authCrypto.js';

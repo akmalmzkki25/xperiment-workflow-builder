@@ -245,11 +245,20 @@ export interface EventRow {
   createdAt: string;
 }
 
+export interface WaitDetail {
+  nodeId: string;
+  kind: string;
+  status: string;
+  expiresAt: string | null;
+  decision: string | null;
+  resolvedBy: string | null;
+}
+
 export async function getExecutionDetail(
   pool: pg.Pool,
   id: string,
   workspaceId?: string,
-): Promise<{ execution: ExecutionRow; nodes: NodeRow[]; events: EventRow[] } | null> {
+): Promise<{ execution: ExecutionRow; nodes: NodeRow[]; events: EventRow[]; waits: WaitDetail[] } | null> {
   const ex = workspaceId
     ? await pool.query(`SELECT * FROM executions WHERE id = $1 AND workspace_id = $2`, [id, workspaceId])
     : await pool.query(`SELECT * FROM executions WHERE id = $1`, [id]);
@@ -263,6 +272,13 @@ export async function getExecutionDetail(
   const events = await pool.query(
     `SELECT sequence, event_type, node_id, payload_json, created_at
      FROM execution_events WHERE execution_id = $1 ORDER BY sequence`,
+    [id],
+  );
+  // resume_token is intentionally NOT selected here — the API adds resumeUrl for
+  // open event waits deliberately, and never exposes raw tokens for others.
+  const waits = await pool.query(
+    `SELECT node_id, kind, status, expires_at, decision, resolved_by
+     FROM execution_waits WHERE execution_id = $1 ORDER BY created_at`,
     [id],
   );
   return {
@@ -282,6 +298,14 @@ export async function getExecutionDetail(
       nodeId: (r['node_id'] as string | null) ?? null,
       payload: r['payload_json'],
       createdAt: ts(r['created_at'])!,
+    })),
+    waits: (waits.rows as Record<string, unknown>[]).map((r) => ({
+      nodeId: r['node_id'] as string,
+      kind: r['kind'] as string,
+      status: r['status'] as string,
+      expiresAt: ts(r['expires_at']),
+      decision: (r['decision'] as string | null) ?? null,
+      resolvedBy: (r['resolved_by'] as string | null) ?? null,
     })),
   };
 }
