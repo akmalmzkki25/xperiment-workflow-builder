@@ -31,7 +31,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await pool.query(
-    `TRUNCATE execution_waits, execution_nodes, execution_events, executions, task_outbox,
+    `TRUNCATE usage_events, execution_waits, execution_nodes, execution_events, executions, task_outbox,
      workflow_versions, workflow_drafts, workflows CASCADE`,
   );
 });
@@ -104,6 +104,17 @@ describe('POST /v1/executions/:id/cancel', () => {
     expect((detail.rows[0] as { status: string }).status).toBe('CANCELED');
     expect((await latestNodeStates(pool, executionId)).find((n) => n.nodeId === 'gate')?.status).toBe('SKIPPED');
     expect((await waitsForExecution(pool, executionId)).every((w) => w.status !== 'open')).toBe(true);
+  });
+
+  test('records a CANCELED execution usage row on cancel', async () => {
+    const { executionId } = await seedRunning(auth.workspaceId);
+    await auth.inject({ method: 'POST', url: `/v1/executions/${executionId}/cancel` });
+    const rows = await pool.query(
+      `SELECT metadata->>'status' AS status FROM usage_events WHERE execution_id=$1 AND metric='execution'`,
+      [executionId],
+    );
+    expect(rows.rowCount).toBe(1);
+    expect((rows.rows[0] as { status: string }).status).toBe('CANCELED');
   });
 
   test('emits exactly one node.skipped for a WAITING node (no cancel/closeOpenWaits double-emit)', async () => {

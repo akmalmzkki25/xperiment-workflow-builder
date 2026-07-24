@@ -17,6 +17,7 @@ import { registerExecutionRoutes } from './routes/executions.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerOpenapiRoutes } from './routes/openapi.js';
 import { registerTriggerRoutes } from './routes/triggers.js';
+import { registerUsageRoutes } from './routes/usage.js';
 import { registerWorkflowRoutes } from './routes/workflows.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
 
@@ -83,5 +84,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerConnectorRoutes(app, resolvedDeps);
   registerAiRoutes(app, resolvedDeps);
   registerApprovalRoutes(app, resolvedDeps);
+  registerUsageRoutes(app, resolvedDeps);
   return app;
 }

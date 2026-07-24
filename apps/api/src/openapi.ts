@@ -42,6 +42,7 @@ export const OPENAPI_DOCUMENT = {
     '/v1/executions/{id}/cancel': { post: { summary: 'Cancel a running execution', tags: ['executions'] } },
     '/v1/executions/{id}/approvals/{nodeId}': { post: { summary: 'Approve or reject a pending approval', tags: ['approvals'] } },
     '/v1/approvals': { get: { summary: 'List pending approvals', tags: ['approvals'] } },
+    '/v1/usage': { get: { summary: 'Usage totals + daily series (from/to, default current month)', tags: ['usage'] } },
     '/v1/connectors': { get: { summary: 'Connector catalog with param JSON Schemas', tags: ['connectors'] } },
     '/v1/connections': {
       get: { summary: 'List connections', tags: ['connections'] },

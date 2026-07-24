@@ -12,6 +12,7 @@ import {
   getWorkflow,
   latestNodeStates,
   listExecutions,
+  recordExecutionUsage,
   waitsForExecution,
   withTx,
 } from '@xperiment/db';
@@ -124,6 +125,15 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       await closeOpenWaits(client, id);
       await appendEvent(client, { executionId: id, eventType: 'execution.canceled' });
       await enqueueCompletionCallback(client, { workflowId: detail.execution.workflowId, executionId: id });
+      await recordExecutionUsage(client, {
+        workspaceId: ctx.workspaceId,
+        workflowId: detail.execution.workflowId,
+        executionId: id,
+        status: 'CANCELED',
+        nodeCount: states.filter((s) => s.status === 'SUCCEEDED' || s.status === 'FAILED').length,
+        computeMs: detail.execution.startedAt ? Date.now() - new Date(detail.execution.startedAt).getTime() : 0,
+        occurredAt: new Date(),
+      });
     });
     return { status: 'CANCELED' };
   });
