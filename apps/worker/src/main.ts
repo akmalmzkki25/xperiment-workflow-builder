@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, runMigrations } from '@xperiment/db';
+import { createPool, deriveTriggerKey, runMigrations } from '@xperiment/db';
 import {
   createQueues,
   createRedisConnection,
@@ -21,6 +21,7 @@ const deps: WorkerDeps = {
   pool,
   registry: createDefaultRegistry({ allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true' }),
   workerId: `worker-${randomUUID().slice(0, 8)}`,
+  credentialsKey: deriveTriggerKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
   log: (msg, extra) => logger.info(extra ?? {}, msg),
 };
 

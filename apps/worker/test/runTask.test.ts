@@ -1,6 +1,13 @@
 import { createServer, type Server } from 'node:http';
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, fetchUnpublished, latestNodeStates, runMigrations, succeededOutputs } from '@xperiment/db';
+import {
+  createPool,
+  deriveTriggerKey,
+  fetchUnpublished,
+  latestNodeStates,
+  runMigrations,
+  succeededOutputs,
+} from '@xperiment/db';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { runNodeTask, type WorkerDeps } from '../src/runTask.js';
@@ -19,6 +26,7 @@ beforeAll(async () => {
     pool,
     registry: createDefaultRegistry({ allowPrivateIps: true }),
     workerId: 'w-test',
+    credentialsKey: deriveTriggerKey('xperiment-dev-credentials-secret-change-me'),
     log: () => {},
   };
   server = createServer((req, res) => {
