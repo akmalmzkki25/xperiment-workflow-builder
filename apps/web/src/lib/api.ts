@@ -113,6 +113,12 @@ export interface UsageSummary {
   series: { date: string; executions: number; nodes: number; computeMs: number; aiTokens: number }[];
 }
 
+export interface WorkflowDiff {
+  nodes: { added: string[]; removed: string[]; modified: { nodeId: string; changedFields: string[] }[] };
+  edges: { added: string[]; removed: string[]; modified: { edgeId: string }[] };
+  changed: boolean;
+}
+
 export interface AlertRule {
   id: string;
   name: string;
@@ -298,6 +304,15 @@ export class ApiClient {
 
   retryExecution(id: string): Promise<{ executionId: string; created: boolean }> {
     return this.request('POST', `/v1/executions/${id}/retry`);
+  }
+
+  getDiff(id: string, from: string, to: string): Promise<{ from: string; to: string; diff: WorkflowDiff }> {
+    const qs = new URLSearchParams({ from, to }).toString();
+    return this.request('GET', `/v1/workflows/${id}/diff?${qs}`);
+  }
+
+  rollbackVersion(id: string, versionId: string): Promise<{ id: string; versionNumber: number; rolledBackFrom: number }> {
+    return this.request('POST', `/v1/workflows/${id}/versions/${versionId}/rollback`);
   }
 
   listAlerts(): Promise<{ items: AlertRule[] }> {

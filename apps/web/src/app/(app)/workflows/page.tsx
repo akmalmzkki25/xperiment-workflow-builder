@@ -56,6 +56,7 @@ export default function WorkflowsPage() {
               <th>Status</th>
               <th>Draft rev</th>
               <th>Id</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -73,6 +74,15 @@ export default function WorkflowsPage() {
                 <td>{wf.draftRevision}</td>
                 <td className="mono" style={{ color: 'var(--text-muted)' }}>
                   {wf.id.slice(0, 8)}
+                </td>
+                <td>
+                  <Link
+                    href={`/workflows/${wf.id}/versions`}
+                    className="q-btn q-btn--ghost q-btn--sm"
+                    data-testid={`wf-history-${wf.id.slice(0, 8)}`}
+                  >
+                    History
+                  </Link>
                 </td>
               </tr>
             ))}
