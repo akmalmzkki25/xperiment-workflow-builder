@@ -27,6 +27,8 @@ export const OPENAPI_DOCUMENT = {
     },
     '/v1/workflows/{id}': { get: { summary: 'Get a workflow with its draft + versions', tags: ['workflows'] } },
     '/v1/workflows/{id}/draft': { put: { summary: 'Update the draft (If-Match revision)', tags: ['workflows'] } },
+    '/v1/workflows/{id}/diff': { get: { summary: 'Diff two versions or a draft (from/to = version id or "draft")', tags: ['workflows'] } },
+    '/v1/workflows/{id}/versions/{versionId}/rollback': { post: { summary: 'Roll back: publish an old version forward as a new version', tags: ['workflows'] } },
     '/v1/workflows/{id}/validate': { post: { summary: 'Validate the draft', tags: ['workflows'] } },
     '/v1/workflows/{id}/publish': { post: { summary: 'Publish a version', tags: ['workflows'] } },
     '/v1/workflows/{id}/activate': { post: { summary: 'Activate triggers', tags: ['workflows'] } },

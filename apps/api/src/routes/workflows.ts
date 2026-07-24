@@ -5,13 +5,14 @@ import {
   createWorkflow,
   encryptSecret,
   getDraft,
+  getVersion,
   getWorkflow,
   listConnections,
   listWorkflows,
   setWorkflowCallback,
   updateDraft,
 } from '@xperiment/db';
-import { canonicalHash, validateWorkflow, type WorkflowIR } from '@xperiment/ir';
+import { canonicalHash, diffWorkflows, validateWorkflow, workflowIrSchema, type WorkflowIR } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authOf, roleGate } from '../auth/plugin.js';
@@ -154,5 +155,48 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
     const hash = canonicalHash(result.ir as WorkflowIR);
     const version = await createVersion(deps.pool, { workflowId: id, definition: draft.definition, hash });
     return reply.status(201).send({ id: version.id, versionNumber: version.versionNumber, definitionHash: hash });
+  });
+
+  app.get('/v1/workflows/:id/diff', async (req, reply) => {
+    const ctx = authOf(req);
+    const { id } = req.params as { id: string };
+    const { from, to } = (req.query ?? {}) as { from?: string; to?: string };
+    if (!from || !to) return sendProblem(reply, 400, 'Missing from/to', 'Both from and to are required');
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
+    if (!wf) return sendProblem(reply, 404, 'Workflow not found');
+
+    const resolve = async (ref: string): Promise<{ label: string; ir: unknown } | { error: string }> => {
+      if (ref === 'draft') {
+        const draft = await getDraft(deps.pool, id);
+        if (!draft) return { error: 'no_draft' };
+        return { label: 'draft', ir: draft.definition };
+      }
+      const v = await getVersion(deps.pool, ref);
+      if (!v || v.workflowId !== id) return { error: 'foreign_version' };
+      return { label: String(v.versionNumber), ir: v.definition };
+    };
+    const a = await resolve(from);
+    if ('error' in a) return sendProblem(reply, 400, 'Invalid from', a.error);
+    const b = await resolve(to);
+    if ('error' in b) return sendProblem(reply, 400, 'Invalid to', b.error);
+    const fromIr = workflowIrSchema.parse(a.ir);
+    const toIr = workflowIrSchema.parse(b.ir);
+    return { from: a.label, to: b.label, diff: diffWorkflows(fromIr, toIr) };
+  });
+
+  app.post('/v1/workflows/:id/versions/:versionId/rollback', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
+    const { id, versionId } = req.params as { id: string; versionId: string };
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
+    if (!wf) return sendProblem(reply, 404, 'Workflow not found');
+    const version = await getVersion(deps.pool, versionId);
+    if (!version || version.workflowId !== id) return sendProblem(reply, 404, 'Version not found');
+    const created = await createVersion(deps.pool, {
+      workflowId: id,
+      definition: version.definition,
+      hash: version.definitionHash,
+    });
+    return reply.status(201).send({ ...created, rolledBackFrom: version.versionNumber });
   });
 }

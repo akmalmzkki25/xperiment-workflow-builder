@@ -179,7 +179,7 @@ export async function enqueueCompletionCallback(
 export async function getVersion(
   db: Db,
   id: string,
-): Promise<{ id: string; workflowId: string; versionNumber: number; definition: unknown } | null> {
+): Promise<{ id: string; workflowId: string; versionNumber: number; definition: unknown; definitionHash: string } | null> {
   const r = await db.query(`SELECT * FROM workflow_versions WHERE id = $1`, [id]);
   if (!r.rowCount) return null;
   const row = r.rows[0] as Record<string, unknown>;
@@ -188,5 +188,6 @@ export async function getVersion(
     workflowId: row['workflow_id'] as string,
     versionNumber: Number(row['version_number']),
     definition: row['definition_json'],
+    definitionHash: row['definition_hash'] as string,
   };
 }
