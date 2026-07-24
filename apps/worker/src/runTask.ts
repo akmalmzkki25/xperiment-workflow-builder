@@ -1,4 +1,5 @@
-import type { ConnectorRegistry } from '@xperiment/connectors';
+import { randomBytes } from 'node:crypto';
+import type { ConnectorRegistry, SuspendSpec } from '@xperiment/connectors';
 import {
   appendEvent,
   casNode,
@@ -8,6 +9,7 @@ import {
   getTriggerPayload,
   getVersion,
   insertOutbox,
+  openWait,
   succeededOutputs,
   withTx,
 } from '@xperiment/db';
@@ -126,6 +128,10 @@ export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): P
       attempt,
       connection: connectionResult.connection,
     });
+    if (result.suspend) {
+      await suspendNode(deps, { executionId, nodeId, attempt, resolvedParams, suspend: result.suspend });
+      return;
+    }
     await withTx(deps.pool, async (client) => {
       const written = await casNode(client, {
         executionId,
@@ -153,6 +159,60 @@ export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): P
   }
 }
 
+/**
+ * Durably suspends a node: CAS RUNNING → WAITING and record the wait. No
+ * `node.completed` is emitted — resume (approval/event/timer) drives that later.
+ * The worker owns absolute time; the connector supplied a relative duration.
+ */
+async function suspendNode(
+  deps: WorkerDeps,
+  args: { executionId: string; nodeId: string; attempt: number; resolvedParams: unknown; suspend: SuspendSpec },
+): Promise<void> {
+  const { executionId, nodeId, attempt, suspend } = args;
+  const now = Date.now();
+  await withTx(deps.pool, async (client) => {
+    const written = await casNode(client, {
+      executionId,
+      nodeId,
+      attempt,
+      from: ['RUNNING'],
+      to: 'WAITING',
+      patch: { inputJson: args.resolvedParams ?? null },
+    });
+    if (!written) return; // lost the row (e.g. watchdog) — do not open a wait
+    if (suspend.kind === 'timer') {
+      await openWait(client, {
+        executionId,
+        nodeId,
+        attempt,
+        kind: 'timer',
+        resumeAt: new Date(now + suspend.delayMs),
+      });
+    } else if (suspend.kind === 'event') {
+      await openWait(client, {
+        executionId,
+        nodeId,
+        attempt,
+        kind: 'event',
+        resumeToken: randomBytes(24).toString('base64url'),
+        ...(suspend.ttlMs ? { expiresAt: new Date(now + suspend.ttlMs) } : {}),
+      });
+    } else {
+      await openWait(client, {
+        executionId,
+        nodeId,
+        attempt,
+        kind: 'approval',
+        resumeToken: randomBytes(24).toString('base64url'),
+        expiresAt: new Date(now + suspend.ttlMs),
+        fallback: suspend.fallback,
+        message: suspend.message,
+      });
+    }
+    await appendEvent(client, { executionId, eventType: 'node.waiting', nodeId, payload: { attempt, kind: suspend.kind } });
+  });
+}
+
 async function executeNode(
   deps: WorkerDeps,
   args: {
@@ -163,7 +223,7 @@ async function executeNode(
     attempt: number;
     connection?: unknown;
   },
-): Promise<{ output: unknown; outputPort?: string }> {
+): Promise<{ output?: unknown; outputPort?: string; suspend?: SuspendSpec }> {
   const { node } = args;
   const def = deps.registry.get(node.type);
   if (!def) throw new Error(`No connector registered for node type '${node.type}'`);
