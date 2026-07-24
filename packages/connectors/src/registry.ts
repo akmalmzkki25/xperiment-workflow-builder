@@ -9,6 +9,7 @@ import { manualTrigger } from './manual/trigger.js';
 import { openaiChat } from './openai/chat.js';
 import { postgresQuery } from './postgres/query.js';
 import { telegramSendMessage } from './telegram/sendMessage.js';
+import { whatsappSendMessage } from './whatsapp/sendMessage.js';
 import { scheduleTrigger } from './schedule/trigger.js';
 import { webhookTrigger } from './webhook/trigger.js';
 import type { ConnectorDefinition } from './types.js';
@@ -35,6 +36,7 @@ export function createDefaultRegistry(cfg: RegistryConfig = {}): ConnectorRegist
     createHttpRequest({ allowPrivateIps: cfg.allowPrivateIps ?? false }),
     postgresQuery,
     telegramSendMessage,
+    whatsappSendMessage,
     openaiChat,
     geminiGenerate,
   ];
