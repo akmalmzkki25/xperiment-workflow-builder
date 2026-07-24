@@ -13,6 +13,9 @@ importers:
       '@fastify/cors':
         specifier: ^10.0.0
         version: 10.1.0
+      '@xperiment/ai':
+        specifier: workspace:^
+        version: link:../../packages/ai
       '@xperiment/connectors':
         specifier: workspace:*
         version: link:../../packages/connectors

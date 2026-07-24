@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
+import { createOpenRouterClient, type ChatClient } from '@xperiment/ai';
 import type { ConnectorRegistry } from '@xperiment/connectors';
 import { deriveTriggerKey } from '@xperiment/db';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import type { AiConfig } from './routes/deps.js';
 import { registerAuthPlugin } from './auth/plugin.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerAiRoutes } from './routes/ai.js';
 import { registerConnectionRoutes } from './routes/connections.js';
 import { registerConnectorRoutes } from './routes/connectors.js';
 import { registerExecutionRoutes } from './routes/executions.js';
@@ -20,6 +23,19 @@ export interface ServerDeps {
   gatewayUrl?: string;
   triggerKey?: Buffer;
   credentialsKey?: Buffer;
+  ai?: AiConfig;
+  aiClientFactory?: (cfg: { apiKey: string; model: string; baseUrl: string; appUrl?: string }) => ChatClient;
+}
+
+function resolveAiConfig(override?: AiConfig): AiConfig {
+  if (override) return override;
+  const apiKey = process.env['OPENROUTER_API_KEY'];
+  return {
+    apiKey: apiKey && apiKey.length > 0 ? apiKey : null,
+    model: process.env['OPENROUTER_MODEL'] ?? 'google/gemini-3.1-flash-lite',
+    baseUrl: process.env['OPENROUTER_BASE_URL'] ?? 'https://openrouter.ai',
+    ...(process.env['OPENROUTER_APP_URL'] ? { appUrl: process.env['OPENROUTER_APP_URL'] } : {}),
+  };
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -45,6 +61,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     credentialsKey:
       deps.credentialsKey ??
       deriveTriggerKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+    ai: resolveAiConfig(deps.ai),
+    aiClientFactory: deps.aiClientFactory ?? createOpenRouterClient,
   };
   registerAuthPlugin(app, { pool: deps.pool });
   registerHealthRoutes(app);
@@ -55,5 +73,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerTriggerRoutes(app, resolvedDeps);
   registerConnectionRoutes(app, resolvedDeps);
   registerConnectorRoutes(app, resolvedDeps);
+  registerAiRoutes(app, resolvedDeps);
   return app;
 }
