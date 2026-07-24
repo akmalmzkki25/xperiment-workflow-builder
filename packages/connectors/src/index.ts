@@ -7,3 +7,5 @@ export { assertUrlAllowed, isForbiddenIp, type SsrfOptions } from './http/ssrf.j
 export { createHttpRequest } from './http/request.js';
 export { webhookTrigger } from './webhook/trigger.js';
 export { scheduleTrigger } from './schedule/trigger.js';
+export { CONNECTION_PAYLOAD_SCHEMAS, type ConnectorKey } from './payloads.js';
+export { postgresQuery } from './postgres/query.js';

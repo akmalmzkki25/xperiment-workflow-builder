@@ -8,6 +8,8 @@ export interface NodeRunContext {
   /** Parameters AFTER expression resolution (the worker resolves them). */
   parameters: unknown;
   triggerBody: unknown;
+  /** Decrypted connection payload for connectors with requiresConnection. In-memory only. */
+  connection?: unknown;
   signal: AbortSignal;
   log: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -36,5 +38,9 @@ export interface ConnectorDefinition {
   defaultEffectClass: EffectClass;
   outputPorts: string[];
   paramsSchema: z.ZodTypeAny;
+  /** connector_key of the connection this node type needs (e.g. 'postgres'). */
+  requiresConnection?: string;
   run(ctx: NodeRunContext): Promise<NodeRunResult>;
+  /** Verifies a decrypted connection payload against the provider; throws on failure. */
+  testConnection?(payload: unknown, signal: AbortSignal): Promise<void>;
 }

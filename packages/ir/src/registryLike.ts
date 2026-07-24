@@ -6,6 +6,7 @@ export interface NodeTypeInfo {
   paramsSchema: z.ZodTypeAny;
   defaultEffectClass: EffectClass;
   outputPorts: string[];
+  requiresConnection?: string;
 }
 
 export interface RegistryLike {
