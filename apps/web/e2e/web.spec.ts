@@ -132,3 +132,28 @@ test('a second user sees an empty workspace', async ({ page }) => {
   await expect(page.getByText('No workflows yet')).toBeVisible();
   await page.screenshot({ path: `${ARTIFACTS}/05-isolation.png` });
 });
+
+test('the AI dock generates a workflow onto the canvas', async ({ page }) => {
+  await loginWithToken(page);
+  await page.getByTestId('wf-create').click();
+  await page.getByTestId('wf-name-input').fill('AI intake');
+  await page.getByTestId('wf-create-submit').click();
+  await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}/);
+
+  await page.getByTestId('ai-open').click();
+  await expect(page.getByTestId('ai-dock')).toBeVisible();
+  await page.getByTestId('ai-prompt').fill('When a webhook arrives, transform the payload.');
+  await page.getByTestId('ai-generate').click();
+
+  // The stub returns a webhook trigger + transform; both should land on the canvas.
+  await expect(page.getByTestId('node-ai_hook')).toBeVisible();
+  await expect(page.getByTestId('node-ai_shape')).toBeVisible();
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1);
+
+  // The AI applies a draft the user reviews; save it, then it validates clean.
+  await page.getByTestId('action-save').click();
+  await expect(page.getByTestId('editor-banner')).toContainText('Draft saved');
+  await page.getByTestId('action-validate').click();
+  await expect(page.getByTestId('editor-banner')).toContainText('Draft is valid');
+  await page.screenshot({ path: `${ARTIFACTS}/06-ai-generated.png` });
+});

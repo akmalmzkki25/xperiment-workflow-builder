@@ -12,6 +12,7 @@ export const SERVICE_PORTS = [3100, 3101, 3102, 3103, 3104];
 export const API_URL = 'http://127.0.0.1:3100';
 export const GATEWAY_URL = 'http://127.0.0.1:3103';
 export const TELEGRAM_STUB_PORT = 3311;
+export const OPENROUTER_STUB_PORT = 3312;
 
 const SERVICE_ENV = {
   ...process.env,
@@ -25,12 +26,29 @@ const SERVICE_ENV = {
   TRIGGER_SECRET_KEY: 'xperiment-e2e-trigger-secret',
   CREDENTIALS_SECRET_KEY: 'xperiment-e2e-credentials-secret',
   HTTP_ALLOW_PRIVATE_IPS: 'true',
+  OPENROUTER_API_KEY: 'sk-or-e2e-fake',
+  OPENROUTER_BASE_URL: `http://127.0.0.1:${OPENROUTER_STUB_PORT}`,
+  OPENROUTER_MODEL: 'google/gemini-3.1-flash-lite',
   LOG_LEVEL: 'warn',
+};
+
+/** Canned workflow the OpenRouter stub returns — a webhook trigger → transform. */
+const STUB_WORKFLOW = {
+  schemaVersion: '0.1',
+  workflow: { id: 'wf_ai_e2e', name: 'AI generated' },
+  entrypoints: ['ai_hook'],
+  nodes: [
+    { id: 'ai_hook', kind: 'trigger', type: 'webhook.trigger', operationVersion: '0.1.0', parameters: { authMode: 'none' } },
+    { id: 'ai_shape', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: { greeted: true } } },
+  ],
+  edges: [{ id: 'e_ai_hook_main_ai_shape', from: { nodeId: 'ai_hook', port: 'main' }, to: { nodeId: 'ai_shape', port: 'input' } }],
 };
 
 const SERVICES = ['@xperiment/api', '@xperiment/orchestrator', '@xperiment/worker', '@xperiment/gateway', '@xperiment/scheduler'] as const;
 
-export async function killPortOwners(ports: number[] = [...SERVICE_PORTS, TELEGRAM_STUB_PORT]): Promise<void> {
+export async function killPortOwners(
+  ports: number[] = [...SERVICE_PORTS, TELEGRAM_STUB_PORT, OPENROUTER_STUB_PORT],
+): Promise<void> {
   if (process.platform === 'win32') {
     const { stdout } = await execAsync('netstat -ano -p tcp').catch(() => ({ stdout: '' }));
     const pids = new Set<string>();
@@ -74,6 +92,23 @@ function startTelegramStub(): Promise<Server> {
   return new Promise((resolve) => server.listen(TELEGRAM_STUB_PORT, '127.0.0.1', () => resolve(server)));
 }
 
+/** Minimal OpenRouter chat-completions stub returning the canned workflow. */
+function startOpenRouterStub(): Promise<Server> {
+  const server = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c: Buffer) => (raw += c.toString()));
+    req.on('end', () => {
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content: JSON.stringify(STUB_WORKFLOW) } }],
+        }),
+      );
+    });
+  });
+  return new Promise((resolve) => server.listen(OPENROUTER_STUB_PORT, '127.0.0.1', () => resolve(server)));
+}
+
 export interface RunningStack {
   stop: () => Promise<void>;
 }
@@ -82,6 +117,7 @@ export async function startStack(): Promise<RunningStack> {
   await killPortOwners();
   await execAsync('pnpm -w run migrate', { cwd: `${__dirname}/../../..` });
   const stub = await startTelegramStub();
+  const aiStub = await startOpenRouterStub();
   const procs: ChildProcess[] = SERVICES.map((filter) =>
     spawn('pnpm', ['--filter', filter, 'start'], {
       env: SERVICE_ENV,
@@ -101,6 +137,7 @@ export async function startStack(): Promise<RunningStack> {
         }
       }
       await new Promise<void>((r) => stub.close(() => r()));
+      await new Promise<void>((r) => aiStub.close(() => r()));
       await killPortOwners();
     },
   };

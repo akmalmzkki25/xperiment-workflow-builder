@@ -167,10 +167,35 @@ pnpm --filter @xperiment/web e2e
 
 Flow screenshots land in `apps/web/e2e/artifacts/`.
 
+## AI Builder (Phase 1E)
+
+Describe a workflow in plain language and get a validated draft on the canvas.
+The AI dock in the editor calls two builder-gated endpoints:
+
+- `POST /v1/ai/generate` `{ prompt }` → a new draft workflow IR.
+- `POST /v1/ai/edit` `{ prompt, definition }` → a revised IR from the current draft.
+
+Generation runs server-side through OpenRouter (OpenAI-compatible). The model's
+output is JSON-extracted and run through the same `validateWorkflow` gate that
+publishing uses; on failure the findings are fed back for a bounded **repair loop**
+(3 attempts) before returning `422` with the findings. Nothing is auto-saved or
+published — the draft lands on the canvas for the user to review.
+
+Configure via env (the key stays server-side; the browser only sends a prompt):
+
+```bash
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL=google/gemini-3.1-flash-lite
+OPENROUTER_BASE_URL=https://openrouter.ai
+```
+
+Without `OPENROUTER_API_KEY` the AI routes return `503 ai_unconfigured` and the rest
+of the app is unaffected.
+
 ## Layout
 
 ```text
-packages/  ir | expressions | engine-core | connectors | db | queue
+packages/  ir | expressions | engine-core | connectors | db | queue | ai
 apps/      api (3000) | orchestrator (3001) | worker (3002) | gateway (3003) | scheduler (3004) | web (3005) | cli
 e2e/       end-to-end scenario suite
 ```
