@@ -204,6 +204,22 @@ finalizes the execution (so a redelivered job never double-counts):
 The web **Usage** page renders the totals as scorecards (runs, success rate, nodes,
 compute, AI tokens) with a runs-per-day chart.
 
+## Version diff & rollback (Phase 2K)
+
+Published workflow versions are immutable; two of them (or a draft) can be compared,
+and any version can be rolled forward:
+
+- `GET /v1/workflows/:id/diff?from=&to=` — `from`/`to` are each a version id or the
+  literal `draft`. Returns a **semantic** diff: `nodes` and `edges` each split into
+  `added` / `removed` / `modified` (modified nodes list the changed fields —
+  type, operationVersion, parameters, connectionRef; layout is ignored), plus a
+  `changed` flag.
+- `POST /v1/workflows/:id/versions/:versionId/rollback` — publishes an old version's
+  IR forward as a **new** version (WFL-006); history is never mutated.
+
+The web **History** page (linked from the workflows list) lists versions and renders
+the compare + rollback UI.
+
 ## Alerts (Phase 2J)
 
 Define alert rules that the scheduler evaluates every sweep over the usage ledger:

@@ -364,6 +364,47 @@ describe('PRD acceptance scenario', () => {
     expect(detail.body.waits.every((w) => w.status !== 'open')).toBe(true);
   }, 60000);
 
+  test('version diff shows the change and rollback re-publishes an old version forward', async () => {
+    const versionIr = (ok: boolean) => ({
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_diff', name: 'Diff' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'webhook.trigger', operationVersion: '0.1.0', parameters: { authMode: 'none' } },
+        { id: 'a', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: { ok } } },
+      ],
+      edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'a', port: 'input' } }],
+    });
+    const created = await api<{ id: string; draftRevision: number }>('POST', '/v1/workflows', { name: 'Diff' });
+    const id = created.body.id;
+    await api('PUT', `/v1/workflows/${id}/draft`, { definition: versionIr(true) }, { 'if-match': String(created.body.draftRevision) });
+    await api('POST', `/v1/workflows/${id}/publish`); // v1
+    const d1 = await api<{ draftRevision: number; versions: { id: string; versionNumber: number }[] }>('GET', `/v1/workflows/${id}`);
+    const v1 = d1.body.versions[0]!;
+    await api('PUT', `/v1/workflows/${id}/draft`, { definition: versionIr(false) }, { 'if-match': String(d1.body.draftRevision) });
+    await api('POST', `/v1/workflows/${id}/publish`); // v2
+    const d2 = await api<{ versions: { id: string; versionNumber: number }[] }>('GET', `/v1/workflows/${id}`);
+    const v2 = d2.body.versions.find((v) => v.versionNumber === 2)!;
+
+    const diff = await api<{ diff: { nodes: { modified: { nodeId: string }[] }; changed: boolean } }>(
+      'GET',
+      `/v1/workflows/${id}/diff?from=${v1.id}&to=${v2.id}`,
+    );
+    expect(diff.status).toBe(200);
+    expect(diff.body.diff.nodes.modified.map((m) => m.nodeId)).toContain('a');
+
+    const draftDiff = await api<{ diff: { changed: boolean } }>('GET', `/v1/workflows/${id}/diff?from=draft&to=${v1.id}`);
+    expect(draftDiff.body.diff.changed).toBe(true);
+
+    const rb = await api<{ versionNumber: number }>('POST', `/v1/workflows/${id}/versions/${v1.id}/rollback`);
+    expect(rb.status).toBe(201);
+    expect(rb.body.versionNumber).toBe(3);
+    const d3 = await api<{ versions: { id: string; versionNumber: number }[] }>('GET', `/v1/workflows/${id}`);
+    const v3 = d3.body.versions.find((v) => v.versionNumber === 3)!;
+    const rbDiff = await api<{ diff: { changed: boolean } }>('GET', `/v1/workflows/${id}/diff?from=${v1.id}&to=${v3.id}`);
+    expect(rbDiff.body.diff.changed).toBe(false); // v3 IR equals v1
+  }, 60000);
+
   test('a failure_rate alert fires from the scheduler and delivers a signed webhook', async () => {
     // Resolve the authed workspace id via a created workflow row (the api() helper
     // skips auth on /v1/auth/* paths, so /v1/auth/me can't be used here).
