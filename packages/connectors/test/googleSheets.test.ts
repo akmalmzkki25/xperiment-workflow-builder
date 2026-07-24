@@ -1,7 +1,7 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { buildServiceAccountJwt, NodeRunError, sheetsAppendRow, sheetsGetRows } from '../src/index.js';
+import { buildServiceAccountJwt, NodeRunError, serviceAccountToken, sheetsAppendRow, sheetsGetRows } from '../src/index.js';
 import type { NodeRunContext } from '../src/index.js';
 
 const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -12,6 +12,8 @@ let baseUrl: string;
 let lastToken: string | undefined;
 let lastSheetsReq: { path: string; method: string; auth: string | undefined; body: unknown } | null = null;
 let sheetsResponse: unknown = { updates: { updatedRange: 'Sheet1!A1', updatedRows: 1 } };
+let tokenStatus = 200;
+let tokenResponse: unknown = { access_token: 'ya29.fake-token', expires_in: 3600 };
 
 const conn = () => ({
   serviceAccountEmail: 'svc@proj.iam.gserviceaccount.com',
@@ -40,7 +42,8 @@ beforeAll(async () => {
       if (req.url === '/token') {
         const params = new URLSearchParams(raw);
         lastToken = params.get('assertion') ?? undefined;
-        res.end(JSON.stringify({ access_token: 'ya29.fake-token', expires_in: 3600 }));
+        res.statusCode = tokenStatus;
+        res.end(JSON.stringify(tokenResponse));
         return;
       }
       lastSheetsReq = {
@@ -63,6 +66,8 @@ beforeEach(() => {
   lastToken = undefined;
   lastSheetsReq = null;
   sheetsResponse = { updates: { updatedRange: 'Sheet1!A1', updatedRows: 1 } };
+  tokenStatus = 200;
+  tokenResponse = { access_token: 'ya29.fake-token', expires_in: 3600 };
 });
 
 describe('buildServiceAccountJwt', () => {
@@ -113,7 +118,29 @@ describe('sheets.appendRow', () => {
   });
 });
 
+describe('serviceAccountToken error paths', () => {
+  test('non-2xx token endpoint → provider_error (no key leak)', async () => {
+    tokenStatus = 400;
+    tokenResponse = { error: 'invalid_grant' };
+    const err = await serviceAccountToken(conn(), AbortSignal.timeout(3000)).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NodeRunError);
+    expect((err as NodeRunError).code).toBe('provider_error');
+  });
+
+  test('token endpoint returning no access_token → provider_error', async () => {
+    tokenResponse = { expires_in: 3600 };
+    await expect(serviceAccountToken(conn(), AbortSignal.timeout(3000))).rejects.toMatchObject({
+      code: 'provider_error',
+    });
+  });
+});
+
 describe('sheets.getRows', () => {
+  test('rejects an invalid connection payload', async () => {
+    const badCtx = { ...ctx({ spreadsheetId: 's', range: 'A1' }), connection: { serviceAccountEmail: 'not-an-email' } };
+    await expect(sheetsGetRows.run(badCtx)).rejects.toMatchObject({ code: 'connection_invalid' });
+  });
+
   test('returns the values array', async () => {
     sheetsResponse = { values: [['a', 'b'], ['c', 'd']] };
     const out = await sheetsGetRows.run(ctx({ spreadsheetId: 'sheet-1', range: 'A1:B2' }));

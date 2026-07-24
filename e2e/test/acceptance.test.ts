@@ -22,6 +22,7 @@ let services: ChildProcess[] = [];
 let providerStub: Server;
 let providerUrl: string;
 const telegramMessages: { chat_id: string; text: string }[] = [];
+const whatsappMessages: { to: string; type: string }[] = [];
 
 beforeAll(async () => {
   pool = await prepareDatabase();
@@ -40,6 +41,9 @@ beforeAll(async () => {
       } else if (req.url!.includes('/sendMessage')) {
         telegramMessages.push(JSON.parse(raw) as { chat_id: string; text: string });
         res.end(JSON.stringify({ ok: true, result: { message_id: telegramMessages.length } }));
+      } else if (req.url!.includes('/messages')) {
+        whatsappMessages.push(JSON.parse(raw) as { to: string; type: string });
+        res.end(JSON.stringify({ messages: [{ id: `wamid.${whatsappMessages.length}` }] }));
       } else {
         res.end(JSON.stringify({ ok: true, data: [] }));
       }
@@ -228,4 +232,45 @@ describe('PRD acceptance scenario', () => {
     expect(inputs).not.toContain('stub-token');
     expect(inputs).not.toContain('dev_password_change_me');
   }, 90000);
+
+  test('whatsapp.sendMessage runs against the vault credential without leaking the token', async () => {
+    const waConn = await createConnection('whatsapp', 'WA', {
+      accessToken: 'wa-stub-secret',
+      phoneNumberId: '555001',
+      baseUrl: providerUrl,
+    });
+    const definition = {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_wa', name: 'WA send' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+        {
+          id: 'send',
+          kind: 'action',
+          type: 'whatsapp.sendMessage',
+          operationVersion: '0.1.0',
+          parameters: { to: '628123456789', text: 'Halo {{ trigger.body.name }}' },
+          connectionRef: waConn,
+        },
+      ],
+      edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'send', port: 'input' } }],
+    };
+    const created = await api<{ id: string }>('POST', '/v1/workflows', { name: 'WA send' });
+    await api('PUT', `/v1/workflows/${created.body.id}/draft`, { definition }, { 'if-match': '1' });
+    const pub = await api('POST', `/v1/workflows/${created.body.id}/publish`);
+    expect(pub.status).toBe(201);
+    const before = whatsappMessages.length;
+    const exec = await api<{ executionId: string }>('POST', `/v1/workflows/${created.body.id}/execute`, { name: 'Sari' });
+    const detail = await waitForTerminal(exec.body.executionId);
+    expect(detail.execution.status).toBe('SUCCEEDED');
+    expect(whatsappMessages.length).toBe(before + 1);
+    expect(whatsappMessages.at(-1)!.to).toBe('628123456789');
+
+    const stored = await pool.query(
+      `SELECT coalesce(string_agg(input_json::text, ''), '') AS inputs FROM execution_nodes WHERE execution_id = $1`,
+      [exec.body.executionId],
+    );
+    expect((stored.rows[0] as { inputs: string }).inputs).not.toContain('wa-stub-secret');
+  }, 60000);
 });

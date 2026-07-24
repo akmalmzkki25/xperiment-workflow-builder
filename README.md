@@ -126,10 +126,13 @@ gateway, scheduler, workers) inherits tenant context from the rows it processes.
 Cross-tenant isolation is enforced by workspace-scoped repositories and proven by an
 IDOR test matrix (`apps/api/test/isolation.test.ts`, `e2e/test/isolation.test.ts`).
 
-## Connections (Phase 1B)
+## Connections (Phase 1B, extended in 2G)
 
-Credentialed connectors (`postgres.query`, `telegram.sendMessage`, `openai.chat`,
-`gemini.generate`) reference stored connections instead of embedding secrets:
+Credentialed connectors reference stored connections instead of embedding secrets:
+`postgres.query`, `telegram.sendMessage`, `openai.chat`, `gemini.generate`, plus the
+Phase 2 beta connectors `whatsapp.sendMessage` (Cloud API, token), `email.send` (SMTP —
+covers Gmail via an app password), and Google Sheets `sheets.appendRow` / `sheets.getRows`
+(service-account key, no OAuth flow this release).
 
 1. `POST /v1/connections` with `{ connectorKey, name, payload }` — payloads are
    validated per connector, AES-256-GCM encrypted at rest, and never returned by the

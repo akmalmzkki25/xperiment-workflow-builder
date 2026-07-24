@@ -40,6 +40,23 @@ export const CONNECTION_FIELDS: Record<string, ConnectionField[]> = {
       placeholder: 'https://generativelanguage.googleapis.com',
     },
   ],
+  whatsapp: [
+    { name: 'accessToken', label: 'Access token', secret: true, required: true },
+    { name: 'phoneNumberId', label: 'Phone number ID', secret: false, required: true },
+    { name: 'baseUrl', label: 'Base URL', secret: false, required: false, placeholder: 'https://graph.facebook.com' },
+  ],
+  smtp: [
+    { name: 'host', label: 'SMTP host', secret: false, required: true, placeholder: 'smtp.gmail.com' },
+    { name: 'port', label: 'Port', secret: false, required: true, placeholder: '587' },
+    { name: 'user', label: 'Username', secret: false, required: true },
+    { name: 'password', label: 'Password', secret: true, required: true },
+    { name: 'from', label: 'From address', secret: false, required: true, placeholder: 'bot@example.com' },
+  ],
+  googleSheets: [
+    { name: 'serviceAccountEmail', label: 'Service account email', secret: false, required: true },
+    { name: 'privateKey', label: 'Service account private key', secret: true, required: true },
+    { name: 'testSpreadsheetId', label: 'Test spreadsheet ID', secret: false, required: false },
+  ],
 };
 
 export const CONNECTOR_KEYS = Object.keys(CONNECTION_FIELDS);

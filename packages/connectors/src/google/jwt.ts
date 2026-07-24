@@ -22,7 +22,10 @@ export function buildServiceAccountJwt(args: {
     JSON.stringify({ iss: args.email, scope: args.scope, aud: args.aud, iat, exp: iat + 3600 }),
   );
   const signingInput = `${header}.${claims}`;
-  const signature = createSign('RSA-SHA256').update(signingInput).sign(args.privateKey, 'base64url');
+  // A service-account key pasted from its JSON file carries escaped "\n"; restore
+  // real newlines so the PEM parses.
+  const pem = args.privateKey.includes('\\n') ? args.privateKey.replace(/\\n/g, '\n') : args.privateKey;
+  const signature = createSign('RSA-SHA256').update(signingInput).sign(pem, 'base64url');
   return `${signingInput}.${signature}`;
 }
 

@@ -65,6 +65,45 @@ describe('connections API', () => {
     expect(JSON.stringify(items)).not.toContain('SECRET-TOKEN');
   });
 
+  test('accepts the beta connector payloads (whatsapp, smtp, googleSheets)', async () => {
+    const whatsapp = await auth.inject({
+      method: 'POST',
+      url: '/v1/connections',
+      payload: { connectorKey: 'whatsapp', name: 'WA', payload: { accessToken: 'WA-SECRET', phoneNumberId: '555', baseUrl: stubUrl } },
+    });
+    expect(whatsapp.statusCode).toBe(201);
+    const smtp = await auth.inject({
+      method: 'POST',
+      url: '/v1/connections',
+      payload: { connectorKey: 'smtp', name: 'Mail', payload: { host: 'smtp.test', port: '587', user: 'u', password: 'SMTP-SECRET', from: 'a@b.co' } },
+    });
+    expect(smtp.statusCode).toBe(201); // port string coerces
+    const sheets = await auth.inject({
+      method: 'POST',
+      url: '/v1/connections',
+      payload: { connectorKey: 'googleSheets', name: 'Sheet', payload: { serviceAccountEmail: 'svc@x.iam.gserviceaccount.com', privateKey: 'SHEETS-SECRET' } },
+    });
+    expect(sheets.statusCode).toBe(201);
+    // None of the secrets leak into the listing.
+    const list = await auth.inject({ method: 'GET', url: '/v1/connections' });
+    const body = JSON.stringify(list.json());
+    for (const secret of ['WA-SECRET', 'SMTP-SECRET', 'SHEETS-SECRET']) expect(body).not.toContain(secret);
+  });
+
+  test('whatsapp test route routes to the connector and reports ok/fail', async () => {
+    const created = await auth.inject({
+      method: 'POST',
+      url: '/v1/connections',
+      payload: { connectorKey: 'whatsapp', name: 'WA', payload: { accessToken: 'WA-SECRET', phoneNumberId: '555', baseUrl: stubUrl } },
+    });
+    const id = created.json<{ id: string }>().id;
+    const ok = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
+    expect(ok.json()).toEqual({ ok: true });
+    stubStatus = 403;
+    const fail = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
+    expect(fail.json<{ ok: boolean }>().ok).toBe(false);
+  });
+
   test('create rejects bad payloads and unknown connector keys', async () => {
     const bad = await auth.inject({
       method: 'POST',

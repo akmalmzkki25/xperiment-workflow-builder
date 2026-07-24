@@ -15,11 +15,12 @@ export const CONNECTION_PAYLOAD_SCHEMAS = {
   smtp: z
     .object({
       host: z.string().min(1),
-      port: z.number().int().min(1).max(65535),
+      // Coerced so the web form (which submits strings) validates cleanly.
+      port: z.coerce.number().int().min(1).max(65535),
       user: z.string().min(1),
       password: z.string().min(1),
       from: z.string().min(1),
-      secure: z.boolean().optional(),
+      secure: z.coerce.boolean().optional(),
     })
     .strict(),
   googleSheets: z

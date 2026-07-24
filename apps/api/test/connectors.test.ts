@@ -31,7 +31,7 @@ describe('GET /v1/connectors', () => {
     const r = await auth.inject({ method: 'GET', url: '/v1/connectors' });
     expect(r.statusCode).toBe(200);
     const body = r.json<{ items: Record<string, unknown>[] }>();
-    expect(body.items).toHaveLength(13);
+    expect(body.items).toHaveLength(17);
     const webhook = body.items.find((i) => i['type'] === 'webhook.trigger');
     expect(webhook).toBeDefined();
     expect((webhook!['paramsJsonSchema'] as { type: string }).type).toBe('object');
