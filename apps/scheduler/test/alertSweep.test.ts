@@ -84,6 +84,52 @@ describe('runAlertSweep', () => {
     expect((await runAlertSweep(deps())).fired).toBe(0); // threshold defaults to Infinity → never fires
   });
 
+  test('fires at the exact boundaries (observed == threshold, total == minSample)', async () => {
+    await createAlertRule(pool, {
+      workspaceId: WS,
+      name: 'ut-eq',
+      type: 'usage_threshold',
+      params: { windowMinutes: 60, metric: 'ai_tokens', threshold: 100 },
+    });
+    await createAlertRule(pool, {
+      workspaceId: WS,
+      name: 'fr-eq',
+      type: 'failure_rate',
+      params: { windowMinutes: 60, threshold: 0.5, minSample: 2 },
+    });
+    await insertUsageEvents(pool, [{ workspaceId: WS, metric: 'ai_tokens', quantity: 100, occurredAt: new Date() }]); // == threshold
+    await seedRuns(1, 1); // total exactly == minSample 2, rate 0.5 == threshold
+    expect((await runAlertSweep(deps())).fired).toBe(2); // both boundary-equal rules fire
+  });
+
+  test('a fired rule re-fires once its cooldown has elapsed', async () => {
+    await createAlertRule(pool, {
+      workspaceId: WS,
+      name: 'fr',
+      type: 'failure_rate',
+      params: { windowMinutes: 60, threshold: 0.5, minSample: 1 },
+      cooldownMinutes: 60,
+    });
+    await seedRuns(0, 2);
+    expect((await runAlertSweep(deps())).fired).toBe(1);
+    expect((await runAlertSweep(deps())).fired).toBe(0); // within cooldown
+    await pool.query(`UPDATE alert_rules SET last_fired_at = now() - interval '2 hours'`);
+    expect((await runAlertSweep(deps())).fired).toBe(1); // cooldown elapsed → re-fires
+  });
+
+  test('concurrent sweeps fire a due rule exactly once (FOR UPDATE SKIP LOCKED)', async () => {
+    await createAlertRule(pool, {
+      workspaceId: WS,
+      name: 'fr',
+      type: 'failure_rate',
+      params: { windowMinutes: 60, threshold: 0.5, minSample: 1 },
+    });
+    await seedRuns(0, 3);
+    const [a, b] = await Promise.all([runAlertSweep(deps()), runAlertSweep(deps())]);
+    expect(a.fired + b.fired).toBe(1); // one sweep wins, the other skips the locked row
+    expect((await listAlertEvents(pool, WS, 10)).length).toBe(1);
+  });
+
   test('fires a usage_threshold rule when the metric sum crosses the threshold', async () => {
     await createAlertRule(pool, {
       workspaceId: WS,

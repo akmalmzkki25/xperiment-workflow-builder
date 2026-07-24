@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getBrowserClient } from '../../lib/api';
 
 /**
@@ -19,6 +19,13 @@ export function IncidentBanner() {
   });
 
   const count = q.data?.unacknowledged ?? 0;
+  // Lower the dismiss high-water as alerts are acknowledged so a brand-new firing
+  // after a dismiss-then-drain cycle re-shows the banner (rather than staying hidden
+  // beneath a stale ceiling).
+  useEffect(() => {
+    if (count < dismissedCount) setDismissedCount(count);
+  }, [count, dismissedCount]);
+
   if (count === 0 || count <= dismissedCount) return null;
 
   return (

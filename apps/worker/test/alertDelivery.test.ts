@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import {
   createAlertRule,
@@ -92,6 +92,26 @@ describe('runAlertDelivery', () => {
   test('no-ops when the rule has no webhook', async () => {
     const ids = await seedFiring(null, null);
     await runAlertDelivery(deps, ids);
+    expect(received).toHaveLength(0);
+  });
+
+  test('delivers even when many newer firings exist (resolved by id, not a recent-window scan)', async () => {
+    const secret = randomBytes(16).toString('hex');
+    const ids = await seedFiring(`${baseUrl}/hook`, secret);
+    // Push 250 newer alert_events for the same workspace so the target is well past
+    // any bounded recent-events window.
+    for (let i = 0; i < 250; i += 1) {
+      await pool.query(`INSERT INTO alert_events (workspace_id, rule_id, fired_at, detail) VALUES ($1,$2,now(),'{}')`, [WS, ids.ruleId]);
+    }
+    await runAlertDelivery(deps, ids);
+    expect(received).toHaveLength(1);
+    expect((received[0]!.body as { ruleId: string }).ruleId).toBe(ids.ruleId);
+  });
+
+  test('no-ops (no throw, no POST) for an unknown event id', async () => {
+    const secret = randomBytes(16).toString('hex');
+    const ids = await seedFiring(`${baseUrl}/hook`, secret);
+    await expect(runAlertDelivery(deps, { ruleId: ids.ruleId, eventId: randomUUID() })).resolves.toBeUndefined();
     expect(received).toHaveLength(0);
   });
 });

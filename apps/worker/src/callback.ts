@@ -45,6 +45,7 @@ export async function runCallback(deps: CallbackDeps, payload: { executionId: st
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-xperiment-signature': signature },
     body,
+    redirect: 'error', // never follow a redirect to an unvalidated host (SSRF hop)
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) {

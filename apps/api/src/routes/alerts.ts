@@ -71,7 +71,18 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
     const { id } = req.params as { id: string };
     const parsed = updateSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid update', parsed.error.message);
-    const updated = await updateAlertRule(deps.pool, id, ctx.workspaceId, parsed.data);
+    const existing = await getAlertRule(deps.pool, id, ctx.workspaceId);
+    if (!existing) return sendProblem(reply, 404, 'Alert rule not found');
+    const patch = { ...parsed.data };
+    if (patch.params !== undefined) {
+      // Re-validate replacement params against the rule's (immutable) type so a PUT
+      // cannot bypass the create-time bounds (e.g. minSample>=1 that guards the sweep).
+      const schema = existing.type === 'failure_rate' ? failureParams : usageParams;
+      const pp = schema.safeParse(patch.params);
+      if (!pp.success) return sendProblem(reply, 400, 'Invalid params', pp.error.message);
+      patch.params = pp.data;
+    }
+    const updated = await updateAlertRule(deps.pool, id, ctx.workspaceId, patch);
     if (!updated) return sendProblem(reply, 404, 'Alert rule not found');
     return updated;
   });

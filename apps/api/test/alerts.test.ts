@@ -80,13 +80,24 @@ describe('/v1/alerts', () => {
     expect(Array.isArray(r.json<{ items: unknown[] }>().items)).toBe(true);
   });
 
-  test('events list + ack', async () => {
+  test('updating params persists valid values and rejects out-of-bounds ones', async () => {
+    const rule = (await auth.inject({ method: 'POST', url: '/v1/alerts', payload: failureRule })).json<{ id: string }>();
+    const ok = await auth.inject({ method: 'PUT', url: `/v1/alerts/${rule.id}`, payload: { params: { windowMinutes: 30, threshold: 0.9, minSample: 2 } } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json<{ params: { threshold: number } }>().params.threshold).toBe(0.9);
+    // minSample 0 would let the sweep divide by zero — the PUT must re-validate per type.
+    const bad = await auth.inject({ method: 'PUT', url: `/v1/alerts/${rule.id}`, payload: { params: { windowMinutes: 30, threshold: 0.5, minSample: 0 } } });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  test('events list + ack (and re-ack is 404)', async () => {
     const rule = (await auth.inject({ method: 'POST', url: '/v1/alerts', payload: failureRule })).json<{ id: string }>();
     await pool.query(`INSERT INTO alert_events (workspace_id, rule_id, fired_at, detail) VALUES ($1,$2,now(),'{}')`, [auth.workspaceId, rule.id]);
     const ev = await auth.inject({ method: 'GET', url: '/v1/alerts/events' });
     expect(ev.json<{ unacknowledged: number; items: { id: string }[] }>().unacknowledged).toBe(1);
     const id = ev.json<{ items: { id: string }[] }>().items[0]!.id;
     expect((await auth.inject({ method: 'POST', url: `/v1/alerts/events/${id}/ack` })).statusCode).toBe(200);
+    expect((await auth.inject({ method: 'POST', url: `/v1/alerts/events/${id}/ack` })).statusCode).toBe(404); // already acked
     expect((await auth.inject({ method: 'GET', url: '/v1/alerts/events' })).json<{ unacknowledged: number }>().unacknowledged).toBe(0);
   });
 });

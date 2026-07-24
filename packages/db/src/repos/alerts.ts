@@ -138,12 +138,12 @@ export async function evaluateFailureRate(
 ): Promise<{ total: number; failed: number }> {
   const r = await db.query(
     `SELECT
-       COALESCE(SUM(quantity) FILTER (WHERE metric='execution'),0)::int AS total,
-       COALESCE(SUM(quantity) FILTER (WHERE metric='execution' AND metadata->>'status'='FAILED'),0)::int AS failed
+       COALESCE(SUM(quantity) FILTER (WHERE metric='execution'),0)::bigint AS total,
+       COALESCE(SUM(quantity) FILTER (WHERE metric='execution' AND metadata->>'status'='FAILED'),0)::bigint AS failed
      FROM usage_events WHERE workspace_id=$1 AND occurred_at >= $2`,
     [args.workspaceId, args.windowStart.toISOString()],
   );
-  const row = r.rows[0] as { total: number; failed: number };
+  const row = r.rows[0] as { total: string; failed: string };
   return { total: Number(row.total), failed: Number(row.failed) };
 }
 
@@ -181,6 +181,11 @@ export async function listAlertEvents(db: Db, workspaceId: string, limit: number
     Math.min(Math.max(limit, 1), 200),
   ]);
   return (r.rows as Record<string, unknown>[]).map(mapEvent);
+}
+
+export async function getAlertEventById(db: Db, id: string): Promise<AlertEventRow | null> {
+  const r = await db.query(`SELECT * FROM alert_events WHERE id=$1`, [id]);
+  return r.rowCount ? mapEvent(r.rows[0] as Record<string, unknown>) : null;
 }
 
 export async function countUnacknowledgedAlerts(db: Db, workspaceId: string): Promise<number> {

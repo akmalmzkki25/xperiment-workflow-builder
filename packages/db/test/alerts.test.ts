@@ -10,6 +10,7 @@ import {
   evaluateFailureRate,
   evaluateUsageMetric,
   fireAlert,
+  getAlertEventById,
   getAlertRule,
   getAlertWebhook,
   insertUsageEvents,
@@ -134,5 +135,42 @@ describe('acknowledgeAlert', () => {
     const ev = (await listAlertEvents(pool, WS, 10))[0]!;
     expect(await acknowledgeAlert(pool, ev.id, WS)).toBe(true);
     expect(await countUnacknowledgedAlerts(pool, WS)).toBe(0);
+  });
+
+  test('a second ack on an already-acknowledged event returns false (idempotent)', async () => {
+    const r = await rule();
+    await withTx(pool, async (c) => {
+      await fireAlert(c, { rule: r, detail: {}, firedAt: new Date() });
+    });
+    const ev = (await listAlertEvents(pool, WS, 10))[0]!;
+    expect(await acknowledgeAlert(pool, ev.id, WS)).toBe(true);
+    expect(await acknowledgeAlert(pool, ev.id, WS)).toBe(false);
+  });
+});
+
+describe('re-fire + by-id lookup', () => {
+  test('a fired rule becomes due again once its cooldown elapses', async () => {
+    const r = await rule(); // default 60m cooldown
+    await withTx(pool, async (c) => {
+      const due = await dueAlertRules(c);
+      await fireAlert(c, { rule: due.find((x) => x.id === r.id)!, detail: {}, firedAt: new Date() });
+    });
+    await withTx(pool, async (c) => {
+      expect((await dueAlertRules(c)).map((x) => x.id)).not.toContain(r.id); // within cooldown
+    });
+    await pool.query(`UPDATE alert_rules SET last_fired_at = now() - interval '2 hours' WHERE id=$1`, [r.id]);
+    await withTx(pool, async (c) => {
+      expect((await dueAlertRules(c)).map((x) => x.id)).toContain(r.id); // cooldown elapsed → due again
+    });
+  });
+
+  test('getAlertEventById returns the firing by primary key', async () => {
+    const r = await rule();
+    await withTx(pool, async (c) => {
+      await fireAlert(c, { rule: r, detail: { x: 1 }, firedAt: new Date() });
+    });
+    const ev = (await listAlertEvents(pool, WS, 1))[0]!;
+    expect((await getAlertEventById(pool, ev.id))?.id).toBe(ev.id);
+    expect(await getAlertEventById(pool, '00000000-0000-0000-0000-0000000000aa')).toBeNull();
   });
 });

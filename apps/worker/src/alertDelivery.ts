@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { assertUrlAllowed } from '@xperiment/connectors';
-import { decryptSecret, getAlertWebhook, listAlertEvents } from '@xperiment/db';
+import { decryptSecret, getAlertEventById, getAlertWebhook } from '@xperiment/db';
 import type pg from 'pg';
 
 export interface AlertDeliveryDeps {
@@ -32,8 +32,9 @@ export async function runAlertDelivery(
     return;
   }
   const rule = ruleRow.rows[0] as { workspace_id: string; name: string };
-  const events = await listAlertEvents(deps.pool, rule.workspace_id, 200);
-  const event = events.find((e) => e.id === payload.eventId);
+  // Resolve the firing by primary key (not a bounded recent-events scan) so a
+  // busy workspace can't push the target event out of a fixed window and drop it.
+  const event = await getAlertEventById(deps.pool, payload.eventId);
   if (!event) {
     deps.log('alert_delivery.unknown_event', { eventId: payload.eventId });
     return;
@@ -55,6 +56,7 @@ export async function runAlertDelivery(
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-xperiment-signature': signature },
     body,
+    redirect: 'error', // never follow a redirect to a re-validated-elsewhere host (SSRF hop)
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`alert webhook returned ${res.status}`);
