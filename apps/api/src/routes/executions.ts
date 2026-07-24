@@ -1,11 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import {
+  appendEvent,
+  casExecution,
+  casNode,
+  closeOpenWaits,
   createExecutionWithTrigger,
   getExecutionDetail,
+  getTriggerPayload,
   getVersion,
   getWorkflow,
+  latestNodeStates,
   listExecutions,
   waitsForExecution,
+  withTx,
 } from '@xperiment/db';
 import { workflowIrSchema } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
@@ -77,5 +84,67 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       ...(resumeUrlByNode.has(w.nodeId) ? { resumeUrl: resumeUrlByNode.get(w.nodeId) } : {}),
     }));
     return { ...detail, waits };
+  });
+
+  const TERMINAL = ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED'];
+
+  app.post('/v1/executions/:id/cancel', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
+    const { id } = req.params as { id: string };
+    const detail = await getExecutionDetail(deps.pool, id, ctx.workspaceId);
+    if (!detail) return sendProblem(reply, 404, 'Execution not found');
+    if (TERMINAL.includes(detail.execution.status)) {
+      return sendProblem(reply, 409, 'Execution already finished', `Status is ${detail.execution.status}`);
+    }
+    await withTx(deps.pool, async (client) => {
+      const canceled = await casExecution(client, {
+        executionId: id,
+        from: ['CREATED', 'QUEUED', 'RUNNING'],
+        to: 'CANCELED',
+        completedAt: true,
+        errorSummary: 'Canceled',
+      });
+      if (!canceled) return; // raced to terminal — leave it
+      const states = await latestNodeStates(client, id);
+      for (const s of states) {
+        if (['PENDING', 'READY', 'QUEUED', 'RUNNING', 'WAITING'].includes(s.status)) {
+          const ok = await casNode(client, {
+            executionId: id,
+            nodeId: s.nodeId,
+            attempt: s.attempt,
+            from: ['PENDING', 'READY', 'QUEUED', 'RUNNING', 'WAITING'],
+            to: 'SKIPPED',
+            patch: { completedAt: true },
+          });
+          if (ok) await appendEvent(client, { executionId: id, eventType: 'node.skipped', nodeId: s.nodeId });
+        }
+      }
+      await closeOpenWaits(client, id);
+      await appendEvent(client, { executionId: id, eventType: 'execution.canceled' });
+    });
+    return { status: 'CANCELED' };
+  });
+
+  app.post('/v1/executions/:id/retry', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!roleGate(reply, ctx, 'builder')) return;
+    const { id } = req.params as { id: string };
+    const detail = await getExecutionDetail(deps.pool, id, ctx.workspaceId);
+    if (!detail) return sendProblem(reply, 404, 'Execution not found');
+    const version = await getVersion(deps.pool, detail.execution.workflowVersionId);
+    if (!version) return sendProblem(reply, 409, 'Original version missing');
+    const ir = workflowIrSchema.parse(version.definition);
+    const payload = await getTriggerPayload(deps.pool, id);
+    const idempotencyKey = (req.headers['idempotency-key'] as string | undefined) ?? randomUUID();
+    const { execution, created } = await createExecutionWithTrigger(deps.pool, {
+      workflowId: detail.execution.workflowId,
+      versionId: version.id,
+      idempotencyKey,
+      payload,
+      nodeIds: ir.nodes.map((n) => n.id),
+      executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
+    });
+    return reply.status(created ? 201 : 200).send({ executionId: execution.id, status: execution.status, created });
   });
 }

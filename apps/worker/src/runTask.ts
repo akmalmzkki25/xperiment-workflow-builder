@@ -28,7 +28,7 @@ import type { NodeTaskPayload } from '@xperiment/queue';
 import type pg from 'pg';
 import { classifyError } from './classify.js';
 
-const TERMINAL_EXECUTION_STATUSES = ['SUCCEEDED', 'FAILED', 'TIMED_OUT'];
+const TERMINAL_EXECUTION_STATUSES = ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED'];
 const DEFAULT_NODE_TIMEOUT_MS = 30000;
 const EVENT_WAIT_MAX_TTL_MS = 2_592_000_000; // 30 days — hard ceiling for un-timed event waits
 

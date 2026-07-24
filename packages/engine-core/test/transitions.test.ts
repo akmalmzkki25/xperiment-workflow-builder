@@ -10,11 +10,14 @@ import {
 
 const ALLOWED_EXECUTION: [ExecutionStatus, ExecutionStatus][] = [
   ['CREATED', 'QUEUED'],
+  ['CREATED', 'CANCELED'],
   ['QUEUED', 'RUNNING'],
   ['QUEUED', 'TIMED_OUT'],
+  ['QUEUED', 'CANCELED'],
   ['RUNNING', 'SUCCEEDED'],
   ['RUNNING', 'FAILED'],
   ['RUNNING', 'TIMED_OUT'],
+  ['RUNNING', 'CANCELED'],
 ];
 
 const ALLOWED_NODE: [NodeStatus, NodeStatus][] = [

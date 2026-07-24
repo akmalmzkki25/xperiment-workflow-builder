@@ -1,12 +1,13 @@
 import type { ExecutionStatus, NodeStatus } from './states.js';
 
 export const EXECUTION_TRANSITIONS: Record<ExecutionStatus, ExecutionStatus[]> = {
-  CREATED: ['QUEUED'],
-  QUEUED: ['RUNNING', 'TIMED_OUT'],
-  RUNNING: ['SUCCEEDED', 'FAILED', 'TIMED_OUT'],
+  CREATED: ['QUEUED', 'CANCELED'],
+  QUEUED: ['RUNNING', 'TIMED_OUT', 'CANCELED'],
+  RUNNING: ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED'],
   SUCCEEDED: [],
   FAILED: [],
   TIMED_OUT: [],
+  CANCELED: [],
 };
 
 // RETRY_SCHEDULED is row-terminal: the logical retry continues as a NEW

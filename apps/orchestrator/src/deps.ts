@@ -18,4 +18,4 @@ export async function loadExecutionContext(
   return { execution: detail.execution, ir: workflowIrSchema.parse(version.definition) as WorkflowIR };
 }
 
-export const TERMINAL_EXECUTION_STATUSES = ['SUCCEEDED', 'FAILED', 'TIMED_OUT'];
+export const TERMINAL_EXECUTION_STATUSES = ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED'];
