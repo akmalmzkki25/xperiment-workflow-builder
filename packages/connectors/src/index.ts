@@ -22,5 +22,8 @@ export { postgresQuery } from './postgres/query.js';
 export { telegramSendMessage } from './telegram/sendMessage.js';
 export { whatsappSendMessage } from './whatsapp/sendMessage.js';
 export { emailSend, createEmailSend, type EmailDeps, type MailTransport } from './email/send.js';
+export { buildServiceAccountJwt, serviceAccountToken } from './google/jwt.js';
+export { sheetsAppendRow } from './google/sheetsAppendRow.js';
+export { sheetsGetRows } from './google/sheetsGetRows.js';
 export { openaiChat } from './openai/chat.js';
 export { geminiGenerate } from './gemini/generate.js';
