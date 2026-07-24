@@ -1,0 +1,303 @@
+/* Workflow editor — canvas, node cards, library drawer, inspector. */
+
+.q-editor-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.q-editor-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.q-editor-head__name {
+  font-size: var(--text-h1);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-right: var(--space-2);
+}
+
+.q-editor-head__spacer {
+  flex: 1;
+}
+
+.q-editor {
+  flex: 1;
+  min-height: 480px;
+  display: flex;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.q-editor__canvas {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+/* ---------- Node library drawer ---------- */
+.q-library {
+  width: 264px;
+  border-right: 1px solid var(--border-default);
+  background: var(--surface-sunken);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.q-library__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.q-library__group-title {
+  font-size: var(--text-small);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+
+.q-library__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.q-library__item:hover {
+  border-color: var(--color-tide);
+  background: #fff;
+}
+
+.q-library__glyph {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  font-size: 13px;
+}
+
+.q-library__type {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+}
+
+/* ---------- Node card ---------- */
+.q-node {
+  position: relative;
+  width: 264px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-node);
+  padding: var(--space-3) var(--space-3) var(--space-3) calc(var(--space-3) + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.q-node--selected {
+  border-color: var(--color-tide);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-tide) 25%, transparent);
+}
+
+.q-node__rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: var(--radius-node) 0 0 var(--radius-node);
+}
+
+.q-node__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.q-node__glyph {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--surface-sunken);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.q-node__title {
+  font-weight: 700;
+  font-size: var(--text-body);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.q-node__sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sub);
+  color: var(--text-muted);
+}
+
+.q-node__badges {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.q-node__badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: var(--radius-chip);
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  white-space: nowrap;
+}
+
+.q-node__badge--ready {
+  color: var(--color-jade);
+}
+
+.q-node__badge--needs-config {
+  color: var(--color-amber);
+}
+
+.q-node__badge--needs-connection {
+  color: var(--color-coral);
+}
+
+.q-node__badge--findings {
+  color: var(--color-coral);
+}
+
+.q-node__port-label {
+  position: absolute;
+  right: -34px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* React Flow handle overrides */
+.q-node .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  background: var(--surface-raised);
+  border: 2px solid var(--border-strong);
+}
+
+.q-node .react-flow__handle:hover {
+  border-color: var(--color-tide);
+}
+
+.react-flow__edge-path {
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--color-tide);
+  stroke-width: 2;
+}
+
+/* ---------- Inspector ---------- */
+.q-inspector {
+  width: 300px;
+  border-left: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.q-inspector__section-title {
+  font-size: var(--text-small);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* ---------- Findings panel ---------- */
+.q-findings {
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.q-findings__row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-small);
+}
+
+.q-findings__layer {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* ---------- Trigger panel ---------- */
+.q-trigger-panel {
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.q-trigger-panel__url {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.q-trigger-panel__url code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: var(--space-1) var(--space-2);
+}

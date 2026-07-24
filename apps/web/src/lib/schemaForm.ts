@@ -82,6 +82,23 @@ export function defaultParams(paramsJsonSchema: unknown): Record<string, unknown
   return params;
 }
 
+export type NodeReadiness = 'needs-connection' | 'needs-config' | 'ready';
+
+export function nodeReadiness(args: {
+  parameters: Record<string, unknown>;
+  fields: FormField[];
+  requiresConnection?: string;
+  connectionRef?: string;
+}): NodeReadiness {
+  if (args.requiresConnection && !args.connectionRef) return 'needs-connection';
+  for (const field of args.fields) {
+    if (!field.required) continue;
+    const value = args.parameters[field.name];
+    if (value === undefined || value === '') return 'needs-config';
+  }
+  return 'ready';
+}
+
 export function fieldValueToParam(field: FormField, raw: string | boolean): unknown {
   if (field.kind === 'boolean') return raw === true;
   const text = typeof raw === 'string' ? raw : String(raw);

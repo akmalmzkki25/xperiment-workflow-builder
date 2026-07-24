@@ -1,6 +1,12 @@
 import { connectorCatalog, createDefaultRegistry } from '@xperiment/connectors';
 import { describe, expect, test } from 'vitest';
-import { defaultParams, deriveFields, fieldValueToParam, type FormField } from '../src/lib/schemaForm';
+import {
+  defaultParams,
+  deriveFields,
+  fieldValueToParam,
+  nodeReadiness,
+  type FormField,
+} from '../src/lib/schemaForm';
 
 const catalog = connectorCatalog(createDefaultRegistry());
 const schemaOf = (type: string): unknown => catalog.find((i) => i.type === type)!.paramsJsonSchema;
@@ -65,6 +71,41 @@ describe('defaultParams', () => {
     expect(d['url']).toBe('');
     expect(d['method']).toBe('GET');
     expect('headers' in d).toBe(false);
+  });
+});
+
+describe('nodeReadiness', () => {
+  const fields = deriveFields(schemaOf('telegram.sendMessage'));
+
+  test('missing connection wins over missing config', () => {
+    expect(
+      nodeReadiness({ parameters: {}, fields, requiresConnection: 'telegram' }),
+    ).toBe('needs-connection');
+  });
+
+  test('empty required field means needs-config', () => {
+    expect(
+      nodeReadiness({
+        parameters: { chatId: '', text: 'hi' },
+        fields,
+        requiresConnection: 'telegram',
+        connectionRef: 'ref-1',
+      }),
+    ).toBe('needs-config');
+  });
+
+  test('all required fields present means ready', () => {
+    expect(
+      nodeReadiness({
+        parameters: { chatId: '123', text: 'hi' },
+        fields,
+        requiresConnection: 'telegram',
+        connectionRef: 'ref-1',
+      }),
+    ).toBe('ready');
+    expect(nodeReadiness({ parameters: { authMode: 'none' }, fields: deriveFields(schemaOf('webhook.trigger')) })).toBe(
+      'ready',
+    );
   });
 });
 
