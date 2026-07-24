@@ -8,6 +8,7 @@ import { geminiGenerate } from './gemini/generate.js';
 import { manualTrigger } from './manual/trigger.js';
 import { openaiChat } from './openai/chat.js';
 import { postgresQuery } from './postgres/query.js';
+import { emailSend } from './email/send.js';
 import { telegramSendMessage } from './telegram/sendMessage.js';
 import { whatsappSendMessage } from './whatsapp/sendMessage.js';
 import { scheduleTrigger } from './schedule/trigger.js';
@@ -37,6 +38,7 @@ export function createDefaultRegistry(cfg: RegistryConfig = {}): ConnectorRegist
     postgresQuery,
     telegramSendMessage,
     whatsappSendMessage,
+    emailSend,
     openaiChat,
     geminiGenerate,
   ];

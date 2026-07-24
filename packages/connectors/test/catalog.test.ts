@@ -13,7 +13,7 @@ describe('connectorCatalog', () => {
   const byType = new Map(items.map((i) => [i.type, i]));
 
   test('lists every registered connector with metadata only', () => {
-    expect(items).toHaveLength(14);
+    expect(items).toHaveLength(15);
     for (const item of items) {
       expect(Object.keys(item).sort()).toEqual(
         expect.arrayContaining(['defaultEffectClass', 'kind', 'operationVersion', 'outputPorts', 'paramsJsonSchema', 'type']),

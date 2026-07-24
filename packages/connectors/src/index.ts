@@ -21,5 +21,6 @@ export { CONNECTION_PAYLOAD_SCHEMAS, type ConnectorKey } from './payloads.js';
 export { postgresQuery } from './postgres/query.js';
 export { telegramSendMessage } from './telegram/sendMessage.js';
 export { whatsappSendMessage } from './whatsapp/sendMessage.js';
+export { emailSend, createEmailSend, type EmailDeps, type MailTransport } from './email/send.js';
 export { openaiChat } from './openai/chat.js';
 export { geminiGenerate } from './gemini/generate.js';
