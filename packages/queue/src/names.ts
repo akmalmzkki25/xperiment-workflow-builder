@@ -4,6 +4,7 @@ export const QUEUE_NAMES = {
   nodeCompleted: 'node.completed',
   watchdog: 'execution.watchdog',
   executionCallback: 'execution.callback',
+  alertNotify: 'alert.notify',
 } as const;
 
 export type QueueKey = keyof typeof QUEUE_NAMES;

@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { createPool, runMigrations } from '@xperiment/db';
 import { createQueues, createRedisConnection, startOutboxPublisher } from '@xperiment/queue';
 import { pino } from 'pino';
+import { runAlertSweep } from './alertSweep.js';
 import { runSchedulerTick } from './tick.js';
 import { runWaitSweep } from './waitSweep.js';
 
@@ -19,7 +20,7 @@ const log = (msg: string, extra?: Record<string, unknown>) => logger.info(extra 
 const timer = setInterval(() => {
   if (running) return;
   running = true;
-  void Promise.all([runSchedulerTick({ pool, log }), runWaitSweep({ pool, log })])
+  void Promise.all([runSchedulerTick({ pool, log }), runWaitSweep({ pool, log }), runAlertSweep({ pool, log })])
     .catch((e: unknown) => logger.error({ err: (e as Error).message }, 'scheduler tick failed'))
     .finally(() => {
       running = false;

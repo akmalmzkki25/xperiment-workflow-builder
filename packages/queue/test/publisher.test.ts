@@ -37,6 +37,7 @@ describe('jobIdFor', () => {
     expect(jobIdFor('node.task', { executionId: 'E', nodeId: 'n', attempt: 2 })).toBe('node-task_E_n_2');
     expect(jobIdFor('node.completed', { executionId: 'E', nodeId: 'n', attempt: 1 })).toBe('node-done_E_n_1');
     expect(jobIdFor('execution.watchdog', { executionId: 'E' })).toBe('watchdog_E');
+    expect(jobIdFor('alert.notify', { eventId: 'EV' })).toBe('alert_EV');
     expect(() => jobIdFor('bogus.event', {})).toThrow();
   });
 });
@@ -140,6 +141,19 @@ describe('startOutboxPublisher', () => {
       expect(job).toBeDefined();
       expect(job!.opts.attempts).toBe(5);
       expect(job!.opts.backoff).toMatchObject({ type: 'exponential' });
+    } finally {
+      await publisher.stop();
+    }
+  });
+
+  test('alert.notify jobs carry BullMQ retries', async () => {
+    await insertOutbox(pool, { eventType: 'alert.notify', payload: { ruleId: 'R', eventId: 'EV' } });
+    const publisher = startOutboxPublisher({ pool, queues, intervalMs: 50 });
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      const job = await queues.alertNotify.getJob('alert_EV');
+      expect(job).toBeDefined();
+      expect(job!.opts.attempts).toBe(5);
     } finally {
       await publisher.stop();
     }
