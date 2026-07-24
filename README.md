@@ -141,10 +141,36 @@ Credentialed connectors (`postgres.query`, `telegram.sendMessage`, `openai.chat`
    appears in stored inputs, events, or logs. Provider `baseUrl` overrides in the
    payload support stubbed testing.
 
+## Web UI (Phase 1D)
+
+`apps/web` is a Next.js canvas UI (port 3005) with the Arus design language:
+visual workflow editing on React Flow, schema-driven node config forms fed by
+`GET /v1/connectors`, draft save with `If-Match` conflict handling, validate /
+publish / activate, a connections vault page (secrets write-only), and live
+execution timelines.
+
+```bash
+pnpm --filter @xperiment/web dev
+```
+
+Open http://localhost:3005 (set `NEXT_PUBLIC_API_URL` if the API is not on
+`http://localhost:3000`). Canvas layout positions persist in the draft under
+`metadata.layout`.
+
+Playwright covers the critical path (register → build on canvas → publish →
+activate → webhook fire → green timeline, plus connection secret hygiene and
+workspace isolation). It spawns the five services on ports 3100–3104 itself:
+
+```bash
+pnpm --filter @xperiment/web e2e
+```
+
+Flow screenshots land in `apps/web/e2e/artifacts/`.
+
 ## Layout
 
 ```text
 packages/  ir | expressions | engine-core | connectors | db | queue
-apps/      api (3000) | orchestrator (3001) | worker (3002) | gateway (3003) | scheduler (3004) | cli
+apps/      api (3000) | orchestrator (3001) | worker (3002) | gateway (3003) | scheduler (3004) | web (3005) | cli
 e2e/       end-to-end scenario suite
 ```
