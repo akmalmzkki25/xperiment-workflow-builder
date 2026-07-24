@@ -15,6 +15,7 @@ import type pg from 'pg';
 import { extractDedupKey, sanitizeHeaders, verifyHmac, verifyToken } from './verify.js';
 
 const DEFAULT_EXECUTION_TIMEOUT_MS = 900000;
+const RESUME_BODY_CAP_BYTES = 262144; // matches the node output cap in @xperiment/db
 
 export interface GatewayDeps {
   pool: pg.Pool;
@@ -104,6 +105,11 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
     if (!wait || wait.kind !== 'event') return reply.status(404).send({ title: 'Not found', status: 404 });
 
     const rawBody = (req.body as Buffer | undefined) ?? Buffer.alloc(0);
+    // The body becomes the node output, which is capped at 256KB — reject early
+    // with 413 rather than letting the storage cap throw a 500 mid-transaction.
+    if (rawBody.length > RESUME_BODY_CAP_BYTES) {
+      return reply.status(413).send({ title: 'Payload too large', status: 413 });
+    }
     let body: unknown = null;
     if (rawBody.length > 0) {
       try {

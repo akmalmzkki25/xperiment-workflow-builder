@@ -268,4 +268,56 @@ describe('gateway', () => {
     const r = await app.inject({ method: 'POST', url: '/r/nope', headers: { 'content-type': 'application/json' }, payload: '{}' });
     expect(r.statusCode).toBe(404);
   });
+
+  test('the gateway refuses an approval-kind token (no auth bypass of the approval path)', async () => {
+    const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Appr' });
+    const ver = await createVersion(pool, { workflowId: wf.id, definition: hookIr, hash: 'h' });
+    const ex = await pool.query(
+      `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, status)
+       VALUES ($1,$2,$3,'RUNNING') RETURNING id`,
+      [DEFAULT_WORKSPACE_ID, wf.id, ver.id],
+    );
+    const executionId = (ex.rows[0] as { id: string }).id;
+    await pool.query(
+      `INSERT INTO execution_nodes (workspace_id, execution_id, node_id, status, attempt) VALUES ($1,$2,'gate','WAITING',1)`,
+      [DEFAULT_WORKSPACE_ID, executionId],
+    );
+    const token = randomBytes(24).toString('base64url');
+    await openWait(pool, {
+      executionId,
+      nodeId: 'gate',
+      attempt: 1,
+      kind: 'approval',
+      resumeToken: token,
+      expiresAt: new Date(Date.now() + 3_600_000),
+      fallback: 'reject',
+      message: 'x',
+    });
+    const r = await app.inject({ method: 'POST', url: `/r/${token}`, headers: { 'content-type': 'application/json' }, payload: '{}' });
+    expect(r.statusCode).toBe(404);
+    // The approval is untouched — still open.
+    expect((await latestNodeStates(pool, executionId)).find((n) => n.nodeId === 'gate')?.status).toBe('WAITING');
+  });
+
+  test('an oversized resume body is rejected 413, not a 500', async () => {
+    const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Big' });
+    const ver = await createVersion(pool, { workflowId: wf.id, definition: hookIr, hash: 'h' });
+    const ex = await pool.query(
+      `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, status)
+       VALUES ($1,$2,$3,'RUNNING') RETURNING id`,
+      [DEFAULT_WORKSPACE_ID, wf.id, ver.id],
+    );
+    const executionId = (ex.rows[0] as { id: string }).id;
+    await pool.query(
+      `INSERT INTO execution_nodes (workspace_id, execution_id, node_id, status, attempt) VALUES ($1,$2,'evt','WAITING',1)`,
+      [DEFAULT_WORKSPACE_ID, executionId],
+    );
+    const token = randomBytes(24).toString('base64url');
+    await openWait(pool, { executionId, nodeId: 'evt', attempt: 1, kind: 'event', resumeToken: token });
+    const big = JSON.stringify({ blob: 'x'.repeat(300_000) }); // > 256KB output cap
+    const r = await app.inject({ method: 'POST', url: `/r/${token}`, headers: { 'content-type': 'application/json' }, payload: big });
+    expect(r.statusCode).toBe(413);
+    // The wait survives for a properly-sized retry.
+    expect((await latestNodeStates(pool, executionId)).find((n) => n.nodeId === 'evt')?.status).toBe('WAITING');
+  });
 });

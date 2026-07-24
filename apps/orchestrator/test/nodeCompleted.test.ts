@@ -4,7 +4,9 @@ import {
   fetchUnpublished,
   getExecutionDetail,
   latestNodeStates,
+  openWait,
   runMigrations,
+  waitsForExecution,
 } from '@xperiment/db';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -150,5 +152,42 @@ describe('handleNodeCompleted FAILED', () => {
     expect(detail?.execution.errorSummary).toContain('t');
     const states = await latestNodeStates(pool, executionId);
     expect(states.find((n) => n.nodeId === 'greet')?.status).toBe('SKIPPED');
+  });
+
+  test("finalizing FAILED closes a sibling branch's open wait (no dangling approval)", async () => {
+    const { executionId } = await seedExecution(pool, linearIr());
+    await handleExecutionRequested(deps, { executionId });
+    // Simulate a parallel branch already suspended on an approval while 't' runs.
+    await casNode(pool, { executionId, nodeId: 'greet', attempt: 1, from: ['PENDING'], to: 'READY' });
+    await casNode(pool, { executionId, nodeId: 'greet', attempt: 1, from: ['READY'], to: 'QUEUED' });
+    await casNode(pool, { executionId, nodeId: 'greet', attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    await casNode(pool, { executionId, nodeId: 'greet', attempt: 1, from: ['RUNNING'], to: 'WAITING' });
+    await openWait(pool, {
+      executionId,
+      nodeId: 'greet',
+      attempt: 1,
+      kind: 'approval',
+      resumeToken: 'tok-dangling',
+      expiresAt: new Date(Date.now() + 3_600_000),
+      fallback: 'reject',
+      message: 'x',
+    });
+    // 't' fails, finalizing the execution.
+    await casNode(pool, { executionId, nodeId: 't', attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    await casNode(pool, {
+      executionId,
+      nodeId: 't',
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'FAILED',
+      patch: { errorJson: { code: 'boom', retryable: false }, completedAt: true },
+    });
+    await handleNodeCompleted(deps, { executionId, nodeId: 't', attempt: 1, status: 'FAILED' });
+
+    expect((await getExecutionDetail(pool, executionId))?.execution.status).toBe('FAILED');
+    // The sibling wait must not dangle: it is closed and its node skipped.
+    const waits = await waitsForExecution(pool, executionId);
+    expect(waits.every((w) => w.status !== 'open')).toBe(true);
+    expect((await latestNodeStates(pool, executionId)).find((n) => n.nodeId === 'greet')?.status).toBe('SKIPPED');
   });
 });

@@ -30,6 +30,7 @@ import { classifyError } from './classify.js';
 
 const TERMINAL_EXECUTION_STATUSES = ['SUCCEEDED', 'FAILED', 'TIMED_OUT'];
 const DEFAULT_NODE_TIMEOUT_MS = 30000;
+const EVENT_WAIT_MAX_TTL_MS = 2_592_000_000; // 30 days — hard ceiling for un-timed event waits
 
 export interface WorkerDeps {
   pool: pg.Pool;
@@ -189,13 +190,16 @@ async function suspendNode(
         resumeAt: new Date(now + suspend.delayMs),
       });
     } else if (suspend.kind === 'event') {
+      // Cap even un-timed event waits so an execution can't stay suspended (with a
+      // live resume token) forever if its callback never arrives.
+      const ttlMs = suspend.ttlMs ?? EVENT_WAIT_MAX_TTL_MS;
       await openWait(client, {
         executionId,
         nodeId,
         attempt,
         kind: 'event',
         resumeToken: randomBytes(24).toString('base64url'),
-        ...(suspend.ttlMs ? { expiresAt: new Date(now + suspend.ttlMs) } : {}),
+        expiresAt: new Date(now + ttlMs),
       });
     } else {
       await openWait(client, {

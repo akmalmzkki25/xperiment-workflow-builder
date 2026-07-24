@@ -90,10 +90,21 @@ export interface ExecutionEventRow {
   createdAt: string;
 }
 
+export interface ExecutionWaitRow {
+  nodeId: string;
+  kind: string;
+  status: string;
+  expiresAt: string | null;
+  decision: string | null;
+  resolvedBy: string | null;
+  resumeUrl?: string;
+}
+
 export interface ExecutionDetail {
   execution: ExecutionRow;
   nodes: ExecutionNodeRow[];
   events: ExecutionEventRow[];
+  waits: ExecutionWaitRow[];
 }
 
 export interface MeResponse {

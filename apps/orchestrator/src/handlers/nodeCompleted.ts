@@ -2,6 +2,7 @@ import {
   appendEvent,
   casExecution,
   casNode,
+  closeOpenWaits,
   insertNodeAttempt,
   insertOutbox,
   latestNodeStates,
@@ -72,7 +73,10 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
         completedAt: true,
         errorSummary: `Node '${nodeId}' failed`,
       });
-      if (failed) await appendEvent(client, { executionId, eventType: 'execution.failed', nodeId });
+      if (failed) {
+        await closeOpenWaits(client, executionId); // don't leave a sibling's wait dangling
+        await appendEvent(client, { executionId, eventType: 'execution.failed', nodeId });
+      }
     });
     return;
   }
@@ -123,7 +127,10 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
         completedAt: true,
         errorSummary: 'A node failed',
       });
-      if (done) await appendEvent(client, { executionId, eventType: 'execution.failed' });
+      if (done) {
+        await closeOpenWaits(client, executionId);
+        await appendEvent(client, { executionId, eventType: 'execution.failed' });
+      }
     }
   });
 }

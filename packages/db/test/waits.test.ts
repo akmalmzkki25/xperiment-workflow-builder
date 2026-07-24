@@ -4,6 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { createPool, runMigrations, withTx } from '../src/index.js';
 import { createUser, createWorkspaceWithOwner } from '../src/repos/auth.js';
 import {
+  applyResume,
+  closeOpenWaits,
   dueWaits,
   getOpenApprovalWait,
   getOpenWaitByToken,
@@ -12,6 +14,16 @@ import {
   resolveWait,
   waitsForExecution,
 } from '../src/repos/waits.js';
+import { latestNodeStates } from '../src/repos/executions.js';
+
+async function countCompletions(pool2: Pool, executionId: string, nodeId: string): Promise<number> {
+  const r = await pool2.query(
+    `SELECT count(*)::int AS n FROM task_outbox WHERE event_type='node.completed'
+       AND payload_json->>'executionId'=$1 AND payload_json->>'nodeId'=$2`,
+    [executionId, nodeId],
+  );
+  return (r.rows[0] as { n: number }).n;
+}
 
 let pool: Pool;
 let workspaceId: string;
@@ -118,6 +130,74 @@ describe('execution_waits repo', () => {
     const due = await withTx(pool, (client) => dueWaits(client, 10));
     expect(due).toHaveLength(1);
     expect(due[0]!.executionId).toBe(e1);
+  });
+
+  test('closeOpenWaits closes open waits and skips their WAITING nodes', async () => {
+    const executionId = await seedExecution('gate');
+    await openWait(pool, {
+      executionId,
+      nodeId: 'gate',
+      attempt: 1,
+      kind: 'approval',
+      resumeToken: randomBytes(24).toString('base64url'),
+      expiresAt: new Date(Date.now() + 60_000),
+      fallback: 'reject',
+      message: 'x',
+    });
+    const closed = await withTx(pool, (client) => closeOpenWaits(client, executionId));
+    expect(closed).toBe(1);
+    expect((await waitsForExecution(pool, executionId))[0]!.status).toBe('expired');
+    expect((await latestNodeStates(pool, executionId)).find((n) => n.nodeId === 'gate')?.status).toBe('SKIPPED');
+    // No completion is emitted for a wait that was force-closed on finalization.
+    expect(await countCompletions(pool, executionId, 'gate')).toBe(0);
+  });
+
+  test('applyResume is idempotent and emits exactly one completion', async () => {
+    const executionId = await seedExecution('appr');
+    const wait = await openWait(pool, {
+      executionId,
+      nodeId: 'appr',
+      attempt: 1,
+      kind: 'approval',
+      resumeToken: randomBytes(24).toString('base64url'),
+      expiresAt: new Date(Date.now() + 60_000),
+      fallback: 'reject',
+      message: 'x',
+    });
+    const ref = { id: wait.id, executionId, nodeId: 'appr', attempt: 1 };
+    const first = await withTx(pool, (client) =>
+      applyResume(client, { wait: ref, waitStatus: 'resolved', terminal: 'SUCCEEDED', outputPort: 'approved', output: {} }),
+    );
+    const second = await withTx(pool, (client) =>
+      applyResume(client, { wait: ref, waitStatus: 'resolved', terminal: 'SUCCEEDED', outputPort: 'approved', output: {} }),
+    );
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(await countCompletions(pool, executionId, 'appr')).toBe(1);
+  });
+
+  test('applyResume no-ops (no completion) when the node already left WAITING', async () => {
+    const executionId = await seedExecution('stuck');
+    const wait = await openWait(pool, {
+      executionId,
+      nodeId: 'stuck',
+      attempt: 1,
+      kind: 'event',
+      resumeToken: randomBytes(24).toString('base64url'),
+    });
+    // Node was force-skipped (e.g. execution failed elsewhere) but the wait row lingers open.
+    await pool.query(`UPDATE execution_nodes SET status='SKIPPED' WHERE execution_id=$1 AND node_id='stuck'`, [executionId]);
+    const ok = await withTx(pool, (client) =>
+      applyResume(client, {
+        wait: { id: wait.id, executionId, nodeId: 'stuck', attempt: 1 },
+        waitStatus: 'resolved',
+        terminal: 'SUCCEEDED',
+        outputPort: 'main',
+        output: {},
+      }),
+    );
+    expect(ok).toBe(false);
+    expect(await countCompletions(pool, executionId, 'stuck')).toBe(0);
   });
 
   test('listOpenApprovals is scoped to the workspace', async () => {

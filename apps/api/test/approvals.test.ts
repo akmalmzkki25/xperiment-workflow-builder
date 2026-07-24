@@ -78,6 +78,52 @@ describe('approvals API', () => {
     expect(node?.outputPort).toBe('approved');
   });
 
+  test('the decision is audited on the wait row (decision, resolved_by, comment)', async () => {
+    const { executionId } = await seedApproval(auth.workspaceId);
+    await auth.inject({
+      method: 'POST',
+      url: `/v1/executions/${executionId}/approvals/appr`,
+      payload: { decision: 'approve', comment: 'signed off' },
+    });
+    const row = await pool.query(
+      `SELECT status, decision, resolved_by, comment, resolved_at FROM execution_waits WHERE execution_id=$1`,
+      [executionId],
+    );
+    const w = row.rows[0] as { status: string; decision: string; resolved_by: string | null; comment: string; resolved_at: string | null };
+    expect(w.status).toBe('resolved');
+    expect(w.decision).toBe('approve');
+    expect(w.resolved_by).toBe(auth.userId);
+    expect(w.comment).toBe('signed off');
+    expect(w.resolved_at).not.toBeNull();
+  });
+
+  test('execution detail never leaks resume tokens and scopes resumeUrl to open event waits', async () => {
+    const { executionId } = await seedApproval(auth.workspaceId, 'gate');
+    // Add an open event wait too.
+    await pool.query(
+      `INSERT INTO execution_nodes (workspace_id, execution_id, node_id, status, attempt) VALUES ($1,$2,'evt','WAITING',1)`,
+      [auth.workspaceId, executionId],
+    );
+    await openWait(pool, {
+      executionId,
+      nodeId: 'evt',
+      attempt: 1,
+      kind: 'event',
+      resumeToken: 'super-secret-token-value',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const r = await auth.inject({ method: 'GET', url: `/v1/executions/${executionId}` });
+    const detail = r.json<{ waits: (Record<string, unknown> & { nodeId: string; resumeUrl?: string })[] }>();
+    const evt = detail.waits.find((w) => w.nodeId === 'evt')!;
+    const gate = detail.waits.find((w) => w.nodeId === 'gate')!;
+    // The token is exposed ONLY through the event wait's resumeUrl — never as a
+    // bare resume_token field, and never on the approval wait.
+    expect(evt.resumeUrl).toMatch(/\/r\/super-secret-token-value$/);
+    expect(gate.resumeUrl).toBeUndefined();
+    expect('resumeToken' in evt).toBe(false);
+    expect(JSON.stringify(gate)).not.toContain('super-secret-token-value');
+  });
+
   test('reject advances on the rejected port', async () => {
     const { executionId } = await seedApproval(auth.workspaceId);
     await auth.inject({ method: 'POST', url: `/v1/executions/${executionId}/approvals/appr`, payload: { decision: 'reject' } });

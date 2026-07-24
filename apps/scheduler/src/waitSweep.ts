@@ -20,10 +20,19 @@ export async function runWaitSweep(deps: WaitSweepDeps): Promise<{ resumed: numb
 
   await withTx(deps.pool, async (client) => {
     const due = await dueWaits(client, BATCH);
+    // Isolate each wait with a savepoint so one bad row can't roll back the
+    // whole batch's resumes while still holding the SKIP LOCKED locks.
     for (const wait of due) {
-      const applied = await resolveDueWait(client, wait);
-      if (applied === 'resumed') resumed += 1;
-      else if (applied === 'expired') expired += 1;
+      await client.query('SAVEPOINT wait_item');
+      try {
+        const applied = await resolveDueWait(client, wait);
+        await client.query('RELEASE SAVEPOINT wait_item');
+        if (applied === 'resumed') resumed += 1;
+        else if (applied === 'expired') expired += 1;
+      } catch (e) {
+        await client.query('ROLLBACK TO SAVEPOINT wait_item');
+        deps.log('wait_sweep.item_failed', { waitId: wait.id, err: (e as Error).message });
+      }
     }
   });
 

@@ -179,7 +179,7 @@ export async function applyResume(
   if (!closed) return false; // lost the race — another resolver already handled it
 
   const { executionId, nodeId, attempt } = args.wait;
-  await casNode(client, {
+  const written = await casNode(client, {
     executionId,
     nodeId,
     attempt,
@@ -192,6 +192,9 @@ export async function applyResume(
       completedAt: true,
     },
   });
+  // The node already left WAITING (e.g. the execution was finalized elsewhere and
+  // its waits closed). Don't emit a completion the orchestrator would ignore.
+  if (!written) return false;
   await appendEvent(client, {
     executionId,
     eventType: 'node.resumed',
@@ -209,6 +212,35 @@ export async function applyResume(
     },
   });
   return true;
+}
+
+/**
+ * Closes every open wait for an execution and skips its WAITING nodes. Call this
+ * whenever an execution is finalized to a terminal state (FAILED/TIMED_OUT) so a
+ * sibling branch's approval/event wait cannot dangle — leaking a live resume token
+ * or a stale entry in the pending-approvals list. Returns the number closed.
+ */
+export async function closeOpenWaits(client: pg.PoolClient, executionId: string): Promise<number> {
+  const open = await client.query(
+    `SELECT id, node_id, attempt FROM execution_waits WHERE execution_id = $1 AND status = 'open' FOR UPDATE`,
+    [executionId],
+  );
+  let closed = 0;
+  for (const row of open.rows as Record<string, unknown>[]) {
+    const ok = await resolveWait(client, { waitId: row['id'] as string, status: 'expired' });
+    if (!ok) continue;
+    await casNode(client, {
+      executionId,
+      nodeId: row['node_id'] as string,
+      attempt: Number(row['attempt']),
+      from: ['WAITING'],
+      to: 'SKIPPED',
+      patch: { completedAt: true },
+    });
+    await appendEvent(client, { executionId, eventType: 'node.skipped', nodeId: row['node_id'] as string });
+    closed += 1;
+  }
+  return closed;
 }
 
 export async function waitsForExecution(db: Db, executionId: string): Promise<WaitRow[]> {

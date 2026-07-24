@@ -7,6 +7,7 @@ export interface AuthedUser {
   token: string;
   email: string;
   password: string;
+  userId: string;
   workspaceId: string;
   /** app.inject with the Authorization header merged in. */
   inject: (opts: InjectOptions) => Promise<InjectResponse>;
@@ -17,11 +18,12 @@ export async function createAuthedUser(app: FastifyInstance): Promise<AuthedUser
   const password = 'password-123';
   const r = await app.inject({ method: 'POST', url: '/v1/auth/register', payload: { email, password } });
   if (r.statusCode !== 201) throw new Error(`register failed: ${r.body}`);
-  const body = r.json<{ token: string; workspace: { id: string } }>();
+  const body = r.json<{ token: string; user: { id: string }; workspace: { id: string } }>();
   return {
     token: body.token,
     email,
     password,
+    userId: body.user.id,
     workspaceId: body.workspace.id,
     inject: (opts: InjectOptions) =>
       app.inject({
