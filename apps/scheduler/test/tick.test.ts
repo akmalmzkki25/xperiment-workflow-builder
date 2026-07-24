@@ -110,6 +110,38 @@ describe('runSchedulerTick', () => {
     expect(await runSchedulerTick(deps())).toEqual({ fired: 0, skipped: 0 });
   });
 
+  test('due trigger on an unpublished workflow is skipped without firing', async () => {
+    const bare = await createWorkflow(pool, { name: 'NoVersion' });
+    await setWorkflowActive(pool, bare.id, true);
+    await upsertTrigger(pool, {
+      workflowId: bare.id,
+      nodeId: 'tick',
+      type: 'schedule',
+      cron: '* * * * * *',
+      timezone: 'UTC',
+      nextFireAt: new Date(Date.now() - 500),
+    });
+    await setTriggersActive(pool, bare.id, true);
+    const r = await runSchedulerTick(deps());
+    expect(r.fired).toBe(0);
+    const count = await pool.query(`SELECT count(*)::int AS c FROM executions`);
+    expect((count.rows[0] as { c: number }).c).toBe(0);
+  });
+
+  test('null timezone falls back to the default and still fires', async () => {
+    const row = await upsertTrigger(pool, {
+      workflowId,
+      nodeId: 'tick',
+      type: 'schedule',
+      cron: '* * * * * *',
+      nextFireAt: new Date(Date.now() - 500),
+    });
+    await setTriggersActive(pool, workflowId, true);
+    expect(row.timezone).toBeNull();
+    const r = await runSchedulerTick(deps());
+    expect(r.fired).toBe(1);
+  });
+
   test('two concurrent ticks fire exactly once total', async () => {
     await seedSchedule(new Date(Date.now() - 500));
     const [a, b] = await Promise.all([runSchedulerTick(deps()), runSchedulerTick(deps())]);

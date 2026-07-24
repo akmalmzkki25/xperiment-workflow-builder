@@ -79,10 +79,37 @@ against a local stub HTTP server, and includes the Phase 0 exit criterion:
 the same workflow + input executed 5 times must produce identical terminal
 results, plus worker-crash recovery via BullMQ stalled-job redelivery.
 
+## Triggers (Phase 1A)
+
+Webhook and schedule triggers start executions without `POST /execute`:
+
+1. Build a workflow whose entrypoint is a `webhook.trigger`
+   (`parameters: { authMode: 'none'|'token'|'hmac', idempotencyKeyPath?: 'event.id' }`)
+   or `schedule.trigger` (`parameters: { cron: '*/5 * * * *', timezone?: 'Asia/Jakarta' }`;
+   6-field seconds cron supported).
+2. Publish it, then `POST /v1/workflows/:id/activate` — the response contains the
+   production URL (`{GATEWAY_URL}/t/:routeKey`), a test URL (`/t/test/:routeKey`, works
+   while inactive and records sample payloads), and the generated secret.
+3. Sign production calls: `X-Xperiment-Signature: sha256=<hex(hmac-sha256(secret, rawBody))>`
+   for `hmac` mode, or `Authorization: Bearer <secret>` for `token` mode.
+4. Duplicate deliveries are deduped by `idempotencyKeyPath` → `Idempotency-Key` header →
+   raw-body hash. `POST /v1/workflows/:id/deactivate` stops production traffic without
+   touching definitions or running executions.
+
+Run the two extra services alongside the core three:
+
+```bash
+pnpm --filter @xperiment/gateway dev
+```
+
+```bash
+pnpm --filter @xperiment/scheduler dev
+```
+
 ## Layout
 
 ```text
 packages/  ir | expressions | engine-core | connectors | db | queue
-apps/      api (3000) | orchestrator (3001) | worker (3002) | cli
+apps/      api (3000) | orchestrator (3001) | worker (3002) | gateway (3003) | scheduler (3004) | cli
 e2e/       end-to-end scenario suite
 ```

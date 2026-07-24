@@ -6,7 +6,7 @@ import type { Pool } from 'pg';
 
 const execAsync = promisify(exec);
 
-export const SERVICE_PORTS = [3100, 3101, 3102];
+export const SERVICE_PORTS = [3100, 3101, 3102, 3103, 3104];
 
 export const API_URL = 'http://127.0.0.1:3100';
 
@@ -15,13 +15,20 @@ const SERVICE_ENV = {
   API_PORT: '3100',
   ORCH_PORT: '3101',
   WORKER_PORT: '3102',
+  GATEWAY_PORT: '3103',
+  SCHEDULER_PORT: '3104',
+  SCHEDULER_INTERVAL_MS: '500',
+  GATEWAY_URL: 'http://127.0.0.1:3103',
+  TRIGGER_SECRET_KEY: 'xperiment-e2e-trigger-secret',
   HTTP_ALLOW_PRIVATE_IPS: 'true',
   WORKER_LOCK_DURATION: '2000',
   WORKER_STALLED_INTERVAL: '500',
   LOG_LEVEL: 'warn',
 };
 
-export function spawnService(filter: '@xperiment/api' | '@xperiment/orchestrator' | '@xperiment/worker'): ChildProcess {
+export function spawnService(
+  filter: '@xperiment/api' | '@xperiment/orchestrator' | '@xperiment/worker' | '@xperiment/gateway' | '@xperiment/scheduler',
+): ChildProcess {
   return spawn('pnpm', ['--filter', filter, 'start'], {
     env: SERVICE_ENV,
     shell: process.platform === 'win32',
@@ -63,7 +70,13 @@ export async function killPortOwners(ports: number[] = SERVICE_PORTS): Promise<v
 
 /** Wait until nothing answers on the service ports (previous test file's processes fully dead). */
 export async function waitForPortsFree(timeoutMs = 20000): Promise<void> {
-  const urls = [`${API_URL}/v1/healthz`, 'http://127.0.0.1:3101', 'http://127.0.0.1:3102'];
+  const urls = [
+    `${API_URL}/v1/healthz`,
+    'http://127.0.0.1:3101',
+    'http://127.0.0.1:3102',
+    'http://127.0.0.1:3103/healthz',
+    'http://127.0.0.1:3104',
+  ];
   const deadline = Date.now() + timeoutMs;
   let killedOnce = false;
   for (;;) {

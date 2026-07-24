@@ -1,10 +1,12 @@
-import { parseExpression } from 'cron-parser';
+// cron-parser v4 is CommonJS; named ESM imports fail under real Node ESM (tsx),
+// so use the default-import interop form.
+import cronParser from 'cron-parser';
 import { z } from 'zod';
 import type { ConnectorDefinition } from '../types.js';
 
 function isValidCron(cron: string): boolean {
   try {
-    parseExpression(cron);
+    cronParser.parseExpression(cron);
     return true;
   } catch {
     return false;
