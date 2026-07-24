@@ -13,6 +13,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OrchestratorDeps } from '../src/deps.js';
 import { handleExecutionRequested } from '../src/handlers/executionRequested.js';
 import { handleNodeCompleted } from '../src/handlers/nodeCompleted.js';
+import { handleWatchdog } from '../src/handlers/watchdog.js';
 import { branchIr, linearIr, seedExecution, truncateAll } from './helpers.js';
 
 let pool: Pool;
@@ -85,6 +86,19 @@ describe('handleNodeCompleted SUCCEEDED', () => {
     expect(exec[0]!.status).toBe('SUCCEEDED');
     const metrics = (rows.rows as { metric: string }[]).map((r) => r.metric).sort();
     expect(metrics).toEqual(['compute_ms', 'execution', 'node']); // both nodes ran → node qty 2 > 0
+  });
+
+  test('a watchdog firing after SUCCEEDED adds no second usage row (cross-handler exactly-once)', async () => {
+    const { executionId } = await seedExecution(pool, linearIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedNode(executionId, 'greet'); // terminal SUCCEEDED → one execution row
+    await handleWatchdog(deps, { executionId }); // must be a no-op (terminal guard + CAS)
+    const rows = await pool.query(
+      `SELECT count(*)::int AS c FROM usage_events WHERE execution_id=$1 AND metric='execution'`,
+      [executionId],
+    );
+    expect((rows.rows[0] as { c: number }).c).toBe(1);
   });
 
   test('IF false: true-branch subtree skipped, false branch queued, then terminal', async () => {
@@ -170,6 +184,12 @@ describe('handleNodeCompleted FAILED', () => {
     expect(detail?.execution.errorSummary).toContain('t');
     const states = await latestNodeStates(pool, executionId);
     expect(states.find((n) => n.nodeId === 'greet')?.status).toBe('SKIPPED');
+    // The direct-FAILED finalize path records exactly one FAILED execution usage row.
+    const usage = await pool.query(
+      `SELECT count(*)::int AS c FROM usage_events WHERE execution_id=$1 AND metric='execution' AND metadata->>'status'='FAILED'`,
+      [executionId],
+    );
+    expect((usage.rows[0] as { c: number }).c).toBe(1);
   });
 
   test('finalizing an execution with a configured callback enqueues one execution.callback', async () => {

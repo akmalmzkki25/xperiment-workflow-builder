@@ -64,6 +64,24 @@ describe('getUsageSummary', () => {
     expect(s.series[0]).toMatchObject({ date: '2026-07-10', executions: 1, nodes: 4, computeMs: 500, aiTokens: 90 });
   });
 
+  test('applies a half-open window and buckets days in UTC at boundaries', async () => {
+    const from = at('2026-09-01T00:00:00Z');
+    const to = at('2026-10-01T00:00:00Z');
+    await insertUsageEvents(pool, [
+      { workspaceId: WS, metric: 'execution', quantity: 1, metadata: { status: 'SUCCEEDED' }, occurredAt: from }, // exactly from → included
+      { workspaceId: WS, metric: 'execution', quantity: 1, metadata: { status: 'SUCCEEDED' }, occurredAt: to }, // exactly to → excluded (half-open)
+      { workspaceId: WS, metric: 'execution', quantity: 1, metadata: { status: 'SUCCEEDED' }, occurredAt: at('2026-09-15T23:59:59Z') }, // late UTC → stays on the 15th
+      { workspaceId: WS, metric: 'execution', quantity: 1, metadata: { status: 'SUCCEEDED' }, occurredAt: at('2026-09-16T00:00:30Z') }, // just past midnight → the 16th
+    ]);
+    const s = await getUsageSummary(pool, { workspaceId: WS, from, to });
+    expect(s.totals.executions).toBe(3); // the row exactly at `to` is excluded
+    const days = s.series.map((d) => d.date);
+    expect(days).toContain('2026-09-01');
+    expect(days).toContain('2026-09-15'); // 23:59:59Z is NOT shifted into the 16th
+    expect(days).toContain('2026-09-16');
+    expect(days).not.toContain('2026-10-01'); // excluded by `< to`
+  });
+
   test('empty period returns zeroed totals and empty series', async () => {
     const s = await getUsageSummary(pool, { workspaceId: WS, from: at('2026-01-01T00:00:00Z'), to: at('2026-01-02T00:00:00Z') });
     expect(s.totals).toEqual({ executions: 0, succeeded: 0, failed: 0, nodes: 0, computeMs: 0, aiTokens: 0 });

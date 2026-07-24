@@ -48,6 +48,10 @@ describe('handleWatchdog', () => {
     );
     expect(rows.rowCount).toBe(1);
     expect((rows.rows[0] as { status: string }).status).toBe('TIMED_OUT');
+    // nodeCount is counted from the pre-transition snapshot (t=QUEUED, greet=PENDING),
+    // so a fresh timeout has nodeCount 0 → no `node` row is emitted.
+    const metrics = await pool.query(`SELECT metric FROM usage_events WHERE execution_id=$1`, [executionId]);
+    expect((metrics.rows as { metric: string }[]).map((r) => r.metric)).not.toContain('node');
   });
 
   test('skips an execution with an open wait instead of timing it out', async () => {

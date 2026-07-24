@@ -103,6 +103,34 @@ describe('POST /v1/ai/generate', () => {
     await app.close();
   });
 
+  test('a metering write failure does not fail the generation (best-effort)', async () => {
+    // A pool proxy that rejects only the usage insert (no global DDL → no cross-file flake).
+    const failingUsagePool = new Proxy(pool, {
+      get(target, prop, receiver) {
+        if (prop === 'query') {
+          return (...args: unknown[]) => {
+            if (typeof args[0] === 'string' && args[0].includes('INSERT INTO usage_events')) {
+              return Promise.reject(new Error('usage insert boom'));
+            }
+            return (target.query as (...a: unknown[]) => unknown)(...args);
+          };
+        }
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    }) as typeof pool;
+    const app = buildServer({
+      pool: failingUsagePool,
+      registry: createDefaultRegistry(),
+      ai: { apiKey: FAKE_KEY, model: 'google/gemini-3.1-flash-lite', baseUrl: stubUrl },
+    });
+    const auth = await createAuthedUser(app);
+    scripted = [JSON.stringify(validIr())];
+    const r = await auth.inject({ method: 'POST', url: '/v1/ai/generate', payload: { prompt: 'build it' } });
+    expect(r.statusCode).toBe(200); // the metering insert failed but the generation still succeeds
+    await app.close();
+  });
+
   test('repairs an invalid-then-valid sequence', async () => {
     const app = buildAiServer(FAKE_KEY);
     const auth = await createAuthedUser(app);

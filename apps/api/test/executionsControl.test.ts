@@ -115,6 +115,10 @@ describe('POST /v1/executions/:id/cancel', () => {
     );
     expect(rows.rowCount).toBe(1);
     expect((rows.rows[0] as { status: string }).status).toBe('CANCELED');
+    // The WAITING gate never ran (nodeCount 0) and the run never started (computeMs 0),
+    // so only the `execution` row is emitted — no `node`/`compute_ms` rows.
+    const all = await pool.query(`SELECT metric FROM usage_events WHERE execution_id=$1`, [executionId]);
+    expect((all.rows as { metric: string }[]).map((r) => r.metric)).toEqual(['execution']);
   });
 
   test('emits exactly one node.skipped for a WAITING node (no cancel/closeOpenWaits double-emit)', async () => {
