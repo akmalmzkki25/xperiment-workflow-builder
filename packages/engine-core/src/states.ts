@@ -6,6 +6,7 @@ export const NODE_STATUSES = [
   'READY',
   'QUEUED',
   'RUNNING',
+  'WAITING',
   'SUCCEEDED',
   'RETRY_SCHEDULED',
   'FAILED',

@@ -26,8 +26,12 @@ const ALLOWED_NODE: [NodeStatus, NodeStatus][] = [
   ['QUEUED', 'RUNNING'],
   ['QUEUED', 'FAILED'], // watchdog
   ['RUNNING', 'SUCCEEDED'],
+  ['RUNNING', 'WAITING'],
   ['RUNNING', 'RETRY_SCHEDULED'],
   ['RUNNING', 'FAILED'],
+  ['WAITING', 'SUCCEEDED'], // resume (approval/event/timer)
+  ['WAITING', 'FAILED'], // expiry with fail fallback
+  ['WAITING', 'SKIPPED'], // execution failing elsewhere
 ];
 
 describe('execution transition matrix', () => {

@@ -16,7 +16,10 @@ export const NODE_TRANSITIONS: Record<NodeStatus, NodeStatus[]> = {
   PENDING: ['READY', 'SKIPPED', 'FAILED'],
   READY: ['QUEUED', 'FAILED'],
   QUEUED: ['RUNNING', 'FAILED'],
-  RUNNING: ['SUCCEEDED', 'RETRY_SCHEDULED', 'FAILED'],
+  RUNNING: ['SUCCEEDED', 'WAITING', 'RETRY_SCHEDULED', 'FAILED'],
+  // WAITING is durable-suspended: a resume (approval, event callback, or timer
+  // sweep) transitions it in place to a terminal.
+  WAITING: ['SUCCEEDED', 'FAILED', 'SKIPPED'],
   SUCCEEDED: [],
   RETRY_SCHEDULED: [],
   FAILED: [],
