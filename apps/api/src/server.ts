@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import cors from '@fastify/cors';
 import type { ConnectorRegistry } from '@xperiment/connectors';
 import { deriveTriggerKey } from '@xperiment/db';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -28,6 +29,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   });
   app.addHook('onRequest', async (req, reply) => {
     void reply.header('x-request-id', req.id);
+  });
+  // Bearer-token auth (no cookies), so reflecting the origin is safe for the alpha.
+  void app.register(cors, {
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['authorization', 'content-type', 'if-match', 'idempotency-key', 'x-xperiment-workspace'],
   });
   const resolvedDeps = {
     pool: deps.pool,
