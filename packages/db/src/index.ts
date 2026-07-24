@@ -6,3 +6,4 @@ export * from './repos/executions.js';
 export * from './repos/outbox.js';
 export { deriveTriggerKey, encryptSecret, decryptSecret } from './crypto.js';
 export * from './repos/triggers.js';
+export * from './repos/connections.js';
