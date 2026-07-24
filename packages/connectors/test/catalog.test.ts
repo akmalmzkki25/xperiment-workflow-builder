@@ -13,7 +13,7 @@ describe('connectorCatalog', () => {
   const byType = new Map(items.map((i) => [i.type, i]));
 
   test('lists every registered connector with metadata only', () => {
-    expect(items).toHaveLength(10);
+    expect(items).toHaveLength(13);
     for (const item of items) {
       expect(Object.keys(item).sort()).toEqual(
         expect.arrayContaining(['defaultEffectClass', 'kind', 'operationVersion', 'outputPorts', 'paramsJsonSchema', 'type']),
@@ -39,5 +39,10 @@ describe('connectorCatalog', () => {
 
   test('if node exposes true/false output ports', () => {
     expect(byType.get('core.if')?.outputPorts).toEqual(['true', 'false']);
+  });
+
+  test('approval node exposes approved/rejected ports', () => {
+    expect(byType.get('core.approval')?.outputPorts).toEqual(['approved', 'rejected']);
+    expect(byType.get('core.delay')?.requiresConnection).toBeUndefined();
   });
 });

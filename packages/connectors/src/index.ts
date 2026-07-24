@@ -1,9 +1,18 @@
-export { NodeRunError, type ConnectorDefinition, type NodeRunContext, type NodeRunResult } from './types.js';
+export {
+  NodeRunError,
+  type ConnectorDefinition,
+  type NodeRunContext,
+  type NodeRunResult,
+  type SuspendSpec,
+} from './types.js';
 export { createDefaultRegistry, type ConnectorRegistry, type RegistryConfig } from './registry.js';
 export { connectorCatalog, type ConnectorCatalogItem } from './catalog.js';
 export { manualTrigger } from './manual/trigger.js';
 export { coreTransform } from './core/transform.js';
 export { coreIf } from './core/if.js';
+export { coreDelay } from './core/delay.js';
+export { coreWaitForEvent } from './core/waitForEvent.js';
+export { coreApproval } from './core/approval.js';
 export { assertUrlAllowed, isForbiddenIp, type SsrfOptions } from './http/ssrf.js';
 export { createHttpRequest } from './http/request.js';
 export { webhookTrigger } from './webhook/trigger.js';

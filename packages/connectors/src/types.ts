@@ -14,9 +14,22 @@ export interface NodeRunContext {
   log: (msg: string, extra?: Record<string, unknown>) => void;
 }
 
+/**
+ * Signals that a node should suspend the execution instead of completing. Uses
+ * RELATIVE durations — the worker computes absolute resume_at/expires_at, so
+ * connectors stay clock-free and deterministic.
+ */
+export type SuspendSpec =
+  | { kind: 'timer'; delayMs: number }
+  | { kind: 'event'; ttlMs?: number }
+  | { kind: 'approval'; ttlMs: number; fallback: 'approve' | 'reject' | 'fail'; message: string };
+
 export interface NodeRunResult {
-  output: unknown;
+  /** Node output. Omitted when the node suspends. */
+  output?: unknown;
   outputPort?: string;
+  /** When present, the worker suspends the node into WAITING instead of completing it. */
+  suspend?: SuspendSpec;
 }
 
 export class NodeRunError extends Error {
