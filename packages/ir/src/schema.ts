@@ -47,7 +47,12 @@ export const workflowIrSchema = z
     nodes: z.array(irNodeSchema).min(1),
     edges: z.array(irEdgeSchema),
     metadata: z
-      .object({ executionTimeoutMs: z.number().int().min(1000).max(86400000).optional() })
+      .object({
+        executionTimeoutMs: z.number().int().min(1000).max(86400000).optional(),
+        layout: z
+          .record(z.string(), z.object({ x: z.number(), y: z.number() }).strict())
+          .optional(),
+      })
       .strict()
       .optional(),
   })

@@ -54,6 +54,21 @@ describe('workflowIrSchema', () => {
     expect(workflowIrSchema.safeParse(bad).success).toBe(false);
   });
 
+  test('accepts metadata.layout positions', () => {
+    const withLayout = {
+      ...validIr,
+      metadata: { layout: { trigger_1: { x: 120, y: 160 }, greet: { x: 440, y: 160 } } },
+    };
+    expect(workflowIrSchema.safeParse(withLayout).success).toBe(true);
+  });
+
+  test('rejects malformed metadata.layout entries', () => {
+    const bad = { ...validIr, metadata: { layout: { trigger_1: { x: 'left', y: 160 } } } };
+    expect(workflowIrSchema.safeParse(bad).success).toBe(false);
+    const extra = { ...validIr, metadata: { layout: { trigger_1: { x: 1, y: 2, z: 3 } } } };
+    expect(workflowIrSchema.safeParse(extra).success).toBe(false);
+  });
+
   test('rejects invalid effectClass and zero maxAttempts', () => {
     const bad = structuredClone(validIr) as { nodes: Record<string, unknown>[] };
     bad.nodes[1]!['effectClass'] = 'destructive';

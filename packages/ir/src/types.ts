@@ -38,5 +38,5 @@ export interface WorkflowIR {
   entrypoints: string[];
   nodes: IRNode[];
   edges: IREdge[];
-  metadata?: { executionTimeoutMs?: number };
+  metadata?: { executionTimeoutMs?: number; layout?: Record<string, { x: number; y: number }> };
 }

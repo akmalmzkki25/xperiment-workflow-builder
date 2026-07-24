@@ -6,6 +6,7 @@ import type pg from 'pg';
 import { registerAuthPlugin } from './auth/plugin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerConnectionRoutes } from './routes/connections.js';
+import { registerConnectorRoutes } from './routes/connectors.js';
 import { registerExecutionRoutes } from './routes/executions.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerTriggerRoutes } from './routes/triggers.js';
@@ -46,5 +47,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerExecutionRoutes(app, resolvedDeps);
   registerTriggerRoutes(app, resolvedDeps);
   registerConnectionRoutes(app, resolvedDeps);
+  registerConnectorRoutes(app, resolvedDeps);
   return app;
 }
