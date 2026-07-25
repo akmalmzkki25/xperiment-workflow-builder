@@ -129,6 +129,9 @@ describe('endpoint helpers', () => {
     await client.cancelExecution('e1');
     await client.retryExecution('e1');
     await client.getUsage();
+    await client.listTemplates();
+    await client.getTemplate('wa-lead-auto-reply');
+    await client.cloneTemplate('wa-lead-auto-reply');
     await client.getDiff('wf1', 'draft', 'v1');
     await client.rollbackVersion('wf1', 'v1');
     await client.listAlerts();
@@ -161,6 +164,9 @@ describe('endpoint helpers', () => {
       'POST /v1/executions/e1/cancel',
       'POST /v1/executions/e1/retry',
       'GET /v1/usage',
+      'GET /v1/templates',
+      'GET /v1/templates/wa-lead-auto-reply',
+      'POST /v1/templates/wa-lead-auto-reply/clone',
       'GET /v1/workflows/wf1/diff?from=draft&to=v1',
       'POST /v1/workflows/wf1/versions/v1/rollback',
       'GET /v1/alerts',

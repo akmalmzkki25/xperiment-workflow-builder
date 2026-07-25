@@ -113,6 +113,20 @@ export interface UsageSummary {
   series: { date: string; executions: number; nodes: number; computeMs: number; aiTokens: number }[];
 }
 
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  useCase: string;
+  version: string;
+  requiredConnectors: string[];
+}
+
+export interface WorkflowTemplate extends TemplateSummary {
+  definition: { nodes: { id: string; type: string }[]; edges: unknown[] };
+}
+
 export interface WorkflowDiff {
   nodes: { added: string[]; removed: string[]; modified: { nodeId: string; changedFields: string[] }[] };
   edges: { added: string[]; removed: string[]; modified: { edgeId: string }[] };
@@ -304,6 +318,18 @@ export class ApiClient {
 
   retryExecution(id: string): Promise<{ executionId: string; created: boolean }> {
     return this.request('POST', `/v1/executions/${id}/retry`);
+  }
+
+  listTemplates(category?: string): Promise<{ items: TemplateSummary[] }> {
+    return this.request('GET', `/v1/templates${category ? `?category=${encodeURIComponent(category)}` : ''}`);
+  }
+
+  getTemplate(id: string): Promise<WorkflowTemplate> {
+    return this.request('GET', `/v1/templates/${id}`);
+  }
+
+  cloneTemplate(id: string, name?: string): Promise<{ id: string; name: string }> {
+    return this.request('POST', `/v1/templates/${id}/clone`, name ? { body: { name } } : {});
   }
 
   getDiff(id: string, from: string, to: string): Promise<{ from: string; to: string; diff: WorkflowDiff }> {
