@@ -204,6 +204,23 @@ finalizes the execution (so a redelivered job never double-counts):
 The web **Usage** page renders the totals as scorecards (runs, success rate, nodes,
 compute, AI tokens) with a runs-per-day chart.
 
+## Templates & WhatsApp vertical pack (Phase 2L)
+
+A curated, built-in template catalog — starting with an Indonesian **WhatsApp
+vertical pack** — lets builders start from a proven blueprint instead of a blank canvas:
+
+- `GET /v1/templates?category=` — browse templates (id, name, description, category,
+  use case, `requiredConnectors`).
+- `GET /v1/templates/:id` — preview the full workflow IR + required credentials (TMP-002).
+- `POST /v1/templates/:id/clone` — creates a **new workflow whose draft is the template
+  IR** (credentialed nodes have no connection yet). Attach the WhatsApp connection,
+  review on the canvas, and publish — publish-gating enforces `connection_required`.
+
+Shipped templates: **WhatsApp lead auto-reply**, **WhatsApp order receipt**, and
+**WhatsApp appointment reminder**. Each is a validated IR (the catalog test proves every
+template validates and its `requiredConnectors` is accurate). The web **Templates**
+gallery browses the pack and clones with one click.
+
 ## Version diff & rollback (Phase 2K)
 
 Published workflow versions are immutable; two of them (or a draft) can be compared,

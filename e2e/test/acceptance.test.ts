@@ -295,6 +295,32 @@ describe('PRD acceptance scenario', () => {
     expect((stored.rows[0] as { inputs: string }).inputs).not.toContain('wa-stub-secret');
   }, 60000);
 
+  test('clone a WhatsApp vertical-pack template, connect it, publish, and it runs end-to-end', async () => {
+    const clone = await api<{ id: string }>('POST', '/v1/templates/wa-lead-auto-reply/clone', { name: 'Cloned WA lead' });
+    expect(clone.status).toBe(201);
+    const id = clone.body.id;
+    const waConn = await createConnection('whatsapp', 'WA pack', { accessToken: 'wa-pack-secret', phoneNumberId: '999', baseUrl: providerUrl });
+
+    // Attach the WhatsApp connection to the cloned template's whatsapp node, then publish.
+    const detail = await api<{ draftRevision: number; draft: { definition: { nodes: { id: string; connectionRef?: string }[] } } }>('GET', `/v1/workflows/${id}`);
+    const definition = detail.body.draft.definition;
+    definition.nodes.find((n) => n.id === 'reply')!.connectionRef = waConn;
+    await api('PUT', `/v1/workflows/${id}/draft`, { definition }, { 'if-match': String(detail.body.draftRevision) });
+    const pub = await api('POST', `/v1/workflows/${id}/publish`);
+    expect(pub.status).toBe(201); // the shipped template IR is valid + publishable once connected
+
+    const act = await api<{ triggers: { url: string }[] }>('POST', `/v1/workflows/${id}/activate`);
+    const url = act.body.triggers[0]!.url;
+    const before = whatsappMessages.length;
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Andi', phone: '628999000' }) });
+    expect(res.status).toBe(202);
+    const { executionId } = (await res.json()) as { executionId: string };
+    const term = await waitForTerminal(executionId);
+    expect(term.execution.status).toBe('SUCCEEDED');
+    expect(whatsappMessages.length).toBe(before + 1);
+    expect(whatsappMessages.at(-1)!.to).toBe('628999000');
+  }, 60000);
+
   test('completion webhook delivers a correctly-signed callback', async () => {
     const definition = {
       schemaVersion: '0.1',

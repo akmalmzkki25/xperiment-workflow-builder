@@ -39,7 +39,7 @@ const TEMPLATES: WorkflowTemplate[] = [
           kind: 'logic',
           type: 'core.transform',
           operationVersion: '0.1.0',
-          parameters: { fields: { name: '{{ trigger.body.name }}', phone: '{{ trigger.body.phone }}' } },
+          parameters: { fields: { name: '{{ trigger.body.body.name }}', phone: '{{ trigger.body.body.phone }}' } },
         },
         {
           id: 'reply',
@@ -47,8 +47,8 @@ const TEMPLATES: WorkflowTemplate[] = [
           type: 'whatsapp.sendMessage',
           operationVersion: '0.1.0',
           parameters: {
-            to: '{{ trigger.body.phone }}',
-            text: 'Halo {{ trigger.body.name }}, terima kasih telah menghubungi kami! Tim kami akan segera membalas.',
+            to: '{{ trigger.body.body.phone }}',
+            text: 'Halo {{ trigger.body.body.name }}, terima kasih telah menghubungi kami! Tim kami akan segera membalas.',
           },
         },
       ],
@@ -77,7 +77,7 @@ const TEMPLATES: WorkflowTemplate[] = [
           kind: 'logic',
           type: 'core.transform',
           operationVersion: '0.1.0',
-          parameters: { fields: { orderId: '{{ trigger.body.orderId }}', total: '{{ trigger.body.total }}' } },
+          parameters: { fields: { orderId: '{{ trigger.body.body.orderId }}', total: '{{ trigger.body.body.total }}' } },
         },
         {
           id: 'send',
@@ -85,8 +85,8 @@ const TEMPLATES: WorkflowTemplate[] = [
           type: 'whatsapp.sendMessage',
           operationVersion: '0.1.0',
           parameters: {
-            to: '{{ trigger.body.phone }}',
-            text: 'Terima kasih! Pesanan #{{ trigger.body.orderId }} sebesar Rp {{ trigger.body.total }} telah kami terima.',
+            to: '{{ trigger.body.body.phone }}',
+            text: 'Terima kasih! Pesanan #{{ trigger.body.body.orderId }} sebesar Rp {{ trigger.body.body.total }} telah kami terima.',
           },
         },
       ],
@@ -115,7 +115,7 @@ const TEMPLATES: WorkflowTemplate[] = [
           kind: 'logic',
           type: 'core.if',
           operationVersion: '0.1.0',
-          parameters: { condition: '{{ trigger.body.hoursUntil <= 24 }}' },
+          parameters: { condition: '{{ trigger.body.body.hoursUntil <= 24 }}' },
         },
         {
           id: 'remind',
@@ -123,8 +123,8 @@ const TEMPLATES: WorkflowTemplate[] = [
           type: 'whatsapp.sendMessage',
           operationVersion: '0.1.0',
           parameters: {
-            to: '{{ trigger.body.phone }}',
-            text: 'Pengingat: Anda memiliki janji temu pada {{ trigger.body.appointmentTime }}. Sampai jumpa!',
+            to: '{{ trigger.body.body.phone }}',
+            text: 'Pengingat: Anda memiliki janji temu pada {{ trigger.body.body.appointmentTime }}. Sampai jumpa!',
           },
         },
         { id: 'skip', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: { skipped: true } } },
