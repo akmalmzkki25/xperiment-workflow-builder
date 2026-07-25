@@ -175,4 +175,14 @@ describe('endpoint helpers', () => {
       'POST /v1/alerts/events/a1/ack',
     ]);
   });
+
+  test('template client builds the category query and the clone name body', async () => {
+    responder = () => json(200, { items: [] });
+    const client = makeClient();
+    await client.listTemplates('sales');
+    await client.cloneTemplate('t1', 'My name');
+    expect(calls[0]!.url).toBe('http://api.test/v1/templates?category=sales');
+    expect(calls[1]!.url).toBe('http://api.test/v1/templates/t1/clone');
+    expect(calls[1]!.init.body).toBe(JSON.stringify({ name: 'My name' }));
+  });
 });

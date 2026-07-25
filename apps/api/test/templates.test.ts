@@ -51,9 +51,10 @@ describe('template catalog', () => {
     }
   });
 
-  test('listTemplates filters by category and getTemplate resolves by id', () => {
+  test('listTemplates filters by category (unknown → empty) and getTemplate resolves by id', () => {
     const sales = listTemplates('sales');
     expect(sales.every((t) => t.category === 'sales')).toBe(true);
+    expect(listTemplates('does-not-exist')).toEqual([]);
     expect(getTemplate('wa-lead-auto-reply')?.category).toBe('sales');
     expect(getTemplate('nope')).toBeUndefined();
   });
@@ -63,11 +64,18 @@ describe('/v1/templates routes', () => {
   test('lists summaries without the IR and filters by category', async () => {
     const r = await auth.inject({ method: 'GET', url: '/v1/templates' });
     expect(r.statusCode).toBe(200);
-    const items = r.json<{ items: { id: string; definition?: unknown }[] }>().items;
+    const items = r.json<{ items: { id: string; useCase: string; requiredConnectors: string[]; definition?: unknown }[] }>().items;
     expect(items.length).toBeGreaterThanOrEqual(3);
     expect(items[0]!.definition).toBeUndefined();
+    // The gallery renders these fields; assert the summary carries them.
+    expect(items[0]!.requiredConnectors).toContain('whatsapp');
+    expect(typeof items[0]!.useCase).toBe('string');
     const sales = await auth.inject({ method: 'GET', url: '/v1/templates?category=sales' });
     expect(sales.json<{ items: { category: string }[] }>().items.every((t) => t.category === 'sales')).toBe(true);
+    // Unknown category → empty list (not the full catalog, not a 500).
+    const unknown = await auth.inject({ method: 'GET', url: '/v1/templates?category=nope' });
+    expect(unknown.statusCode).toBe(200);
+    expect(unknown.json<{ items: unknown[] }>().items).toEqual([]);
   });
 
   test('detail returns the IR; unknown id is 404', async () => {
