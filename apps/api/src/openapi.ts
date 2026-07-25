@@ -55,6 +55,9 @@ export const OPENAPI_DOCUMENT = {
     },
     '/v1/alerts/events': { get: { summary: 'Recent alert firings + unacknowledged count', tags: ['alerts'] } },
     '/v1/alerts/events/{id}/ack': { post: { summary: 'Acknowledge an alert firing', tags: ['alerts'] } },
+    '/v1/templates': { get: { summary: 'Browse workflow templates (optional ?category)', tags: ['templates'] } },
+    '/v1/templates/{id}': { get: { summary: 'Template detail incl. IR preview + required credentials', tags: ['templates'] } },
+    '/v1/templates/{id}/clone': { post: { summary: 'Clone a template into a new workflow draft', tags: ['templates'] } },
     '/v1/connectors': { get: { summary: 'Connector catalog with param JSON Schemas', tags: ['connectors'] } },
     '/v1/connections': {
       get: { summary: 'List connections', tags: ['connections'] },
