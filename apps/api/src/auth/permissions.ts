@@ -42,6 +42,15 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   owner: new Set(ADMIN),
 };
 
+/** Every permission in the catalog — the matrix test asserts each one is routed. */
+export const ALL_PERMISSIONS: readonly Permission[] = [
+  ...READ_ONLY,
+  ...RUNTIME,
+  ...AUTHORING,
+  ...BILLING,
+  'member:manage',
+];
+
 /** Fails closed: an unknown role has no permissions and never throws. */
 export function hasPermission(role: Role, permission: Permission): boolean {
   return ROLE_PERMISSIONS[role]?.has(permission) ?? false;

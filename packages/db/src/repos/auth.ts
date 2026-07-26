@@ -224,15 +224,21 @@ export async function listMembers(
 }
 
 /**
- * Change a member's role. Refuses to demote the last owner — the owner count is
- * checked inside the same transaction as the update (with the member row locked),
- * so two concurrent demotions cannot both pass the guard.
+ * Change a member's role. Refuses to demote the last owner.
+ *
+ * Row locks alone cannot carry this guard: two demotions of *different* owners
+ * lock disjoint rows, and under READ COMMITTED each one's owner count reads the
+ * other's pre-image, so both pass and the workspace is left with zero owners —
+ * an unrecoverable state, since every owner-granting route requires an owner.
+ * A workspace-scoped advisory lock serializes all role changes within a
+ * workspace instead, and (unlike locking the owner set) cannot deadlock.
  */
 export async function updateMemberRole(
   pool: pg.Pool,
   args: { workspaceId: string; userId: string; role: Role },
 ): Promise<'ok' | 'not_member' | 'last_owner'> {
   return withTx(pool, async (client) => {
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`workspace_role:${args.workspaceId}`]);
     const current = await client.query(
       `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE`,
       [args.workspaceId, args.userId],

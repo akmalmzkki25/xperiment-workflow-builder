@@ -63,7 +63,10 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
     return reply.status(201).send({ ...rule, ...(secret ? { secret } : {}) });
   });
 
-  app.get('/v1/alerts', async (req) => ({ items: await listAlertRules(deps.pool, authOf(req).workspaceId) }));
+  app.get('/v1/alerts', async (req, reply) => {
+    if (!requirePermission(reply, authOf(req), 'alert:read')) return;
+    return { items: await listAlertRules(deps.pool, authOf(req).workspaceId) };
+  });
 
   app.put('/v1/alerts/:id', async (req, reply) => {
     const ctx = authOf(req);
@@ -96,7 +99,8 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
     return reply.status(204).send();
   });
 
-  app.get('/v1/alerts/events', async (req) => {
+  app.get('/v1/alerts/events', async (req, reply) => {
+    if (!requirePermission(reply, authOf(req), 'alert:read')) return;
     const ws = authOf(req).workspaceId;
     const raw = Number((req.query as { limit?: string }).limit ?? 50);
     const limit = Number.isFinite(raw) ? raw : 50;

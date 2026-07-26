@@ -141,6 +141,9 @@ call returns 403 `Requires the '<permission>' permission`.
 
 ¹ Billing holds `alert:read` + `usage:read` only — not workflows or executions.
 
+- Reads are gated, not just writes: `GET /v1/workflows*`, `/v1/executions*`, `/v1/approvals`,
+  `/v1/alerts*` and `/v1/usage` each require their `*:read` permission, so a billing member
+  cannot read execution timelines (which carry customer payloads) or workflow IR.
 - `connection:read` gates `GET /v1/connections`: credential metadata is shared by role
   (SEC-004), so viewers, operators, and billing cannot enumerate connections.
 - API keys are issued with a role (`POST /v1/api-keys` `{ name, role? }`, default
@@ -148,6 +151,8 @@ call returns 403 `Requires the '<permission>' permission`.
 - `GET /v1/workspaces/members` lists members; `PUT /v1/workspaces/members/:userId`
   `{ role }` changes one. Demoting the last owner is refused with 409, and only an
   owner may grant `owner` (403 otherwise) — the same rule applies to invites and keys.
+  Role changes take a workspace-scoped advisory lock, so concurrent demotions of two
+  different owners cannot both pass the guard and strand the workspace with none.
 - The web app exposes this at `/members`. `hasPermission` fails closed on an unknown
   role, and `apps/api/test/rbac.test.ts` asserts the full role × permission matrix
   against the live routes.

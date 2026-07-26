@@ -4,7 +4,7 @@ import { createPool, runMigrations } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { hasPermission, type Permission } from '../src/auth/permissions.js';
+import { ALL_PERMISSIONS, hasPermission, type Permission } from '../src/auth/permissions.js';
 import { buildServer } from '../src/server.js';
 import { addMemberWithRole, createAuthedUser, type AuthedUser } from './authHelpers.js';
 
@@ -31,6 +31,17 @@ const uuid = '00000000-0000-0000-0000-0000000000aa';
  * call may still legitimately fail (404/409/422) for unrelated reasons.
  */
 const MATRIX: { permission: Permission; method: 'GET' | 'POST'; url: string; payload?: Record<string, unknown> }[] = [
+  { permission: 'workflow:read', method: 'GET', url: '/v1/workflows' },
+  { permission: 'workflow:read', method: 'GET', url: `/v1/workflows/${uuid}` },
+  { permission: 'workflow:read', method: 'GET', url: `/v1/workflows/${uuid}/triggers` },
+  { permission: 'workflow:read', method: 'GET', url: `/v1/workflows/${uuid}/diff?from=draft&to=v` },
+  { permission: 'workflow:read', method: 'POST', url: `/v1/workflows/${uuid}/validate` },
+  { permission: 'execution:read', method: 'GET', url: '/v1/executions' },
+  { permission: 'execution:read', method: 'GET', url: `/v1/executions/${uuid}` },
+  { permission: 'execution:read', method: 'GET', url: '/v1/approvals' },
+  { permission: 'alert:read', method: 'GET', url: '/v1/alerts' },
+  { permission: 'alert:read', method: 'GET', url: '/v1/alerts/events' },
+  { permission: 'usage:read', method: 'GET', url: '/v1/usage' },
   { permission: 'workflow:write', method: 'POST', url: '/v1/workflows', payload: { name: 'rbac' } },
   { permission: 'workflow:activate', method: 'POST', url: `/v1/workflows/${uuid}/activate` },
   { permission: 'execution:run', method: 'POST', url: `/v1/workflows/${uuid}/execute`, payload: {} },
@@ -42,7 +53,17 @@ const MATRIX: { permission: Permission; method: 'GET' | 'POST'; url: string; pay
   { permission: 'member:manage', method: 'GET', url: '/v1/workspaces/members' },
 ];
 
+/** Declared but not yet gated by any route — sub-project N introduces billing routes. */
+const UNROUTED: Permission[] = ['billing:read', 'billing:manage'];
+
 describe('permission matrix', () => {
+  test('every declared permission is exercised by the matrix', () => {
+    const covered = new Set(MATRIX.map((m) => m.permission));
+    for (const p of ALL_PERMISSIONS) {
+      expect(covered.has(p) || UNROUTED.includes(p), `${p} has no matrix row`).toBe(true);
+    }
+  });
+
   test('each role is refused exactly the permissions it lacks', async () => {
     for (const role of ROLES) {
       const member = role === 'owner' ? owner : await addMemberWithRole(app, pool, owner.workspaceId, role);
@@ -76,10 +97,16 @@ describe('permission matrix', () => {
     expect((await op.inject({ method: 'POST', url: `/v1/executions/${uuid}/cancel` })).statusCode).not.toBe(403);
   });
 
-  test('a billing member reads usage but not connections', async () => {
+  test('a billing member reads usage and alerts but no workflow or execution data', async () => {
     const bill = await addMemberWithRole(app, pool, owner.workspaceId, 'billing');
     expect((await bill.inject({ method: 'GET', url: '/v1/usage' })).statusCode).toBe(200);
+    expect((await bill.inject({ method: 'GET', url: '/v1/alerts' })).statusCode).toBe(200);
     expect((await bill.inject({ method: 'GET', url: '/v1/connections' })).statusCode).toBe(403);
+    // An external bookkeeper must not read customer payloads (execution timelines) or IR.
+    expect((await bill.inject({ method: 'GET', url: '/v1/executions' })).statusCode).toBe(403);
+    expect((await bill.inject({ method: 'GET', url: `/v1/executions/${uuid}` })).statusCode).toBe(403);
+    expect((await bill.inject({ method: 'GET', url: '/v1/workflows' })).statusCode).toBe(403);
+    expect((await bill.inject({ method: 'GET', url: `/v1/workflows/${uuid}` })).statusCode).toBe(403);
   });
 });
 

@@ -40,6 +40,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.get('/v1/workflows', async (req, reply) => {
     const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'workflow:read')) return;
     const q = listQuerySchema.safeParse(req.query ?? {});
     if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
     return listWorkflows(deps.pool, {
@@ -51,6 +52,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.get('/v1/workflows/:id', async (req, reply) => {
     const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'workflow:read')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
@@ -99,6 +101,8 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.post('/v1/workflows/:id/validate', async (req, reply) => {
     const ctx = authOf(req);
+    // Read-shaped despite the verb: it inspects the draft and returns findings.
+    if (!requirePermission(reply, ctx, 'workflow:read')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
@@ -161,6 +165,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.get('/v1/workflows/:id/diff', async (req, reply) => {
     const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'workflow:read')) return;
     const { id } = req.params as { id: string };
     const q = (req.query ?? {}) as Record<string, unknown>;
     const from = q['from'];

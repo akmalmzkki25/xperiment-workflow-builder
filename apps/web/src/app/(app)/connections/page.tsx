@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ConnectionDialog } from '../../../components/connections/ConnectionDialog';
 import { EmptyState } from '../../../components/ui/EmptyState';
-import { getBrowserClient } from '../../../lib/api';
+import { ApiError, getBrowserClient } from '../../../lib/api';
 import { fmtTime } from '../../../lib/format';
 
 type TestResult = { ok: boolean; error?: string };
@@ -15,7 +15,14 @@ export default function ConnectionsPage() {
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [pageError, setPageError] = useState<string | null>(null);
 
-  const connections = useQuery({ queryKey: ['connections'], queryFn: () => getBrowserClient().listConnections() });
+  const connections = useQuery({
+    queryKey: ['connections'],
+    queryFn: () => getBrowserClient().listConnections(),
+    retry: false,
+  });
+  // connection:read is builder-and-up: a viewer/operator/billing member must be told
+  // they may not enumerate connections, not shown a false "none exist" empty state.
+  const forbidden = connections.error instanceof ApiError && connections.error.status === 403;
 
   const test = useMutation({
     mutationFn: async (id: string) => ({ id, result: await getBrowserClient().testConnection(id) }),
@@ -37,9 +44,11 @@ export default function ConnectionsPage() {
     <>
       <div className="q-page-head">
         <h1>Connections</h1>
-        <button className="q-btn" data-testid="conn-create" onClick={() => setDialogOpen(true)}>
-          New connection
-        </button>
+        {forbidden ? null : (
+          <button className="q-btn" data-testid="conn-create" onClick={() => setDialogOpen(true)}>
+            New connection
+          </button>
+        )}
       </div>
 
       {pageError ? (
@@ -51,7 +60,11 @@ export default function ConnectionsPage() {
         </div>
       ) : null}
 
-      {connections.isLoading ? (
+      {forbidden ? (
+        <p style={{ color: 'var(--text-muted)' }} data-testid="conn-forbidden">
+          You need the connection:read permission to view connections.
+        </p>
+      ) : connections.isLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading connections…</p>
       ) : items.length === 0 ? (
         <EmptyState

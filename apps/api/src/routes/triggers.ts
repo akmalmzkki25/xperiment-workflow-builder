@@ -97,6 +97,7 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
 
   app.get('/v1/workflows/:id/triggers', async (req, reply) => {
     const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'workflow:read')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
@@ -106,6 +107,7 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
 
   app.get('/v1/workflows/:id/triggers/:nodeId/samples', async (req, reply) => {
     const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'workflow:read')) return;
     const { id, nodeId } = req.params as { id: string; nodeId: string };
     if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
     const rows = await listTriggers(deps.pool, id);

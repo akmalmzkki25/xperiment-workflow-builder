@@ -34,7 +34,7 @@ Rejected: keeping the ladder and special-casing Operator/Billing (re-breaks on t
     ADD CONSTRAINT api_keys_role_check
     CHECK (role IN ('viewer','builder','operator','billing','admin','owner'));
   ```
-- **`repos/auth.ts`:** `createApiKey` accepts `role?: Role` (default `'builder'`), `getActiveApiKey` returns `{ workspaceId, role }`, and `listApiKeys` includes the role; new `listMembers(db, workspaceId): Promise<{ userId; email; role; createdAt }[]>` and `updateMemberRole(pool, { workspaceId, userId, role }): Promise<'ok' | 'not_member' | 'last_owner'>` — the owner count is checked inside the same transaction as the update (`SELECT … FOR UPDATE`), so two concurrent demotions cannot both pass the guard. The route maps the three results to 200 / 404 / 409.
+- **`repos/auth.ts`:** `createApiKey` accepts `role?: Role` (default `'builder'`), `getActiveApiKey` returns `{ workspaceId, role }`, and `listApiKeys` includes the role; new `listMembers(db, workspaceId): Promise<{ userId; email; role; createdAt }[]>` and `updateMemberRole(pool, { workspaceId, userId, role }): Promise<'ok' | 'not_member' | 'last_owner'>` — the owner count is checked inside the same transaction as the update, behind a workspace-scoped `pg_advisory_xact_lock`. (Row locks alone are not enough: two demotions of *different* owners lock disjoint rows and, under READ COMMITTED, each reads the other's pre-image — both guards pass and the workspace is left with zero owners, which no API caller can undo.) The route maps the three results to 200 / 404 / 409.
 
 ### apps/api/src/auth/permissions.ts (new)
 

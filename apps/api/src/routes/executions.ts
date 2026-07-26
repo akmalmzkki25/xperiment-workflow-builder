@@ -58,6 +58,7 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
   });
 
   app.get('/v1/executions', async (req, reply) => {
+    if (!requirePermission(reply, authOf(req), 'execution:read')) return;
     const q = listQuerySchema.safeParse(req.query ?? {});
     if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
     return listExecutions(deps.pool, {
@@ -69,6 +70,8 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
   });
 
   app.get('/v1/executions/:id', async (req, reply) => {
+    // The timeline carries every node's payload — gate it like the list.
+    if (!requirePermission(reply, authOf(req), 'execution:read')) return;
     const { id } = req.params as { id: string };
     const detail = await getExecutionDetail(deps.pool, id, authOf(req).workspaceId);
     if (!detail) return sendProblem(reply, 404, 'Execution not found');

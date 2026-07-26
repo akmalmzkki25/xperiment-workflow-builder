@@ -78,6 +78,11 @@ export function Inspector({ ir, allNodeIds, onRename, onCommitParam, onConnectio
             data-testid="node-connection-select"
           >
             <option value="">— select connection —</option>
+            {/* A member without connection:read gets an empty list; keep the node's own
+                reference selectable so a configured node never reads as unconfigured. */}
+            {ir.connectionRef && !compatibleConnections.some((c) => c.id === ir.connectionRef) ? (
+              <option value={ir.connectionRef}>{ir.connectionRef}</option>
+            ) : null}
             {compatibleConnections.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

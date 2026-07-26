@@ -1,7 +1,7 @@
 import { getUsageSummary } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -16,6 +16,7 @@ function startOfUtcMonth(now: Date): Date {
 
 export function registerUsageRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.get('/v1/usage', async (req, reply) => {
+    if (!requirePermission(reply, authOf(req), 'usage:read')) return;
     const parsed = querySchema.safeParse(req.query ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid query', parsed.error.message);
     const now = new Date();

@@ -186,6 +186,35 @@ describe('rbac member + api key roles', () => {
     expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: stranger.id, role: 'viewer' })).toBe('not_member');
   });
 
+  test('concurrent demotions of different owners cannot empty the owner set', async () => {
+    // Warm the pool: on a cold pool the second call spends its head start opening
+    // a socket, the transactions never overlap, and the race cannot be observed.
+    await Promise.all(Array.from({ length: 8 }, () => pool.query('SELECT 1')));
+
+    const pairs: { wsId: string; a: string; b: string }[] = [];
+    for (let i = 0; i < 4; i++) {
+      const a = await newUser();
+      const b = await newUser();
+      const ws = await createWorkspaceWithOwner(pool, { name: `Race${i}`, userId: a.id });
+      await addMember(pool, { workspaceId: ws.id, userId: b.id, role: 'owner' });
+      pairs.push({ wsId: ws.id, a: a.id, b: b.id });
+    }
+
+    // Disjoint target rows: row locks alone would let both guards pass, and both
+    // owners would be demoted — a workspace nobody can ever grant `owner` in again.
+    const results = await Promise.all(
+      pairs.flatMap((p) => [
+        updateMemberRole(pool, { workspaceId: p.wsId, userId: p.a, role: 'viewer' }),
+        updateMemberRole(pool, { workspaceId: p.wsId, userId: p.b, role: 'viewer' }),
+      ]),
+    );
+    expect(results.filter((r) => r === 'ok')).toHaveLength(pairs.length);
+    expect(results.filter((r) => r === 'last_owner')).toHaveLength(pairs.length);
+    for (const p of pairs) {
+      expect((await listMembers(pool, p.wsId)).filter((m) => m.role === 'owner')).toHaveLength(1);
+    }
+  });
+
   test('an invalid role is rejected by the CHECK constraint', async () => {
     const owner = await newUser();
     const other = await newUser();

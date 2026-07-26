@@ -13,6 +13,7 @@ const listQuerySchema = z.object({ status: z.literal('open').default('open'), li
 export function registerApprovalRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.get('/v1/approvals', async (req, reply) => {
     const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'execution:read')) return;
     const q = listQuerySchema.safeParse(req.query ?? {});
     if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
     return { items: await listOpenApprovals(deps.pool, { workspaceId: ctx.workspaceId, limit: q.data.limit }) };
