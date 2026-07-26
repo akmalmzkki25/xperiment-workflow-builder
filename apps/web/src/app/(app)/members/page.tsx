@@ -2,9 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { PermissionNotice } from '../../../components/ui/PermissionNotice';
 import { ApiError, getBrowserClient } from '../../../lib/api';
 import type { WorkspaceMember } from '../../../lib/api';
 import { fmtTime } from '../../../lib/format';
+import { forbiddenDetail } from '../../../lib/permissions';
 
 const ROLES = ['viewer', 'operator', 'billing', 'builder', 'admin', 'owner'] as const;
 
@@ -51,7 +53,7 @@ export default function MembersPage() {
   const [error, setError] = useState('');
   const membersQ = useQuery({ queryKey: ['members'], queryFn: () => getBrowserClient().listMembers(), retry: false });
 
-  const forbidden = membersQ.error instanceof ApiError && membersQ.error.status === 403;
+  const forbidden = forbiddenDetail(membersQ.error);
 
   return (
     <div data-testid="members-page">
@@ -60,7 +62,7 @@ export default function MembersPage() {
       </div>
 
       {forbidden ? (
-        <p style={{ color: 'var(--text-muted)' }}>You need the member:manage permission to view members.</p>
+        <PermissionNotice detail={forbidden} />
       ) : (
         <>
           {error ? (

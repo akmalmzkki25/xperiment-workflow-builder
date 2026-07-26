@@ -1,9 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { PermissionNotice } from '../../../components/ui/PermissionNotice';
 import { getBrowserClient } from '../../../lib/api';
 import type { UsageSummary } from '../../../lib/api';
 import { fmtCount, fmtMs } from '../../../lib/format';
+import { forbiddenDetail } from '../../../lib/permissions';
 
 type Scorecard = { label: string; value: string; hint?: string; testId: string };
 
@@ -74,8 +76,11 @@ export default function UsagePage() {
   const usageQ = useQuery({
     queryKey: ['usage'],
     queryFn: () => getBrowserClient().getUsage(),
+    retry: false,
   });
 
+  const forbidden = forbiddenDetail(usageQ.error);
+  if (forbidden) return <PermissionNotice detail={forbidden} />;
   if (usageQ.isLoading) return <p style={{ color: 'var(--text-muted)' }}>Loading usage…</p>;
   if (usageQ.isError || !usageQ.data) return <div className="q-banner">Could not load usage.</div>;
 

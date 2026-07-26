@@ -4,8 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { PermissionNotice } from '../../../components/ui/PermissionNotice';
 import { getBrowserClient, type ApprovalItem } from '../../../lib/api';
 import { fmtTime, shortId } from '../../../lib/format';
+import { forbiddenDetail } from '../../../lib/permissions';
 
 export default function ApprovalsPage() {
   const queryClient = useQueryClient();
@@ -15,7 +17,9 @@ export default function ApprovalsPage() {
     queryKey: ['approvals'],
     queryFn: () => getBrowserClient().listApprovals(),
     refetchInterval: 5000,
+    retry: false,
   });
+  const forbidden = forbiddenDetail(approvals.error);
 
   const decide = useMutation({
     mutationFn: (args: { item: ApprovalItem; decision: 'approve' | 'reject' }) =>
@@ -36,7 +40,9 @@ export default function ApprovalsPage() {
         <h1>Pending approvals</h1>
       </div>
 
-      {approvals.isLoading ? (
+      {forbidden ? (
+        <PermissionNotice detail={forbidden} />
+      ) : approvals.isLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading approvals…</p>
       ) : items.length === 0 ? (
         <EmptyState

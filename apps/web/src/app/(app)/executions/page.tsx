@@ -5,9 +5,11 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { PermissionNotice } from '../../../components/ui/PermissionNotice';
 import { StatusChip } from '../../../components/ui/StatusChip';
 import { getBrowserClient } from '../../../lib/api';
 import { fmtDuration, fmtTime, shortId } from '../../../lib/format';
+import { forbiddenDetail } from '../../../lib/permissions';
 
 const STATUS_FILTERS = ['ALL', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TIMED_OUT'];
 
@@ -20,8 +22,10 @@ function ExecutionsList() {
     queryKey: ['executions', workflowId ?? ''],
     queryFn: () => getBrowserClient().listExecutions(workflowId ? { workflowId } : undefined),
     refetchInterval: 5000,
+    retry: false,
   });
 
+  const forbidden = forbiddenDetail(executions.error);
   const items = (executions.data?.items ?? []).filter(
     (e) => statusFilter === 'ALL' || e.status === statusFilter,
   );
@@ -45,7 +49,9 @@ function ExecutionsList() {
         </select>
       </div>
 
-      {executions.isLoading ? (
+      {forbidden ? (
+        <PermissionNotice detail={forbidden} />
+      ) : executions.isLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading executions…</p>
       ) : items.length === 0 ? (
         <EmptyState title="No executions" hint="Runs appear here once a trigger fires or you execute a workflow." />

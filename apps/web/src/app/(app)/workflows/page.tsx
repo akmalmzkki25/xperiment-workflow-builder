@@ -7,8 +7,10 @@ import { useState } from 'react';
 import { LiveChip, StatusChip } from '../../../components/ui/StatusChip';
 import { Dialog } from '../../../components/ui/Dialog';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { PermissionNotice } from '../../../components/ui/PermissionNotice';
 import { TextField } from '../../../components/ui/TextField';
 import { getBrowserClient } from '../../../lib/api';
+import { forbiddenDetail } from '../../../lib/permissions';
 
 export default function WorkflowsPage() {
   const router = useRouter();
@@ -16,7 +18,12 @@ export default function WorkflowsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
 
-  const workflows = useQuery({ queryKey: ['workflows'], queryFn: () => getBrowserClient().listWorkflows() });
+  const workflows = useQuery({
+    queryKey: ['workflows'],
+    queryFn: () => getBrowserClient().listWorkflows(),
+    retry: false,
+  });
+  const forbidden = forbiddenDetail(workflows.error);
   const create = useMutation({
     mutationFn: (workflowName: string) => getBrowserClient().createWorkflow(workflowName),
     onSuccess: (wf) => {
@@ -31,12 +38,16 @@ export default function WorkflowsPage() {
     <>
       <div className="q-page-head">
         <h1>Workflows</h1>
-        <button className="q-btn" data-testid="wf-create" onClick={() => setDialogOpen(true)}>
-          New workflow
-        </button>
+        {forbidden ? null : (
+          <button className="q-btn" data-testid="wf-create" onClick={() => setDialogOpen(true)}>
+            New workflow
+          </button>
+        )}
       </div>
 
-      {workflows.isLoading ? (
+      {forbidden ? (
+        <PermissionNotice detail={forbidden} />
+      ) : workflows.isLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading workflows…</p>
       ) : items.length === 0 ? (
         <EmptyState

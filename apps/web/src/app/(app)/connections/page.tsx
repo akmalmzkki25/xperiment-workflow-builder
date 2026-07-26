@@ -4,8 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ConnectionDialog } from '../../../components/connections/ConnectionDialog';
 import { EmptyState } from '../../../components/ui/EmptyState';
-import { ApiError, getBrowserClient } from '../../../lib/api';
+import { PermissionNotice } from '../../../components/ui/PermissionNotice';
+import { getBrowserClient } from '../../../lib/api';
 import { fmtTime } from '../../../lib/format';
+import { forbiddenDetail } from '../../../lib/permissions';
 
 type TestResult = { ok: boolean; error?: string };
 
@@ -22,7 +24,7 @@ export default function ConnectionsPage() {
   });
   // connection:read is builder-and-up: a viewer/operator/billing member must be told
   // they may not enumerate connections, not shown a false "none exist" empty state.
-  const forbidden = connections.error instanceof ApiError && connections.error.status === 403;
+  const forbidden = forbiddenDetail(connections.error);
 
   const test = useMutation({
     mutationFn: async (id: string) => ({ id, result: await getBrowserClient().testConnection(id) }),
@@ -61,9 +63,7 @@ export default function ConnectionsPage() {
       ) : null}
 
       {forbidden ? (
-        <p style={{ color: 'var(--text-muted)' }} data-testid="conn-forbidden">
-          You need the connection:read permission to view connections.
-        </p>
+        <PermissionNotice detail={forbidden} />
       ) : connections.isLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading connections…</p>
       ) : items.length === 0 ? (

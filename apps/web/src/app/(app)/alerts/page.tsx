@@ -2,9 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { PermissionNotice } from '../../../components/ui/PermissionNotice';
 import { getBrowserClient } from '../../../lib/api';
 import type { AlertEvent, AlertRule } from '../../../lib/api';
 import { fmtTime } from '../../../lib/format';
+import { forbiddenDetail } from '../../../lib/permissions';
 
 const METRICS = ['execution', 'node', 'compute_ms', 'ai_tokens'] as const;
 
@@ -152,8 +154,20 @@ function FiringRow({ event }: { event: AlertEvent }) {
 
 export default function AlertsPage() {
   const [secret, setSecret] = useState<string | null>(null);
-  const rulesQ = useQuery({ queryKey: ['alert-rules'], queryFn: () => getBrowserClient().listAlerts() });
-  const eventsQ = useQuery({ queryKey: ['alert-events'], queryFn: () => getBrowserClient().listAlertEvents(), refetchInterval: 15000 });
+  const rulesQ = useQuery({ queryKey: ['alert-rules'], queryFn: () => getBrowserClient().listAlerts(), retry: false });
+  const eventsQ = useQuery({ queryKey: ['alert-events'], queryFn: () => getBrowserClient().listAlertEvents(), refetchInterval: 15000, retry: false });
+
+  const forbidden = forbiddenDetail(rulesQ.error);
+  if (forbidden) {
+    return (
+      <div data-testid="alerts-page">
+        <div className="q-page-head">
+          <h1>Alerts</h1>
+        </div>
+        <PermissionNotice detail={forbidden} />
+      </div>
+    );
+  }
 
   return (
     <div data-testid="alerts-page">
