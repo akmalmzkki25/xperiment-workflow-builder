@@ -404,6 +404,21 @@ export class ApiClient {
       body: { decision, ...(comment ? { comment } : {}) },
     });
   }
+
+  listMembers(): Promise<{ items: WorkspaceMember[] }> {
+    return this.request('GET', '/v1/workspaces/members');
+  }
+
+  updateMemberRole(userId: string, role: string): Promise<{ userId: string; role: string }> {
+    return this.request('PUT', `/v1/workspaces/members/${userId}`, { body: { role } });
+  }
+}
+
+export interface WorkspaceMember {
+  userId: string;
+  email: string;
+  role: string;
+  createdAt: string;
 }
 
 export interface ApprovalItem {

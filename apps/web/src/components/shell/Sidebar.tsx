@@ -11,6 +11,7 @@ const NAV = [
   { href: '/alerts', label: 'Alerts' },
   { href: '/approvals', label: 'Approvals' },
   { href: '/connections', label: 'Connections' },
+  { href: '/members', label: 'Members' },
 ];
 
 export function Sidebar() {
