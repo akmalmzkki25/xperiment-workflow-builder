@@ -146,8 +146,11 @@ describe('workspaces, invites, roles, api keys', () => {
     expect(list.json<{ items: unknown[] }>().items).toHaveLength(2);
     expect((await user.inject({ method: 'POST', url: '/v1/workspaces', payload: {} })).statusCode).toBe(400);
     expect(
+      (await user.inject({ method: 'POST', url: '/v1/workspaces/invites', payload: { role: 'nope' } })).statusCode,
+    ).toBe(400); // unknown role
+    expect(
       (await user.inject({ method: 'POST', url: '/v1/workspaces/invites', payload: { role: 'owner' } })).statusCode,
-    ).toBe(400); // owner not invitable
+    ).toBe(201); // an owner may invite a co-owner
     expect(
       (await user.inject({ method: 'POST', url: '/v1/invites/accept', payload: {} })).statusCode,
     ).toBe(400);

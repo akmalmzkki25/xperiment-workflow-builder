@@ -6,8 +6,10 @@ import {
   generateToken,
   hashToken,
   listApiKeys,
+  listMembers,
   listMemberships,
   revokeApiKey,
+  updateMemberRole,
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -16,6 +18,8 @@ import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
 const INVITE_TTL_MS = 7 * 24 * 3600 * 1000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ROLE_ENUM = z.enum(['viewer', 'builder', 'operator', 'billing', 'admin', 'owner']);
 
 export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workspaces', async (req, reply) => {
@@ -37,11 +41,11 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
   app.post('/v1/workspaces/invites', async (req, reply) => {
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'member:manage')) return;
-    const parsed = z
-      .object({ role: z.enum(['viewer', 'builder', 'admin']) })
-      .strict()
-      .safeParse(req.body ?? {});
+    const parsed = z.object({ role: ROLE_ENUM }).strict().safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
+    if (parsed.data.role === 'owner' && ctx.role !== 'owner') {
+      return sendProblem(reply, 403, 'Forbidden', 'Only an owner can grant the owner role');
+    }
     const { token, hash } = generateToken('qs');
     await createInvite(deps.pool, {
       workspaceId: ctx.workspaceId,
@@ -66,11 +70,50 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
   app.post('/v1/api-keys', async (req, reply) => {
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'member:manage')) return;
-    const parsed = z.object({ name: z.string().min(1).max(200) }).strict().safeParse(req.body ?? {});
+    const parsed = z
+      .object({ name: z.string().min(1).max(200), role: ROLE_ENUM.optional() })
+      .strict()
+      .safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
+    if (parsed.data.role === 'owner' && ctx.role !== 'owner') {
+      return sendProblem(reply, 403, 'Forbidden', 'Only an owner can grant the owner role');
+    }
     const { token, hash } = generateToken('qk');
-    const row = await createApiKey(deps.pool, { workspaceId: ctx.workspaceId, name: parsed.data.name, keyHash: hash });
-    return reply.status(201).send({ id: row.id, name: row.name, key: token }); // shown once
+    const row = await createApiKey(deps.pool, {
+      workspaceId: ctx.workspaceId,
+      name: parsed.data.name,
+      keyHash: hash,
+      ...(parsed.data.role ? { role: parsed.data.role } : {}),
+    });
+    return reply.status(201).send({ id: row.id, name: row.name, role: row.role, key: token }); // shown once
+  });
+
+  app.get('/v1/workspaces/members', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'member:manage')) return;
+    return { items: await listMembers(deps.pool, ctx.workspaceId) };
+  });
+
+  app.put('/v1/workspaces/members/:userId', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'member:manage')) return;
+    const { userId } = req.params as { userId: string };
+    if (!UUID_RE.test(userId)) return sendProblem(reply, 404, 'Member not found');
+    const parsed = z.object({ role: ROLE_ENUM }).strict().safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid role', parsed.error.message);
+    if (parsed.data.role === 'owner' && ctx.role !== 'owner') {
+      return sendProblem(reply, 403, 'Forbidden', 'Only an owner can grant the owner role');
+    }
+    const result = await updateMemberRole(deps.pool, {
+      workspaceId: ctx.workspaceId,
+      userId,
+      role: parsed.data.role,
+    });
+    if (result === 'not_member') return sendProblem(reply, 404, 'Member not found');
+    if (result === 'last_owner') {
+      return sendProblem(reply, 409, 'Cannot demote the last owner', 'Promote another owner first');
+    }
+    return { userId, role: parsed.data.role };
   });
 
   app.get('/v1/api-keys', async (req, reply) => {

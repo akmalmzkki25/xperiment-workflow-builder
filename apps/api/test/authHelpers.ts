@@ -32,3 +32,35 @@ export async function createAuthedUser(app: FastifyInstance): Promise<AuthedUser
       } as InjectOptions) as Promise<InjectResponse>,
   };
 }
+
+/**
+ * Registers a fresh user and adds them to `workspaceId` with `role`, returning an
+ * inject bound to that workspace (via X-Xperiment-Workspace) so the request's auth
+ * context carries the requested role.
+ */
+export async function addMemberWithRole(
+  app: FastifyInstance,
+  pool: import('pg').Pool,
+  workspaceId: string,
+  role: string,
+): Promise<AuthedUser> {
+  const user = await createAuthedUser(app);
+  await pool.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,$3)
+     ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+    [workspaceId, user.userId, role],
+  );
+  return {
+    ...user,
+    workspaceId,
+    inject: (opts: InjectOptions) =>
+      app.inject({
+        ...opts,
+        headers: {
+          authorization: `Bearer ${user.token}`,
+          'x-xperiment-workspace': workspaceId,
+          ...(opts.headers ?? {}),
+        },
+      } as InjectOptions) as Promise<InjectResponse>,
+  };
+}
