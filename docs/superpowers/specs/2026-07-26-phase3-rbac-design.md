@@ -34,7 +34,7 @@ Rejected: keeping the ladder and special-casing Operator/Billing (re-breaks on t
     ADD CONSTRAINT api_keys_role_check
     CHECK (role IN ('viewer','builder','operator','billing','admin','owner'));
   ```
-- **`repos/auth.ts`:** `createApiKey` accepts `role?: Role` (default `'builder'`) and `getActiveApiKey` returns it; new `listMembers(db, workspaceId): Promise<{ userId; email; role; createdAt }[]>`, `updateMemberRole(db, workspaceId, userId, role): Promise<boolean>`, and `countOwners(db, workspaceId): Promise<number>`.
+- **`repos/auth.ts`:** `createApiKey` accepts `role?: Role` (default `'builder'`), `getActiveApiKey` returns `{ workspaceId, role }`, and `listApiKeys` includes the role; new `listMembers(db, workspaceId): Promise<{ userId; email; role; createdAt }[]>` and `updateMemberRole(pool, { workspaceId, userId, role }): Promise<'ok' | 'not_member' | 'last_owner'>` — the owner count is checked inside the same transaction as the update (`SELECT … FOR UPDATE`), so two concurrent demotions cannot both pass the guard. The route maps the three results to 200 / 404 / 409.
 
 ### apps/api/src/auth/permissions.ts (new)
 
@@ -83,9 +83,9 @@ Role → permissions (the authoritative table; the unit test asserts exactly thi
 - Fail-closed: a role string not present in `ROLE_PERMISSIONS` yields no permissions (never throws). The CHECK constraint makes this unreachable in practice; the code does not rely on that.
 - API-key auth sets `role: key.role` instead of the hardcoded `'builder'`.
 
-### Route migration (all 23 call sites)
+### Route migration (all 25 call sites)
 
-| Route (all 23 currently-gated call sites) | Permission |
+| Route (all 25 currently-gated call sites) | Permission |
 |---|---|
 | `POST /v1/workflows`, `PUT …/draft`, `POST …/publish`, `POST …/versions/:versionId/rollback`, `PUT …/callback`, `DELETE …/callback`, `POST /v1/templates/:id/clone`, `POST /v1/ai/generate`, `POST /v1/ai/edit` | `workflow:write` |
 | `POST /v1/workflows/:id/activate`, `POST …/deactivate` | `workflow:activate` |
@@ -153,7 +153,7 @@ packages/db/src/repos/auth.ts                    (Role union, api-key role, memb
 packages/db/test/auth.test.ts                    (member/role queries)
 apps/api/src/auth/permissions.ts                 (new: catalog + role map + hasPermission)
 apps/api/src/auth/plugin.ts                      (requirePermission; drop roleGate; key role)
-apps/api/src/routes/*.ts                         (23 call sites migrated)
+apps/api/src/routes/*.ts                         (25 call sites migrated + 2 new gates)
 apps/api/test/permissions.test.ts                (new: catalog unit)
 apps/api/test/rbac.test.ts                       (new: permission matrix + members + key roles)
 apps/web/src/app/(app)/members/page.tsx          (new)
