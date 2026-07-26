@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
 
-export type Role = 'viewer' | 'builder' | 'admin' | 'owner';
+export type Role = 'viewer' | 'builder' | 'operator' | 'billing' | 'admin' | 'owner';
 
 export interface UserRow {
   id: string;
@@ -152,17 +152,18 @@ export interface ApiKeyRow {
   id: string;
   workspaceId: string;
   name: string;
+  role: Role;
   lastUsedAt: string | null;
   createdAt: string;
 }
 
 export async function createApiKey(
   db: Db,
-  args: { workspaceId: string; name: string; keyHash: string },
+  args: { workspaceId: string; name: string; keyHash: string; role?: Role },
 ): Promise<ApiKeyRow> {
   const r = await db.query(
-    `INSERT INTO api_keys (workspace_id, name, key_hash) VALUES ($1, $2, $3) RETURNING *`,
-    [args.workspaceId, args.name, args.keyHash],
+    `INSERT INTO api_keys (workspace_id, name, key_hash, role) VALUES ($1, $2, $3, COALESCE($4,'builder')) RETURNING *`,
+    [args.workspaceId, args.name, args.keyHash, args.role ?? null],
   );
   const row = r.rows[0] as Record<string, unknown>;
   const ts = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string | null));
@@ -170,22 +171,25 @@ export async function createApiKey(
     id: row['id'] as string,
     workspaceId: row['workspace_id'] as string,
     name: row['name'] as string,
+    role: row['role'] as Role,
     lastUsedAt: ts(row['last_used_at']),
     createdAt: ts(row['created_at'])!,
   };
 }
 
-export async function getActiveApiKey(db: Db, keyHash: string): Promise<{ workspaceId: string } | null> {
+export async function getActiveApiKey(db: Db, keyHash: string): Promise<{ workspaceId: string; role: Role } | null> {
   const r = await db.query(
-    `UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1 AND revoked_at IS NULL RETURNING workspace_id`,
+    `UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1 AND revoked_at IS NULL RETURNING workspace_id, role`,
     [keyHash],
   );
-  return r.rowCount ? { workspaceId: (r.rows[0] as { workspace_id: string }).workspace_id } : null;
+  if (!r.rowCount) return null;
+  const row = r.rows[0] as { workspace_id: string; role: Role };
+  return { workspaceId: row.workspace_id, role: row.role };
 }
 
 export async function listApiKeys(db: Db, workspaceId: string): Promise<ApiKeyRow[]> {
   const r = await db.query(
-    `SELECT id, workspace_id, name, last_used_at, created_at FROM api_keys
+    `SELECT id, workspace_id, name, role, last_used_at, created_at FROM api_keys
      WHERE workspace_id = $1 AND revoked_at IS NULL ORDER BY created_at`,
     [workspaceId],
   );
@@ -194,9 +198,61 @@ export async function listApiKeys(db: Db, workspaceId: string): Promise<ApiKeyRo
     id: row['id'] as string,
     workspaceId: row['workspace_id'] as string,
     name: row['name'] as string,
+    role: row['role'] as Role,
     lastUsedAt: ts(row['last_used_at']),
     createdAt: ts(row['created_at'])!,
   }));
+}
+
+export async function listMembers(
+  db: Db,
+  workspaceId: string,
+): Promise<{ userId: string; email: string; role: Role; createdAt: string }[]> {
+  const r = await db.query(
+    `SELECT m.user_id, u.email, m.role, m.created_at
+     FROM workspace_members m JOIN users u ON u.id = m.user_id
+     WHERE m.workspace_id = $1 ORDER BY m.created_at`,
+    [workspaceId],
+  );
+  const ts = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string));
+  return (r.rows as Record<string, unknown>[]).map((row) => ({
+    userId: row['user_id'] as string,
+    email: row['email'] as string,
+    role: row['role'] as Role,
+    createdAt: ts(row['created_at']),
+  }));
+}
+
+/**
+ * Change a member's role. Refuses to demote the last owner — the owner count is
+ * checked inside the same transaction as the update (with the member row locked),
+ * so two concurrent demotions cannot both pass the guard.
+ */
+export async function updateMemberRole(
+  pool: pg.Pool,
+  args: { workspaceId: string; userId: string; role: Role },
+): Promise<'ok' | 'not_member' | 'last_owner'> {
+  return withTx(pool, async (client) => {
+    const current = await client.query(
+      `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE`,
+      [args.workspaceId, args.userId],
+    );
+    if (!current.rowCount) return 'not_member';
+    const was = (current.rows[0] as { role: Role }).role;
+    if (was === 'owner' && args.role !== 'owner') {
+      const owners = await client.query(
+        `SELECT count(*)::int AS c FROM workspace_members WHERE workspace_id = $1 AND role = 'owner'`,
+        [args.workspaceId],
+      );
+      if ((owners.rows[0] as { c: number }).c <= 1) return 'last_owner';
+    }
+    await client.query(`UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2`, [
+      args.workspaceId,
+      args.userId,
+      args.role,
+    ]);
+    return 'ok';
+  });
 }
 
 export async function revokeApiKey(db: Db, id: string, workspaceId: string): Promise<boolean> {

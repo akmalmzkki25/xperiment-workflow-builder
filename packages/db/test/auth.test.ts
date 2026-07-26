@@ -16,10 +16,12 @@ import {
   getMembership,
   getUserByEmail,
   listApiKeys,
+  listMembers,
   listMemberships,
   revokeAllSessions,
   revokeApiKey,
   revokeSession,
+  updateMemberRole,
 } from '../src/repos/auth.js';
 
 let pool: Pool;
@@ -136,5 +138,63 @@ describe('api keys and auth events', () => {
     await appendAuthEvent(pool, { email: 'x@y.test', eventType: 'login_failed', ip: '127.0.0.1' });
     const r = await pool.query(`SELECT event_type FROM auth_events`);
     expect((r.rows[0] as { event_type: string }).event_type).toBe('login_failed');
+  });
+});
+
+describe('rbac member + api key roles', () => {
+  let seq = 0;
+  const newUser = async () => (await createUser(pool, { email: `rbac-${(seq += 1)}@x.test`, passwordHash: 'h' }))!;
+
+  test('api keys carry a role, defaulting to builder', async () => {
+    const u = await newUser();
+    const ws = await createWorkspaceWithOwner(pool, { name: 'K', userId: u.id });
+    const dflt = await createApiKey(pool, { workspaceId: ws.id, name: 'd', keyHash: 'h-default' });
+    expect(dflt.role).toBe('builder');
+    const scoped = await createApiKey(pool, { workspaceId: ws.id, name: 'v', keyHash: 'h-viewer', role: 'viewer' });
+    expect(scoped.role).toBe('viewer');
+    expect(await getActiveApiKey(pool, 'h-viewer')).toMatchObject({ workspaceId: ws.id, role: 'viewer' });
+    expect((await listApiKeys(pool, ws.id)).find((k) => k.name === 'v')?.role).toBe('viewer');
+  });
+
+  test('listMembers returns each member with email and role', async () => {
+    const owner = await newUser();
+    const other = await newUser();
+    const ws = await createWorkspaceWithOwner(pool, { name: 'M', userId: owner.id });
+    await addMember(pool, { workspaceId: ws.id, userId: other.id, role: 'operator' });
+    const members = await listMembers(pool, ws.id);
+    expect(members).toHaveLength(2);
+    expect(members.find((m) => m.userId === other.id)?.role).toBe('operator');
+    expect(members.every((m) => m.email.includes('@'))).toBe(true);
+  });
+
+  test('updateMemberRole changes a role, refuses the last owner, and reports a non-member', async () => {
+    const owner = await newUser();
+    const other = await newUser();
+    const stranger = await newUser();
+    const ws = await createWorkspaceWithOwner(pool, { name: 'R', userId: owner.id });
+    await addMember(pool, { workspaceId: ws.id, userId: other.id, role: 'viewer' });
+
+    expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: other.id, role: 'billing' })).toBe('ok');
+    expect((await listMembers(pool, ws.id)).find((m) => m.userId === other.id)?.role).toBe('billing');
+
+    // the only owner cannot be demoted
+    expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: owner.id, role: 'viewer' })).toBe('last_owner');
+    // once a second owner exists, demotion is allowed
+    await updateMemberRole(pool, { workspaceId: ws.id, userId: other.id, role: 'owner' });
+    expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: owner.id, role: 'viewer' })).toBe('ok');
+
+    expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: stranger.id, role: 'viewer' })).toBe('not_member');
+  });
+
+  test('an invalid role is rejected by the CHECK constraint', async () => {
+    const owner = await newUser();
+    const other = await newUser();
+    const ws = await createWorkspaceWithOwner(pool, { name: 'C', userId: owner.id });
+    await expect(
+      pool.query(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'superuser')`, [
+        ws.id,
+        other.id,
+      ]),
+    ).rejects.toMatchObject({ code: '23514' });
   });
 });
