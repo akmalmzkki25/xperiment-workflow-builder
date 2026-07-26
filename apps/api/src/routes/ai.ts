@@ -3,7 +3,7 @@ import { connectorCatalog } from '@xperiment/connectors';
 import { listConnections, recordAiUsage } from '@xperiment/db';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -64,7 +64,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
 
   app.post('/v1/ai/generate', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const parsed = generateSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     return handle(reply, ctx.workspaceId, 'generate', parsed.data.prompt);
@@ -72,7 +72,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
 
   app.post('/v1/ai/edit', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const parsed = editSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     return handle(reply, ctx.workspaceId, 'edit', parsed.data.prompt, parsed.data.definition);

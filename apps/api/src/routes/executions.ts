@@ -19,7 +19,7 @@ import {
 import { workflowIrSchema } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -34,7 +34,7 @@ const listQuerySchema = z.object({
 export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workflows/:id/execute', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'execution:run')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
@@ -92,7 +92,7 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
 
   app.post('/v1/executions/:id/cancel', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'execution:cancel')) return;
     const { id } = req.params as { id: string };
     const detail = await getExecutionDetail(deps.pool, id, ctx.workspaceId);
     if (!detail) return sendProblem(reply, 404, 'Execution not found');
@@ -140,7 +140,7 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
 
   app.post('/v1/executions/:id/retry', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'execution:run')) return;
     const { id } = req.params as { id: string };
     const detail = await getExecutionDetail(deps.pool, id, ctx.workspaceId);
     if (!detail) return sendProblem(reply, 404, 'Execution not found');

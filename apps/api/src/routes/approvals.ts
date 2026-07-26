@@ -1,7 +1,7 @@
 import { applyResume, getOpenApprovalWait, listOpenApprovals, withTx } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -20,7 +20,7 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.post('/v1/executions/:id/approvals/:nodeId', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'approval:decide')) return;
     const { id, nodeId } = req.params as { id: string; nodeId: string };
     const parsed = decisionSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);

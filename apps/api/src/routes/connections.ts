@@ -10,7 +10,7 @@ import {
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -24,7 +24,7 @@ const createSchema = z
 
 export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/connections', async (req, reply) => {
-    if (!roleGate(reply, authOf(req), 'builder')) return;
+    if (!requirePermission(reply, authOf(req), 'connection:write')) return;
     const parsed = createSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     const schema = CONNECTION_PAYLOAD_SCHEMAS[parsed.data.connectorKey as ConnectorKey];
@@ -40,12 +40,14 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
     return reply.status(201).send(row);
   });
 
-  app.get('/v1/connections', async (req) => {
+  app.get('/v1/connections', async (req, reply) => {
+    // SEC-004: credential metadata is shared by role — viewers/operators/billing cannot list.
+    if (!requirePermission(reply, authOf(req), 'connection:read')) return;
     return { items: await listConnections(deps.pool, authOf(req).workspaceId) };
   });
 
   app.delete('/v1/connections/:id', async (req, reply) => {
-    if (!roleGate(reply, authOf(req), 'builder')) return;
+    if (!requirePermission(reply, authOf(req), 'connection:write')) return;
     const { id } = req.params as { id: string };
     const refs = await countPublishedRefs(deps.pool, id);
     if (refs > 0) {
@@ -57,6 +59,8 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
   });
 
   app.post('/v1/connections/:id/test', async (req, reply) => {
+    // Testing dials a third party with the stored credential — a write-shaped action.
+    if (!requirePermission(reply, authOf(req), 'connection:write')) return;
     const { id } = req.params as { id: string };
     const row = await getConnectionWithPayload(deps.pool, id, authOf(req).workspaceId);
     if (!row) return sendProblem(reply, 404, 'Connection not found');

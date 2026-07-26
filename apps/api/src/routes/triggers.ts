@@ -15,7 +15,7 @@ import {
 import { nextFireAt } from '@xperiment/engine-core';
 import { workflowIrSchema, type IRNode } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -38,7 +38,7 @@ function triggerView(t: TriggerRow, gatewayUrl: string, key: Buffer) {
 export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workflows/:id/activate', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:activate')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
@@ -86,7 +86,7 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
 
   app.post('/v1/workflows/:id/deactivate', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:activate')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');

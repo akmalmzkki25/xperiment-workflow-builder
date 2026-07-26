@@ -2,6 +2,7 @@ import { getActiveApiKey, getActiveSession, getMembership, hashToken, listMember
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { sendProblem } from '../problem.js';
+import { hasPermission, type Permission } from './permissions.js';
 
 export interface AuthContext {
   userId: string | null;
@@ -15,16 +16,14 @@ declare module 'fastify' {
   }
 }
 
-const ROLE_ORDER: Record<Role, number> = { viewer: 0, builder: 1, admin: 2, owner: 3 };
-
-export function requireRole(ctx: AuthContext, minimum: Role): boolean {
-  return ROLE_ORDER[ctx.role] >= ROLE_ORDER[minimum];
-}
-
-/** Sends a 403 problem and returns false when the role is insufficient. */
-export function roleGate(reply: FastifyReply, ctx: AuthContext, minimum: Role): boolean {
-  if (requireRole(ctx, minimum)) return true;
-  sendProblem(reply, 403, 'Forbidden', `Requires ${minimum} role or above`);
+/**
+ * Sends a 403 problem and returns false when the caller's role lacks the
+ * permission. Names the permission rather than a role so the message stays
+ * true as the role→permission map evolves.
+ */
+export function requirePermission(reply: FastifyReply, ctx: AuthContext, permission: Permission): boolean {
+  if (hasPermission(ctx.role, permission)) return true;
+  sendProblem(reply, 403, 'Forbidden', `Requires the '${permission}' permission`);
   return false;
 }
 
@@ -63,7 +62,7 @@ export function registerAuthPlugin(app: FastifyInstance, deps: { pool: pg.Pool }
     if (token.startsWith('qk_')) {
       const key = await getActiveApiKey(deps.pool, hashToken(token));
       if (!key) return sendProblem(reply, 401, 'Unauthorized', 'Invalid api key');
-      req.authContext = { userId: null, workspaceId: key.workspaceId, role: 'builder' };
+      req.authContext = { userId: null, workspaceId: key.workspaceId, role: key.role };
       return;
     }
 

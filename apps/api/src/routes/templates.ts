@@ -1,7 +1,7 @@
 import { createWorkflow, updateDraft } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import { getTemplate, listTemplates, type WorkflowTemplate } from '../templates/catalog.js';
 import type { ResolvedServerDeps } from './deps.js';
@@ -34,7 +34,7 @@ export function registerTemplateRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.post('/v1/templates/:id/clone', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const t = getTemplate((req.params as { id: string }).id);
     if (!t) return sendProblem(reply, 404, 'Template not found');
     const parsed = cloneSchema.safeParse(req.body ?? {});

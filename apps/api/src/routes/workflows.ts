@@ -15,7 +15,7 @@ import {
 import { canonicalHash, diffWorkflows, validateWorkflow, workflowIrSchema, type WorkflowIR } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -31,7 +31,7 @@ const listQuerySchema = z.object({
 export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workflows', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const parsed = createSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     const wf = await createWorkflow(deps.pool, { workspaceId: ctx.workspaceId, name: parsed.data.name });
@@ -73,7 +73,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.put('/v1/workflows/:id/draft', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
@@ -115,7 +115,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.put('/v1/workflows/:id/callback', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const { id } = req.params as { id: string };
     if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
     const parsed = callbackSchema.safeParse(req.body ?? {});
@@ -132,7 +132,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.delete('/v1/workflows/:id/callback', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const { id } = req.params as { id: string };
     if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
     await clearWorkflowCallback(deps.pool, id);
@@ -141,7 +141,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.post('/v1/workflows/:id/publish', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
@@ -197,7 +197,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   app.post('/v1/workflows/:id/versions/:versionId/rollback', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const { id, versionId } = req.params as { id: string; versionId: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');

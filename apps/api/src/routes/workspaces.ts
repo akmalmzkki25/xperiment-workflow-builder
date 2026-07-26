@@ -11,7 +11,7 @@ import {
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -36,7 +36,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
 
   app.post('/v1/workspaces/invites', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'admin')) return;
+    if (!requirePermission(reply, ctx, 'member:manage')) return;
     const parsed = z
       .object({ role: z.enum(['viewer', 'builder', 'admin']) })
       .strict()
@@ -65,7 +65,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
 
   app.post('/v1/api-keys', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'admin')) return;
+    if (!requirePermission(reply, ctx, 'member:manage')) return;
     const parsed = z.object({ name: z.string().min(1).max(200) }).strict().safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     const { token, hash } = generateToken('qk');
@@ -75,13 +75,13 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
 
   app.get('/v1/api-keys', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'admin')) return;
+    if (!requirePermission(reply, ctx, 'member:manage')) return;
     return { items: await listApiKeys(deps.pool, ctx.workspaceId) };
   });
 
   app.delete('/v1/api-keys/:id', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'admin')) return;
+    if (!requirePermission(reply, ctx, 'member:manage')) return;
     const { id } = req.params as { id: string };
     const revoked = await revokeApiKey(deps.pool, id, ctx.workspaceId);
     if (!revoked) return sendProblem(reply, 404, 'Api key not found');

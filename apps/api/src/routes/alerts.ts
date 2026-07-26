@@ -12,7 +12,7 @@ import {
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, roleGate } from '../auth/plugin.js';
+import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -41,7 +41,7 @@ const updateSchema = z.object({
 export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/alerts', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'alert:write')) return;
     const parsed = createSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid alert rule', parsed.error.message);
     const d = parsed.data;
@@ -67,7 +67,7 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
 
   app.put('/v1/alerts/:id', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'alert:write')) return;
     const { id } = req.params as { id: string };
     const parsed = updateSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid update', parsed.error.message);
@@ -89,7 +89,7 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
 
   app.delete('/v1/alerts/:id', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'alert:write')) return;
     const { id } = req.params as { id: string };
     if (!(await getAlertRule(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Alert rule not found');
     await deleteAlertRule(deps.pool, id, ctx.workspaceId);
@@ -108,7 +108,7 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
 
   app.post('/v1/alerts/events/:id/ack', async (req, reply) => {
     const ctx = authOf(req);
-    if (!roleGate(reply, ctx, 'builder')) return;
+    if (!requirePermission(reply, ctx, 'alert:write')) return;
     const { id } = req.params as { id: string };
     const ok = await acknowledgeAlert(deps.pool, id, ctx.workspaceId);
     if (!ok) return sendProblem(reply, 404, 'Alert event not found or already acknowledged');
