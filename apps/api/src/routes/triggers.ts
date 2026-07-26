@@ -15,21 +15,33 @@ import {
 import { nextFireAt } from '@xperiment/engine-core';
 import { workflowIrSchema, type IRNode } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
+import { hasPermission } from '../auth/permissions.js';
 import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
 const DEFAULT_TZ = 'Asia/Jakarta';
 
-function triggerView(t: TriggerRow, gatewayUrl: string, key: Buffer) {
+/**
+ * A trigger's callable coordinates — route URL and signing secret — are authoring
+ * data, not read data: whoever holds them can make the gateway start a production
+ * run (it authenticates on the secret alone, or on nothing when authMode is 'none').
+ * Handing them to a role without `workflow:activate` would turn `workflow:read`
+ * into a transitive `execution:run`, so a reader sees only that a trigger exists.
+ */
+function triggerView(t: TriggerRow, gatewayUrl: string, key: Buffer, includeCredentials: boolean) {
   const base = { nodeId: t.nodeId, type: t.type, active: t.active };
   if (t.type === 'webhook') {
     return {
       ...base,
-      url: `${gatewayUrl}/t/${t.routeKey}`,
-      testUrl: `${gatewayUrl}/t/test/${t.routeKey}`,
       authMode: t.authMode,
-      secret: t.secretEncrypted ? decryptSecret(t.secretEncrypted, key) : null,
+      ...(includeCredentials
+        ? {
+            url: `${gatewayUrl}/t/${t.routeKey}`,
+            testUrl: `${gatewayUrl}/t/test/${t.routeKey}`,
+            secret: t.secretEncrypted ? decryptSecret(t.secretEncrypted, key) : null,
+          }
+        : {}),
     };
   }
   return { ...base, cron: t.cron, timezone: t.timezone, nextFireAt: t.nextFireAt };
@@ -81,7 +93,7 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     await setTriggersActive(deps.pool, id, true);
     await setWorkflowActive(deps.pool, id, true);
     const fresh = await listTriggers(deps.pool, id);
-    return { active: true, triggers: fresh.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerKey)) };
+    return { active: true, triggers: fresh.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerKey, true)) };
   });
 
   app.post('/v1/workflows/:id/deactivate', async (req, reply) => {
@@ -102,7 +114,8 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     const rows = await listTriggers(deps.pool, id);
-    return { triggers: rows.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerKey)) };
+    const withCredentials = hasPermission(ctx.role, 'workflow:activate');
+    return { triggers: rows.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerKey, withCredentials)) };
   });
 
   app.get('/v1/workflows/:id/triggers/:nodeId/samples', async (req, reply) => {

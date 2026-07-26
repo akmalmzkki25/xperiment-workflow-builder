@@ -24,14 +24,24 @@ export function TriggerPanel({ triggers, showSecrets }: { triggers: TriggerView[
           <strong className="mono">{t.nodeId}</strong>
           {t.type === 'webhook' ? (
             <>
-              <div className="q-trigger-panel__url">
-                <code data-testid="trigger-url">{t.url}</code>
-                <CopyButton value={t.url ?? ''} label="URL" />
-              </div>
-              <div className="q-trigger-panel__url">
-                <code data-testid="trigger-test-url">{t.testUrl}</code>
-                <CopyButton value={t.testUrl ?? ''} label="test URL" />
-              </div>
+              {/* The API omits the URLs for a member without workflow:activate — holding
+                  them is enough to start a production run through the gateway. */}
+              {t.url === undefined ? (
+                <p className="q-field__hint" data-testid="trigger-url-hidden">
+                  The endpoint URL is visible to members who can activate workflows.
+                </p>
+              ) : (
+                <>
+                  <div className="q-trigger-panel__url">
+                    <code data-testid="trigger-url">{t.url}</code>
+                    <CopyButton value={t.url} label="URL" />
+                  </div>
+                  <div className="q-trigger-panel__url">
+                    <code data-testid="trigger-test-url">{t.testUrl}</code>
+                    <CopyButton value={t.testUrl ?? ''} label="test URL" />
+                  </div>
+                </>
+              )}
               {t.authMode && t.authMode !== 'none' ? (
                 showSecrets && t.secret ? (
                   <div className="q-banner q-banner--warn">

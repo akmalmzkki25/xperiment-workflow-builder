@@ -146,6 +146,10 @@ call returns 403 `Requires the '<permission>' permission`.
   cannot read execution timelines (which carry customer payloads) or workflow IR.
 - `connection:read` gates `GET /v1/connections`: credential metadata is shared by role
   (SEC-004), so viewers, operators, and billing cannot enumerate connections.
+- `GET /v1/workflows/:id/triggers` omits each webhook's URL and signing secret unless the
+  caller holds `workflow:activate`. The gateway authenticates a trigger call on that secret
+  alone (on nothing at all when `authMode` is `none`), so handing those to a reader would
+  make `workflow:read` a transitive `execution:run`.
 - API keys are issued with a role (`POST /v1/api-keys` `{ name, role? }`, default
   `builder`) and authenticate with exactly that role's permissions.
 - `GET /v1/workspaces/members` lists members; `PUT /v1/workspaces/members/:userId`

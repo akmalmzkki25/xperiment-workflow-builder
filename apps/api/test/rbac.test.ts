@@ -97,6 +97,32 @@ describe('permission matrix', () => {
     expect((await op.inject({ method: 'POST', url: `/v1/executions/${uuid}/cancel` })).statusCode).not.toBe(403);
   });
 
+  test('a trigger URL and secret reach an activator but not a plain reader', async () => {
+    const wf = (await owner.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'trig' } })).json<{
+      id: string;
+    }>();
+    await pool.query(
+      `INSERT INTO workflow_triggers (workspace_id, workflow_id, node_id, type, route_key, auth_mode, active)
+       VALUES ($1,$2,'hook','webhook',$3,'none',true)`,
+      [owner.workspaceId, wf.id, `rk-${randomUUID()}`],
+    );
+
+    const asOwner = await owner.inject({ method: 'GET', url: `/v1/workflows/${wf.id}/triggers` });
+    const ownerTrigger = asOwner.json<{ triggers: Record<string, unknown>[] }>().triggers[0]!;
+    expect(ownerTrigger['url']).toBeTruthy();
+
+    // A viewer holds workflow:read but not workflow:activate. Handing them the route
+    // URL (or a signing secret) would let them start production runs via the gateway.
+    const viewer = await addMemberWithRole(app, pool, owner.workspaceId, 'viewer');
+    const asViewer = await viewer.inject({ method: 'GET', url: `/v1/workflows/${wf.id}/triggers` });
+    expect(asViewer.statusCode).toBe(200);
+    const viewerTrigger = asViewer.json<{ triggers: Record<string, unknown>[] }>().triggers[0]!;
+    expect(viewerTrigger['nodeId']).toBe('hook');
+    expect(viewerTrigger).not.toHaveProperty('url');
+    expect(viewerTrigger).not.toHaveProperty('testUrl');
+    expect(viewerTrigger).not.toHaveProperty('secret');
+  });
+
   test('a billing member reads usage and alerts but no workflow or execution data', async () => {
     const bill = await addMemberWithRole(app, pool, owner.workspaceId, 'billing');
     expect((await bill.inject({ method: 'GET', url: '/v1/usage' })).statusCode).toBe(200);
