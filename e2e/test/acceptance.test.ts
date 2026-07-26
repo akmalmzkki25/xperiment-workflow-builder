@@ -473,4 +473,56 @@ describe('PRD acceptance scenario', () => {
     expect(hook.body.ruleId).toBe(rule.body.id);
     expect(hook.signature).toBe('sha256=' + createHmac('sha256', secret).update(hook.raw).digest('hex'));
   }, 60000);
+
+  test('an operator runs a published workflow but cannot edit its draft', async () => {
+    const definition = {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_rbac', name: 'RBAC' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+        { id: 'done', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: { ok: true } } },
+      ],
+      edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'done', port: 'input' } }],
+    };
+    const created = await api<{ id: string }>('POST', '/v1/workflows', { name: 'RBAC' });
+    await api('PUT', `/v1/workflows/${created.body.id}/draft`, { definition }, { 'if-match': '1' });
+    expect((await api('POST', `/v1/workflows/${created.body.id}/publish`)).status).toBe(201);
+
+    // The owner's workspace, resolved from the workflow row (api() skips auth on /v1/auth/*).
+    const wsRow = await pool.query(`SELECT workspace_id FROM workflows WHERE id=$1`, [created.body.id]);
+    const ws = (wsRow.rows[0] as { workspace_id: string }).workspace_id;
+
+    // A second user, joined to that workspace as an operator.
+    const reg = await api<{ token: string; user: { id: string } }>('POST', '/v1/auth/register', {
+      email: `operator-${Date.now()}@xperiment.test`,
+      password: 'password-e2e-123',
+    });
+    expect(reg.status).toBe(201);
+    await pool.query(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'operator')`, [
+      ws,
+      reg.body.user.id,
+    ]);
+    const asOperator = (method: string, path: string, body?: unknown, extra?: Record<string, string>) =>
+      fetch(`${API_URL}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${reg.body.token}`,
+          'x-xperiment-workspace': ws,
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(extra ?? {}),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+
+    // Runtime: allowed.
+    const run = await asOperator('POST', `/v1/workflows/${created.body.id}/execute`, {});
+    expect(run.status).toBeLessThan(300);
+    const { executionId } = (await run.json()) as { executionId: string };
+    expect((await waitForTerminal(executionId)).execution.status).toBe('SUCCEEDED');
+
+    // Authoring: refused.
+    const edit = await asOperator('PUT', `/v1/workflows/${created.body.id}/draft`, { definition }, { 'if-match': '2' });
+    expect(edit.status).toBe(403);
+  }, 60000);
 });

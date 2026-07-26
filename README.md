@@ -115,16 +115,42 @@ gateway, scheduler, workers) inherits tenant context from the rows it processes.
    personal workspace. `POST /v1/auth/login` re-issues; `POST /v1/auth/logout-all`
    revokes every session. Login is rate-limited and audited.
 2. Send `Authorization: Bearer <token>`; switch workspaces with the
-   `X-Xperiment-Workspace` header (requires membership). Roles: viewer < builder <
-   admin < owner; writes need builder, member/key management needs admin.
-3. `POST /v1/workspaces/invites` (admin) returns a one-time token another logged-in
+   `X-Xperiment-Workspace` header (requires membership). See *Roles & permissions* below.
+3. `POST /v1/workspaces/invites` returns a one-time token another logged-in
    user redeems via `POST /v1/invites/accept` (email delivery lands later).
-4. `POST /v1/api-keys` (admin) issues a `qk_…` key shown once — it authenticates as a
-   builder for programmatic access. CLI: `pnpm xperiment login --email … --password …`
-   stores the token in `~/.xperiment/credentials.json` (`XPERIMENT_TOKEN` env overrides).
+4. `POST /v1/api-keys` issues a `qk_…` key shown once, carrying its own role.
+   CLI: `pnpm xperiment login --email … --password …` stores the token in
+   `~/.xperiment/credentials.json` (`XPERIMENT_TOKEN` env overrides).
 
 Cross-tenant isolation is enforced by workspace-scoped repositories and proven by an
 IDOR test matrix (`apps/api/test/isolation.test.ts`, `e2e/test/isolation.test.ts`).
+
+## Roles & permissions (Phase 3M)
+
+Six built-in roles. The ladder is gone: gates name a **capability**, so Operator can
+run without authoring and Billing sees spend without touching workflows. A refused
+call returns 403 `Requires the '<permission>' permission`.
+
+| Permission | viewer | operator | billing | builder | admin | owner |
+|---|---|---|---|---|---|---|
+| `workflow:read` `execution:read` `alert:read` `usage:read` | ✓ | ✓ | partial¹ | ✓ | ✓ | ✓ |
+| `execution:run` `execution:cancel` `approval:decide` `alert:write` | | ✓ | | ✓ | ✓ | ✓ |
+| `workflow:write` `workflow:activate` `connection:read` `connection:write` | | | | ✓ | ✓ | ✓ |
+| `billing:read` `billing:manage` | | | ✓ | | ✓ | ✓ |
+| `member:manage` | | | | | ✓ | ✓ |
+
+¹ Billing holds `alert:read` + `usage:read` only — not workflows or executions.
+
+- `connection:read` gates `GET /v1/connections`: credential metadata is shared by role
+  (SEC-004), so viewers, operators, and billing cannot enumerate connections.
+- API keys are issued with a role (`POST /v1/api-keys` `{ name, role? }`, default
+  `builder`) and authenticate with exactly that role's permissions.
+- `GET /v1/workspaces/members` lists members; `PUT /v1/workspaces/members/:userId`
+  `{ role }` changes one. Demoting the last owner is refused with 409, and only an
+  owner may grant `owner` (403 otherwise) — the same rule applies to invites and keys.
+- The web app exposes this at `/members`. `hasPermission` fails closed on an unknown
+  role, and `apps/api/test/rbac.test.ts` asserts the full role × permission matrix
+  against the live routes.
 
 ## Connections (Phase 1B, extended in 2G)
 
