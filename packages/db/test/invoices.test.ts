@@ -1,0 +1,165 @@
+import { randomUUID } from 'node:crypto';
+import { buildInvoice, DEFAULT_TAX_RATE_BPS, previousPeriod, resolveLimits, type PlanCode } from '@xperiment/plans';
+import type { Pool } from 'pg';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import {
+  createPool,
+  createUser,
+  createWorkspaceWithOwner,
+  getInvoice,
+  issueInvoice,
+  listInvoices,
+  markInvoicePaid,
+  runMigrations,
+  setInvoiceProvider,
+  workspacesNeedingInvoice,
+} from '../src/index.js';
+
+let pool: Pool;
+const period = previousPeriod(new Date());
+
+beforeAll(async () => {
+  pool = createPool();
+  await runMigrations(pool);
+});
+afterAll(async () => {
+  await pool.end();
+});
+
+async function newWorkspace(): Promise<string> {
+  const user = await createUser(pool, { email: `inv-${randomUUID()}@xperiment.test`, passwordHash: 'x' });
+  const ws = await createWorkspaceWithOwner(pool, { name: 'Inv', userId: user!.id });
+  return ws.id;
+}
+
+const draftFor = (planCode: PlanCode, executions = 0) =>
+  buildInvoice({
+    planCode,
+    limits: resolveLimits(planCode, {}),
+    usage: { executionsPerMonth: executions, aiTokensPerMonth: 0, activeWorkflows: 0, members: 0 },
+    taxRateBps: DEFAULT_TAX_RATE_BPS,
+  });
+
+const issue = (workspaceId: string, planCode: PlanCode = 'builder', executions = 0) =>
+  issueInvoice(pool, {
+    workspaceId,
+    periodStart: period.start,
+    periodEnd: period.end,
+    planCode,
+    draft: draftFor(planCode, executions),
+  });
+
+describe('issueInvoice', () => {
+  test('writes the invoice and its lines atomically', async () => {
+    const ws = await newWorkspace();
+    const inv = await issue(ws);
+    expect(inv).not.toBeNull();
+    const full = await getInvoice(pool, inv!.id, ws);
+    expect(full!.invoice.status).toBe('issued');
+    expect(full!.invoice.totalMinor).toBe(draftFor('builder').totalMinor);
+    expect(full!.lines).toHaveLength(1);
+    expect(full!.lines[0]!.kind).toBe('subscription');
+  });
+
+  test('every persisted amount is an integer', async () => {
+    const ws = await newWorkspace();
+    const inv = await issue(ws, 'builder', 999_999);
+    const full = await getInvoice(pool, inv!.id, ws);
+    for (const v of [full!.invoice.subtotalMinor, full!.invoice.taxMinor, full!.invoice.totalMinor]) {
+      expect(Number.isInteger(v)).toBe(true);
+    }
+    for (const l of full!.lines) expect(Number.isInteger(l.amountMinor)).toBe(true);
+  });
+
+  test('a second issue for the same period returns null rather than throwing', async () => {
+    const ws = await newWorkspace();
+    expect(await issue(ws)).not.toBeNull();
+    expect(await issue(ws)).toBeNull();
+  });
+
+  // The M and N lesson, twice proven: a sequential version of this passes against a
+  // broken guard. Only a parallel one exercises the constraint.
+  test('concurrent issues for one period produce exactly one invoice', async () => {
+    const ws = await newWorkspace();
+    await Promise.all(Array.from({ length: 8 }, () => pool.query('SELECT 1')));
+    const results = await Promise.all(Array.from({ length: 5 }, () => issue(ws)));
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const rows = await pool.query(`SELECT count(*)::int AS c FROM invoices WHERE workspace_id = $1`, [ws]);
+    expect((rows.rows[0] as { c: number }).c).toBe(1);
+  }, 30000);
+});
+
+describe('reads are tenant-scoped', () => {
+  test('getInvoice refuses another workspace', async () => {
+    const [a, b] = [await newWorkspace(), await newWorkspace()];
+    const inv = await issue(a);
+    expect(await getInvoice(pool, inv!.id, b)).toBeNull();
+  });
+
+  test('listInvoices returns only this workspace, newest first', async () => {
+    const ws = await newWorkspace();
+    await issue(ws);
+    const items = await listInvoices(pool, ws, 10);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.workspaceId).toBe(ws);
+  });
+});
+
+describe('markInvoicePaid', () => {
+  test('settles an issued invoice once and refuses the replay', async () => {
+    const ws = await newWorkspace();
+    const inv = await issue(ws);
+    expect(
+      await markInvoicePaid(pool, { id: inv!.id, workspaceId: ws, provider: 'manual', providerRef: 'XPERIMENT-1' }),
+    ).toBe(true);
+    expect(
+      await markInvoicePaid(pool, { id: inv!.id, workspaceId: ws, provider: 'manual', providerRef: 'XPERIMENT-1' }),
+    ).toBe(false);
+    const full = await getInvoice(pool, inv!.id, ws);
+    expect(full!.invoice.status).toBe('paid');
+    expect(full!.invoice.paidAt).not.toBeNull();
+  });
+
+  test('refuses to settle another workspace invoice', async () => {
+    const [a, b] = [await newWorkspace(), await newWorkspace()];
+    const inv = await issue(a);
+    expect(await markInvoicePaid(pool, { id: inv!.id, workspaceId: b, provider: 'manual', providerRef: 'X' })).toBe(
+      false,
+    );
+  });
+
+  test('setInvoiceProvider records the charge reference without settling', async () => {
+    const ws = await newWorkspace();
+    const inv = await issue(ws);
+    expect(
+      await setInvoiceProvider(pool, { id: inv!.id, workspaceId: ws, provider: 'manual', providerRef: 'XPERIMENT-9' }),
+    ).toBe(true);
+    const full = await getInvoice(pool, inv!.id, ws);
+    expect(full!.invoice.providerRef).toBe('XPERIMENT-9');
+    expect(full!.invoice.status).toBe('issued');
+  });
+});
+
+describe('workspacesNeedingInvoice', () => {
+  test('lists a workspace with no invoice for the period', async () => {
+    const ws = await newWorkspace();
+    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [ws, period.start]);
+    const ids = (await workspacesNeedingInvoice(pool, period)).map((w) => w.workspaceId);
+    expect(ids).toContain(ws);
+  });
+
+  test('omits a workspace already invoiced', async () => {
+    const ws = await newWorkspace();
+    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [ws, period.start]);
+    await issue(ws);
+    const ids = (await workspacesNeedingInvoice(pool, period)).map((w) => w.workspaceId);
+    expect(ids).not.toContain(ws);
+  });
+
+  test('omits a workspace created after the period ended', async () => {
+    const ws = await newWorkspace(); // created now, i.e. after any past period
+    const ancient = { start: new Date(Date.UTC(2020, 0, 1)), end: new Date(Date.UTC(2020, 1, 1)) };
+    const ids = (await workspacesNeedingInvoice(pool, ancient)).map((w) => w.workspaceId);
+    expect(ids).not.toContain(ws);
+  });
+});
