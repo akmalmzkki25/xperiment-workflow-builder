@@ -4,6 +4,7 @@ import { listConnections, recordAiUsage } from '@xperiment/db';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { authOf, requirePermission } from '../auth/plugin.js';
+import { quotaBlocks } from './plan.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -65,6 +66,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
   app.post('/v1/ai/generate', async (req, reply) => {
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'workflow:write')) return;
+    if (await quotaBlocks(deps.pool, reply, ctx.workspaceId, 'aiTokensPerMonth')) return;
     const parsed = generateSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     return handle(reply, ctx.workspaceId, 'generate', parsed.data.prompt);
@@ -73,6 +75,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
   app.post('/v1/ai/edit', async (req, reply) => {
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'workflow:write')) return;
+    if (await quotaBlocks(deps.pool, reply, ctx.workspaceId, 'aiTokensPerMonth')) return;
     const parsed = editSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     return handle(reply, ctx.workspaceId, 'edit', parsed.data.prompt, parsed.data.definition);

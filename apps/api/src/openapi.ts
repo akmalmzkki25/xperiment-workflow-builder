@@ -45,6 +45,10 @@ export const OPENAPI_DOCUMENT = {
     '/v1/executions/{id}/approvals/{nodeId}': { post: { summary: 'Approve or reject a pending approval', tags: ['approvals'] } },
     '/v1/approvals': { get: { summary: 'List pending approvals', tags: ['approvals'] } },
     '/v1/usage': { get: { summary: 'Usage totals + daily series (from/to, default current month)', tags: ['usage'] } },
+    '/v1/plan': {
+      get: { summary: 'Plan, limits, usage and per-limit status', tags: ['billing'] },
+      put: { summary: 'Change the plan or toggle overage', tags: ['billing'] },
+    },
     '/v1/alerts': {
       get: { summary: 'List alert rules', tags: ['alerts'] },
       post: { summary: 'Create an alert rule (webhook secret returned once)', tags: ['alerts'] },

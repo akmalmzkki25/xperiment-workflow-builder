@@ -51,10 +51,12 @@ const MATRIX: { permission: Permission; method: 'GET' | 'POST'; url: string; pay
   { permission: 'connection:write', method: 'POST', url: '/v1/connections', payload: { connectorKey: 'telegram', name: 'x', payload: { botToken: 't' } } },
   { permission: 'alert:write', method: 'POST', url: '/v1/alerts', payload: { name: 'a', type: 'failure_rate', params: { windowMinutes: 60, threshold: 0.5, minSample: 1 } } },
   { permission: 'member:manage', method: 'GET', url: '/v1/workspaces/members' },
+  { permission: 'billing:read', method: 'GET', url: '/v1/plan' },
+  { permission: 'billing:manage', method: 'PUT', url: '/v1/plan', payload: { allowOverage: false } },
 ];
 
-/** Declared but not yet gated by any route — sub-project N introduces billing routes. */
-const UNROUTED: Permission[] = ['billing:read', 'billing:manage'];
+/** Every declared permission is now routed. */
+const UNROUTED: Permission[] = [];
 
 describe('permission matrix', () => {
   test('every declared permission is exercised by the matrix', () => {

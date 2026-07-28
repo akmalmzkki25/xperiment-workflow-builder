@@ -17,6 +17,7 @@ import { workflowIrSchema, type IRNode } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
 import { hasPermission } from '../auth/permissions.js';
 import { authOf, requirePermission } from '../auth/plugin.js';
+import { quotaBlocks } from './plan.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -51,6 +52,7 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
   app.post('/v1/workflows/:id/activate', async (req, reply) => {
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'workflow:activate')) return;
+    if (await quotaBlocks(deps.pool, reply, ctx.workspaceId, 'activeWorkflows')) return;
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');

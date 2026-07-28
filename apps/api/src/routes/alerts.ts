@@ -94,7 +94,16 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'alert:write')) return;
     const { id } = req.params as { id: string };
-    if (!(await getAlertRule(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Alert rule not found');
+    const existing = await getAlertRule(deps.pool, id, ctx.workspaceId);
+    if (!existing) return sendProblem(reply, 404, 'Alert rule not found');
+    if (existing.managed) {
+      return sendProblem(
+        reply,
+        409,
+        'Managed rule',
+        'The plan quota rule cannot be deleted. Disable it instead if you do not want the warnings.',
+      );
+    }
     await deleteAlertRule(deps.pool, id, ctx.workspaceId);
     return reply.status(204).send();
   });

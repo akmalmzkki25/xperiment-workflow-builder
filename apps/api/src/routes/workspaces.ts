@@ -14,6 +14,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authOf, requirePermission } from '../auth/plugin.js';
+import { quotaBlocks } from './plan.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -41,6 +42,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
   app.post('/v1/workspaces/invites', async (req, reply) => {
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'member:manage')) return;
+    if (await quotaBlocks(deps.pool, reply, ctx.workspaceId, 'members')) return;
     const parsed = z.object({ role: ROLE_ENUM }).strict().safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     if (parsed.data.role === 'owner' && ctx.role !== 'owner') {
