@@ -63,6 +63,14 @@ export interface QuotaRefusal {
  */
 export type CreateExecutionResult = { outcome: 'created' | 'duplicate'; execution: ExecutionRow } | QuotaRefusal;
 
+/** Internal: rolls the creation transaction back, then becomes a `QuotaRefusal` result. */
+class QuotaRefusedError extends Error {
+  constructor(readonly refusal: QuotaRefusal) {
+    super('quota exceeded');
+    this.name = 'QuotaRefusedError';
+  }
+}
+
 /**
  * Reserve one execution against the workspace's monthly cap.
  *
@@ -119,7 +127,7 @@ export async function createExecutionWithTrigger(
     executionTimeoutMs: number;
   },
 ): Promise<CreateExecutionResult> {
-  return withTx(pool, async (client) => {
+  return withTx<CreateExecutionResult>(pool, async (client) => {
     // workspace_id is inherited from the workflow row — tenancy by construction.
     const te = await client.query(
       `INSERT INTO trigger_events (workspace_id, workflow_id, idempotency_key, payload_json)
@@ -127,20 +135,42 @@ export async function createExecutionWithTrigger(
        ON CONFLICT (workflow_id, idempotency_key) DO NOTHING RETURNING id, workspace_id`,
       [args.workflowId, args.idempotencyKey, capJson(args.payload)],
     );
-    if (!te.rowCount) {
+    let triggerEventId: string;
+    let workspaceId: string;
+    if (te.rowCount) {
+      const fresh = te.rows[0] as { id: string; workspace_id: string };
+      triggerEventId = fresh.id;
+      workspaceId = fresh.workspace_id;
+    } else {
       const existing = await client.query(
         `SELECT e.* FROM executions e
          JOIN trigger_events t ON t.id = e.trigger_event_id
          WHERE t.workflow_id = $1 AND t.idempotency_key = $2`,
         [args.workflowId, args.idempotencyKey],
       );
+      const row = existing.rows[0] as Record<string, unknown> | undefined;
       // A replay is free: it consumes no quota because it starts no new work.
-      return { outcome: 'duplicate', execution: mapExecution(existing.rows[0] as Record<string, unknown>) };
+      if (row) return { outcome: 'duplicate', execution: mapExecution(row) };
+
+      // The key is taken but no execution was ever started against it — an orphan
+      // trigger event. Adopt it and run the work now rather than failing forever:
+      // the caller's request has never actually been served.
+      const orphan = await client.query(
+        `SELECT id, workspace_id FROM trigger_events
+         WHERE workflow_id = $1 AND idempotency_key = $2 FOR UPDATE`,
+        [args.workflowId, args.idempotencyKey],
+      );
+      const adopted = orphan.rows[0] as { id: string; workspace_id: string } | undefined;
+      if (!adopted) throw new Error(`trigger event vanished for ${args.workflowId}/${args.idempotencyKey}`);
+      triggerEventId = adopted.id;
+      workspaceId = adopted.workspace_id;
     }
-    const { id: triggerEventId, workspace_id: workspaceId } = te.rows[0] as { id: string; workspace_id: string };
 
     const refusal = await checkAndConsumeExecutionQuota(client, workspaceId, periodStart(new Date()));
-    if (refusal) return refusal;
+    // Thrown, not returned: `withTx` COMMITs a normal return, which would durably
+    // persist the trigger event above with no execution attached — poisoning that
+    // idempotency key and storing a caller-controlled payload the counter never saw.
+    if (refusal) throw new QuotaRefusedError(refusal);
 
     const ex = await client.query(
       `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, trigger_event_id, status, idempotency_key)
@@ -167,6 +197,10 @@ export async function createExecutionWithTrigger(
       [workspaceId, execution.id, JSON.stringify({ idempotencyKey: args.idempotencyKey })],
     );
     return { outcome: 'created', execution };
+  }).catch((e: unknown) => {
+    // Unwrap the rollback sentinel back into the ordinary union the callers branch on.
+    if (e instanceof QuotaRefusedError) return e.refusal;
+    throw e;
   });
 }
 

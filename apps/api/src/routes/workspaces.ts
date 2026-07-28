@@ -64,9 +64,17 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
     if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only');
     const parsed = z.object({ token: z.string().min(1) }).strict().safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    const workspaceId = await acceptInvite(deps.pool, hashToken(parsed.data.token), ctx.userId);
-    if (!workspaceId) return sendProblem(reply, 404, 'Invite invalid or expired');
-    return { workspaceId };
+    const result = await acceptInvite(deps.pool, hashToken(parsed.data.token), ctx.userId);
+    if (result.outcome === 'invalid') return sendProblem(reply, 404, 'Invite invalid or expired');
+    if (result.outcome === 'quota_exceeded') {
+      return sendProblem(
+        reply,
+        402,
+        'Quota exceeded',
+        `members: ${result.used} of ${result.limit} used. The workspace must upgrade before you can join.`,
+      );
+    }
+    return { workspaceId: result.workspaceId };
   });
 
   app.post('/v1/api-keys', async (req, reply) => {

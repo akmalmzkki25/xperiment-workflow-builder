@@ -1,6 +1,8 @@
+import { resolveLimits } from '@xperiment/plans';
 import type pg from 'pg';
 import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
+import { getWorkspacePlan } from './entitlements.js';
 
 export type Role = 'viewer' | 'builder' | 'operator' | 'billing' | 'admin' | 'owner';
 
@@ -137,22 +139,57 @@ export async function createInvite(
   );
 }
 
-export async function acceptInvite(pool: pg.Pool, tokenHash: string, userId: string): Promise<string | null> {
+export type AcceptInviteResult =
+  | { outcome: 'joined'; workspaceId: string }
+  | { outcome: 'invalid' }
+  | { outcome: 'quota_exceeded'; used: number; limit: number };
+
+/**
+ * Redeem an invite.
+ *
+ * The seat limit is enforced here, not at invite time: issuing invites is free and
+ * unbounded, so gating only the issue lets N invites be minted under the cap and then
+ * all redeemed past it. Joining is the act that consumes a seat, so that is where the
+ * check belongs — and it shares `updateMemberRole`'s workspace advisory lock, so
+ * concurrent redemptions cannot both read the same pre-join count.
+ */
+export async function acceptInvite(pool: pg.Pool, tokenHash: string, userId: string): Promise<AcceptInviteResult> {
   return withTx(pool, async (client) => {
-    const r = await client.query(
-      `UPDATE workspace_invites SET accepted_by = $1
-       WHERE token_hash = $2 AND accepted_by IS NULL AND expires_at > now()
-       RETURNING workspace_id, role`,
-      [userId, tokenHash],
+    const invite = await client.query(
+      `SELECT workspace_id, role FROM workspace_invites
+       WHERE token_hash = $1 AND accepted_by IS NULL AND expires_at > now() FOR UPDATE`,
+      [tokenHash],
     );
-    if (!r.rowCount) return null;
-    const row = r.rows[0] as { workspace_id: string; role: Role };
+    if (!invite.rowCount) return { outcome: 'invalid' };
+    const row = invite.rows[0] as { workspace_id: string; role: Role };
+    const workspaceId = row.workspace_id;
+
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`workspace_role:${workspaceId}`]);
+
+    // Re-joining an existing membership consumes no seat, so only count the new ones.
+    const already = await client.query(
+      `SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId],
+    );
+    if (!already.rowCount) {
+      const plan = await getWorkspacePlan(client, workspaceId);
+      const limit = resolveLimits(plan.planCode, plan.limitOverrides).members;
+      if (limit !== null && !plan.allowOverage) {
+        const seats = await client.query(`SELECT count(*)::int AS c FROM workspace_members WHERE workspace_id = $1`, [
+          workspaceId,
+        ]);
+        const used = (seats.rows[0] as { c: number }).c;
+        if (used >= limit) return { outcome: 'quota_exceeded', used, limit };
+      }
+    }
+
+    await client.query(`UPDATE workspace_invites SET accepted_by = $1 WHERE token_hash = $2`, [userId, tokenHash]);
     await client.query(
       `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, $3)
        ON CONFLICT (workspace_id, user_id) DO NOTHING`,
-      [row.workspace_id, userId, row.role],
+      [workspaceId, userId, row.role],
     );
-    return row.workspace_id;
+    return { outcome: 'joined', workspaceId };
   });
 }
 

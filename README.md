@@ -190,6 +190,13 @@ single enforcement site. Enterprise is `business` plus per-workspace `limit_over
   **429** — an unauthenticated caller must not learn the workspace's plan state. A blocked
   cron fire is skipped and logged, and `next_fire_at` still advances so an upgrade does
   not release a backlog all at once. Duplicate (idempotent) requests consume no quota.
+  A refusal **rolls the whole creation back**, so the idempotency key stays unused: the
+  same key runs normally once the plan is upgraded or the period rolls over.
+- **Seats are counted at redemption, not at invite.** Issuing invites is free and
+  unbounded, so `POST /v1/invites/accept` is the gate (402 when the workspace is full) —
+  gating only the issue would let N invites be minted under the cap and all redeemed past
+  it. Redemption takes the same workspace advisory lock as a role change, so concurrent
+  joins cannot both read the same pre-join seat count.
 - **Soft limit at 80%** raises the workspace's *managed* `quota` alert rule, which rides
   Phase 2J's cooldown, acknowledgement, signed webhook delivery and incident banner. It
   can be disabled but not deleted (409).

@@ -112,6 +112,45 @@ describe('execution quota', () => {
     for (const k of ['a', 'b', 'c']) expect((await create(s, k)).outcome).toBe('created');
   });
 
+  test('a refusal leaves no trigger event behind', async () => {
+    const s = await seeded(0);
+    expect((await create(s, 'refused')).outcome).toBe('quota_exceeded');
+    const rows = await pool.query(
+      `SELECT count(*)::int AS c FROM trigger_events WHERE workflow_id=$1 AND idempotency_key='refused'`,
+      [s.workflowId],
+    );
+    // A committed orphan would poison this key: the replay below finds a trigger event
+    // with no execution, and every later attempt 500s instead of running the work.
+    expect((rows.rows[0] as { c: number }).c).toBe(0);
+  });
+
+  test('a key refused for quota runs once the cap is lifted', async () => {
+    const s = await seeded(0);
+    expect((await create(s, 'later')).outcome).toBe('quota_exceeded');
+    await pool.query(`UPDATE workspace_plans SET limit_overrides = $2 WHERE workspace_id = $1`, [
+      s.workspaceId,
+      JSON.stringify({ executionsPerMonth: 10 }),
+    ]);
+    expect((await create(s, 'later')).outcome).toBe('created');
+  });
+
+  test('an orphan trigger event is adopted rather than crashing the replay', async () => {
+    const s = await seeded(10);
+    // Simulate an orphan left by any cause (an older build, a crash between statements).
+    await pool.query(
+      `INSERT INTO trigger_events (workspace_id, workflow_id, idempotency_key, payload_json)
+       VALUES ($1,$2,'orphan','null'::jsonb)`,
+      [s.workspaceId, s.workflowId],
+    );
+    const result = await create(s, 'orphan');
+    expect(result.outcome).toBe('created');
+    const rows = await pool.query(
+      `SELECT count(*)::int AS c FROM trigger_events WHERE workflow_id=$1 AND idempotency_key='orphan'`,
+      [s.workflowId],
+    );
+    expect((rows.rows[0] as { c: number }).c).toBe(1); // adopted, not duplicated
+  });
+
   // The M lesson: a sequential version of this passes against a broken guard.
   test('parallel creations at the boundary cannot exceed the cap', async () => {
     const s = await seeded(5);

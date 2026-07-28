@@ -94,6 +94,31 @@ describe('stock limits', () => {
     expect(r.json<{ detail: string }>().detail).toContain('members');
   });
 
+  test('invites minted under the cap cannot all be redeemed past it', async () => {
+    const owner = await createAuthedUser(app);
+    await setLimit(owner.workspaceId, { members: 2 });
+    // Issuing is free and unbounded, so three invites are all accepted at issue time.
+    const tokens: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const r = await owner.inject({ method: 'POST', url: '/v1/workspaces/invites', payload: { role: 'viewer' } });
+      expect(r.statusCode).toBe(201);
+      tokens.push(r.json<{ token: string }>().token);
+    }
+    // Redeeming is what consumes a seat: the second joiner takes the workspace to the
+    // cap of 2, and the third must be refused rather than silently exceeding it.
+    const outcomes: number[] = [];
+    for (const token of tokens) {
+      const joiner = await createAuthedUser(app);
+      const r = await joiner.inject({ method: 'POST', url: '/v1/invites/accept', payload: { token } });
+      outcomes.push(r.statusCode);
+    }
+    expect(outcomes).toEqual([200, 402, 402]);
+    const seats = await pool.query(`SELECT count(*)::int AS c FROM workspace_members WHERE workspace_id = $1`, [
+      owner.workspaceId,
+    ]);
+    expect((seats.rows[0] as { c: number }).c).toBe(2);
+  });
+
   test('an AI call past the token cap is refused with 402', async () => {
     const user = await createAuthedUser(app);
     await setLimit(user.workspaceId, { aiTokensPerMonth: 1 });
