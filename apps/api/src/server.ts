@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import { createOpenRouterClient, type ChatClient } from '@xperiment/ai';
 import type { ConnectorRegistry } from '@xperiment/connectors';
 import { deriveTriggerKey } from '@xperiment/db';
+import { providerFor, type PaymentProvider } from '@xperiment/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { AiConfig } from './routes/deps.js';
@@ -19,6 +20,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerOpenapiRoutes } from './routes/openapi.js';
 import { registerTemplateRoutes } from './routes/templates.js';
 import { registerTriggerRoutes } from './routes/triggers.js';
+import { registerInvoiceRoutes } from './routes/invoices.js';
 import { registerPlanRoutes } from './routes/plan.js';
 import { registerUsageRoutes } from './routes/usage.js';
 import { registerWorkflowRoutes } from './routes/workflows.js';
@@ -33,6 +35,17 @@ export interface ServerDeps {
   ai?: AiConfig;
   aiClientFactory?: (cfg: { apiKey: string; model: string; baseUrl: string; appUrl?: string }) => ChatClient;
   rateLimitPerMinute?: number;
+  paymentProvider?: PaymentProvider;
+  paymentWebhookSecret?: string | null;
+}
+
+/** A typo must fail at startup, not silently disable payment on every request. */
+function resolvePaymentProvider(override?: PaymentProvider): PaymentProvider {
+  if (override) return override;
+  const key = process.env['PAYMENT_PROVIDER'] ?? 'manual';
+  const provider = providerFor(key);
+  if (!provider) throw new Error(`Unknown PAYMENT_PROVIDER: ${key}`);
+  return provider;
 }
 
 function resolveAiConfig(override?: AiConfig): AiConfig {
@@ -63,6 +76,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   const resolvedDeps = {
     pool: deps.pool,
     registry: deps.registry,
+    paymentProvider: resolvePaymentProvider(deps.paymentProvider),
+    paymentWebhookSecret: deps.paymentWebhookSecret ?? process.env['PAYMENT_WEBHOOK_SECRET'] ?? null,
     gatewayUrl: deps.gatewayUrl ?? process.env['GATEWAY_URL'] ?? 'http://localhost:3003',
     triggerKey:
       deps.triggerKey ?? deriveTriggerKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
@@ -89,6 +104,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerApprovalRoutes(app, resolvedDeps);
   registerUsageRoutes(app, resolvedDeps);
   registerPlanRoutes(app, resolvedDeps);
+  registerInvoiceRoutes(app, resolvedDeps);
   registerAlertRoutes(app, resolvedDeps);
   registerTemplateRoutes(app, resolvedDeps);
   return app;

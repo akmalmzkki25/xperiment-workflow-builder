@@ -11,6 +11,9 @@ export interface AiConfig {
 export interface ResolvedServerDeps {
   pool: import('pg').Pool;
   registry: import('@xperiment/connectors').ConnectorRegistry;
+  paymentProvider: import('@xperiment/payments').PaymentProvider;
+  /** Null disables the webhook route entirely — it 401s rather than verifying against ''. */
+  paymentWebhookSecret: string | null;
   gatewayUrl: string;
   triggerKey: Buffer;
   credentialsKey: Buffer;

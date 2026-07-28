@@ -58,6 +58,10 @@ const MATRIX: {
   { permission: 'member:manage', method: 'GET', url: '/v1/workspaces/members' },
   { permission: 'billing:read', method: 'GET', url: '/v1/plan' },
   { permission: 'billing:manage', method: 'PUT', url: '/v1/plan', payload: { allowOverage: false } },
+  { permission: 'billing:read', method: 'GET', url: '/v1/invoices' },
+  { permission: 'billing:read', method: 'GET', url: `/v1/invoices/${uuid}` },
+  { permission: 'billing:manage', method: 'POST', url: `/v1/invoices/${uuid}/pay` },
+  { permission: 'billing:manage', method: 'POST', url: `/v1/invoices/${uuid}/mark-paid` },
 ];
 
 /** Every declared permission is now routed. */

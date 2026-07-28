@@ -20,6 +20,7 @@
     "@xperiment/engine-core": "workspace:*",
     "@xperiment/expressions": "workspace:*",
     "@xperiment/ir": "workspace:*",
+    "@xperiment/payments": "workspace:*",
     "@xperiment/plans": "workspace:*",
     "@xperiment/queue": "workspace:*",
     "fastify": "^5.0.0",

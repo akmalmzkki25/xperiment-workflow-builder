@@ -49,6 +49,13 @@ export const OPENAPI_DOCUMENT = {
       get: { summary: 'Plan, limits, usage and per-limit status', tags: ['billing'] },
       put: { summary: 'Change the plan or toggle overage', tags: ['billing'] },
     },
+    '/v1/invoices': { get: { summary: 'List invoices', tags: ['billing'] } },
+    '/v1/invoices/{id}': { get: { summary: 'Invoice with its line items', tags: ['billing'] } },
+    '/v1/invoices/{id}/pay': { post: { summary: 'Create a charge with the configured provider', tags: ['billing'] } },
+    '/v1/invoices/{id}/mark-paid': { post: { summary: 'Settle an invoice manually', tags: ['billing'] } },
+    '/v1/payments/{provider}/webhook': {
+      post: { summary: 'Signed provider callback', security: [], tags: ['billing'] },
+    },
     '/v1/alerts': {
       get: { summary: 'List alert rules', tags: ['alerts'] },
       post: { summary: 'Create an alert rule (webhook secret returned once)', tags: ['alerts'] },
