@@ -93,14 +93,35 @@ describe('workflow routes', () => {
       payload: { definition: leadCheckIr() },
     });
     expect(stale.statusCode).toBe(412);
+    // A conformant client may echo the entity tag quoted or weak (RFC 7232). Bare
+    // Number('"1"') is NaN, which reached a bigint column and 500'd with the driver's
+    // error text — these must be accepted, and true garbage must be a 400, never a 500.
+    for (const bad of ['abc', '1.5', '1e999', '-1']) {
+      const r = await auth.inject({
+        method: 'PUT',
+        url: `/v1/workflows/${id}/draft`,
+        headers: { 'if-match': bad },
+        payload: { definition: leadCheckIr() },
+      });
+      expect(r.statusCode, `if-match: ${bad}`).toBe(400);
+      expect(r.body).not.toContain('22P02');
+    }
+    const quoted = await auth.inject({
+      method: 'PUT',
+      url: `/v1/workflows/${id}/draft`,
+      headers: { 'if-match': 'W/"1"' },
+      payload: { definition: leadCheckIr() },
+    });
+    expect(quoted.statusCode).toBe(200);
+    expect(quoted.json<{ revision: number }>().revision).toBe(2);
     const ok = await auth.inject({
       method: 'PUT',
       url: `/v1/workflows/${id}/draft`,
-      headers: { 'if-match': '1' },
+      headers: { 'if-match': '2' },
       payload: { definition: leadCheckIr() },
     });
     expect(ok.statusCode).toBe(200);
-    expect(ok.json<{ revision: number }>().revision).toBe(2);
+    expect(ok.json<{ revision: number }>().revision).toBe(3);
   });
 
   test('validate returns structured findings for a broken draft', async () => {

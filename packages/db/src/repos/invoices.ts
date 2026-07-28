@@ -200,7 +200,7 @@ export async function workspacesNeedingInvoice(
     `SELECT w.id FROM workspaces w
      WHERE w.created_at < $2
        AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.workspace_id = w.id AND i.period_start = $1::date)
-     ORDER BY w.created_at`,
+     ORDER BY w.created_at, w.id`,
     [dateParam(period.start), period.end],
   );
   return (r.rows as { id: string }[]).map((row) => ({ workspaceId: row.id }));

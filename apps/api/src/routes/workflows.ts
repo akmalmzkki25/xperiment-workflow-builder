@@ -83,12 +83,21 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
     if (typeof ifMatch !== 'string' || ifMatch.length === 0) {
       return sendProblem(reply, 428, 'If-Match header required', 'Send the current draft revision in If-Match');
     }
+    // `revision` is a bigint column, so a non-integer here reaches the driver and the
+    // 22P02 surfaces as a 500 echoing its error text. RFC 7232 lets a conformant client
+    // send the entity tag quoted or weak, and bare `Number('"1"')` is NaN — so strip the
+    // ETag syntax first, then insist on an integer.
+    const tag = ifMatch.trim().replace(/^W\//i, '').replace(/^"(.*)"$/, '$1');
+    const expectedRevision = Number(tag);
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      return sendProblem(reply, 400, 'Invalid If-Match', 'If-Match must be the draft revision number');
+    }
     const parsed = draftSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     const revision = await updateDraft(deps.pool, {
       workflowId: id,
       definition: parsed.data.definition,
-      expectedRevision: Number(ifMatch),
+      expectedRevision,
     });
     if (revision === null) {
       return sendProblem(reply, 412, 'Draft revision conflict', 'The draft was modified by someone else');

@@ -70,6 +70,14 @@ describe('runInvoiceSweep', () => {
   test('one failing workspace does not stall the batch', async () => {
     const doomed = await seed('builder', 1);
     const good = await seed('builder', 2);
+    // The sweep orders by created_at, and seed() back-dates every workspace to the same
+    // period.start — a tie Postgres breaks arbitrarily. Without forcing `doomed` first,
+    // `good` is often swept before the failure and the test passes even against a sweep
+    // that aborts the whole batch on the first error.
+    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [
+      doomed,
+      new Date(period.start.getTime() - 60_000),
+    ]);
 
     // Inject a real failure for exactly one workspace. A pool wrapper is the honest way
     // to reach the catch: every value the sweep reads is schema-constrained, so there is
