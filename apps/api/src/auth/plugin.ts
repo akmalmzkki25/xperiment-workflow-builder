@@ -29,12 +29,19 @@ export function requirePermission(reply: FastifyReply, ctx: AuthContext, permiss
 
 const EXEMPT = new Set(['/v1/healthz', '/v1/openapi.json', '/v1/auth/register', '/v1/auth/login']);
 
+/**
+ * Parameterised public paths. A payment provider's callback carries no bearer token —
+ * its signature is the credential, verified inside the route — so bouncing it here would
+ * make the route unreachable by the only caller it exists for.
+ */
+const EXEMPT_PATTERNS = [/^\/v1\/payments\/[^/]+\/webhook$/];
+
 export function registerAuthPlugin(app: FastifyInstance, deps: { pool: pg.Pool }): void {
   app.decorateRequest('authContext', null);
 
   app.addHook('preHandler', async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.url.split('?')[0]!;
-    if (EXEMPT.has(path)) return;
+    if (EXEMPT.has(path) || EXEMPT_PATTERNS.some((p) => p.test(path))) return;
 
     const header = req.headers['authorization'];
     if (typeof header !== 'string' || !header.startsWith('Bearer ')) {

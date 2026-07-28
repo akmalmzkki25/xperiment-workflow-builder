@@ -110,16 +110,17 @@ describe('buildInvoice', () => {
   });
 
   test('a half-unit of tax rounds up rather than truncating', () => {
-    // 50 * 1100 / 10000 = 5.5 → 6
+    // builder's 149_000 at 5bps is exactly 74.5 — half-up gives 75, truncation would
+    // give 74. Asserted against buildInvoice itself, not against Math.round on literals.
     const inv = buildInvoice({
-      planCode: 'free',
-      limits: { executionsPerMonth: 0, aiTokensPerMonth: null, activeWorkflows: null, members: null },
-      usage: usage({ executionsPerMonth: 2 }),
-      taxRateBps: 1100,
+      planCode: 'builder',
+      limits: resolveLimits('builder', {}),
+      usage: usage(),
+      taxRateBps: 5,
     });
-    // free overage price is 0, so the subtotal is 0 — assert the arithmetic directly instead.
-    expect(Math.round((50 * 1100) / 10_000)).toBe(6);
-    expect(Number.isInteger(inv.taxMinor)).toBe(true);
+    expect(inv.subtotalMinor).toBe(149_000);
+    expect(inv.taxMinor).toBe(75);
+    expect(inv.totalMinor).toBe(149_075);
   });
 
   test('a zero tax rate produces no tax', () => {

@@ -1,18 +1,24 @@
 import { getInvoice, listInvoices, markInvoicePaid, setInvoiceProvider } from '@xperiment/db';
 import { providerFor } from '@xperiment/payments';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// `.int()` matters: a fractional limit reaches `LIMIT $2`, which Postgres infers as
+// bigint, and the 22P02 surfaces as a 500 carrying the driver's error text.
+const listQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(100).default(24) });
+
 export function registerInvoiceRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.get('/v1/invoices', async (req, reply) => {
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'billing:read')) return;
-    const raw = Number((req.query as { limit?: string }).limit ?? 24);
-    return { items: await listInvoices(deps.pool, ctx.workspaceId, Number.isFinite(raw) ? raw : 24) };
+    const q = listQuerySchema.safeParse(req.query ?? {});
+    if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
+    return { items: await listInvoices(deps.pool, ctx.workspaceId, q.data.limit) };
   });
 
   app.get('/v1/invoices/:id', async (req, reply) => {

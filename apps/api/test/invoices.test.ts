@@ -48,6 +48,24 @@ describe('GET /v1/invoices', () => {
     expect(r.json<{ items: unknown[] }>().items).toHaveLength(1);
   });
 
+  test('a fractional limit is a 400, not a 500 leaking the pg error', async () => {
+    const user = await createAuthedUser(app);
+    const r = await user.inject({ method: 'GET', url: '/v1/invoices?limit=1.5' });
+    expect(r.statusCode).toBe(400);
+    // A bigint LIMIT parameter rejects '1.5' with 22P02, and with no error handler that
+    // reaches the client verbatim.
+    expect(r.body).not.toContain('22P02');
+    expect(r.body).not.toContain('bigint');
+  });
+
+  test('limit bounds are enforced rather than passed through', async () => {
+    const user = await createAuthedUser(app);
+    expect((await user.inject({ method: 'GET', url: '/v1/invoices?limit=0' })).statusCode).toBe(400);
+    expect((await user.inject({ method: 'GET', url: '/v1/invoices?limit=101' })).statusCode).toBe(400);
+    expect((await user.inject({ method: 'GET', url: '/v1/invoices?limit=abc' })).statusCode).toBe(400);
+    expect((await user.inject({ method: 'GET', url: '/v1/invoices?limit=50' })).statusCode).toBe(200);
+  });
+
   test('a viewer cannot read invoices', async () => {
     const user = await createAuthedUser(app);
     const viewer = await addMemberWithRole(app, pool, user.workspaceId, 'viewer');
@@ -140,14 +158,29 @@ describe('payment', () => {
 });
 
 describe('POST /v1/payments/:provider/webhook', () => {
+  /**
+   * Every rejection here is a 401, so the status alone cannot tell a *verification*
+   * failure from the global auth hook bouncing the request before the route runs. These
+   * assert the problem title, which is what proves the handler was actually reached —
+   * without it, a route excluded from the auth exemption list looks perfectly healthy.
+   */
+  test('reaches the route without a bearer token rather than being bounced by auth', async () => {
+    const r = await app.inject({ method: 'POST', url: '/v1/payments/manual/webhook', payload: {} });
+    expect(r.statusCode).toBe(401);
+    expect(r.json<{ title: string }>().title).toBe('Unverified webhook');
+    expect(r.json<{ detail?: string }>().detail).not.toBe('Bearer token required');
+  });
+
   test('401s an unknown provider', async () => {
     const r = await app.inject({ method: 'POST', url: '/v1/payments/midtrans/webhook', payload: {} });
     expect(r.statusCode).toBe(401);
+    expect(r.json<{ title: string }>().title).toBe('Unverified webhook');
   });
 
   test('401s the manual provider, which has no callback', async () => {
     const r = await app.inject({ method: 'POST', url: '/v1/payments/manual/webhook', payload: { any: 'thing' } });
     expect(r.statusCode).toBe(401);
+    expect(r.json<{ title: string }>().title).toBe('Unverified webhook');
   });
 
   test('is refused without authentication rather than gated by a permission', async () => {

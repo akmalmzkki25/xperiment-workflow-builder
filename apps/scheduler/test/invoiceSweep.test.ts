@@ -68,14 +68,29 @@ describe('runInvoiceSweep', () => {
   });
 
   test('one failing workspace does not stall the batch', async () => {
-    const good = await seed('builder', 1);
-    // A plan_code the catalog does not know: resolveLimits falls back to free, so the
-    // invoice still builds — the point is that the sweep completes and the good one lands.
-    const odd = await seed('builder', 2);
-    await pool.query(`UPDATE workspace_plans SET plan_code = 'team' WHERE workspace_id = $1`, [odd]);
-    const result = await runInvoiceSweep(deps());
-    expect(result.issued).toBeGreaterThanOrEqual(2);
-    expect(await listInvoices(pool, good, 10)).toHaveLength(1);
-    expect(await listInvoices(pool, odd, 10)).toHaveLength(1);
+    const doomed = await seed('builder', 1);
+    const good = await seed('builder', 2);
+
+    // Inject a real failure for exactly one workspace. A pool wrapper is the honest way
+    // to reach the catch: every value the sweep reads is schema-constrained, so there is
+    // no legitimate row that makes it throw — and a test that never enters the catch
+    // asserts nothing about the isolation it claims to prove.
+    const failing = {
+      query: (text: string, params?: unknown[]) => {
+        if (text.includes('workspace_plans') && Array.isArray(params) && params[0] === doomed) {
+          return Promise.reject(new Error('injected plan lookup failure'));
+        }
+        return pool.query(text, params as never);
+      },
+      connect: () => pool.connect(),
+    } as unknown as Pool;
+
+    const logged: string[] = [];
+    const result = await runInvoiceSweep({ pool: failing, log: (msg) => logged.push(msg) });
+
+    expect(logged).toContain('invoice_sweep.workspace_failed');
+    expect(await listInvoices(pool, doomed, 10)).toHaveLength(0);
+    expect(await listInvoices(pool, good, 10)).toHaveLength(1); // the batch continued
+    expect(result.issued).toBeGreaterThanOrEqual(1);
   });
 });

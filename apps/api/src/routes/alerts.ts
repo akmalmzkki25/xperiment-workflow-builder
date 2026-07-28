@@ -111,8 +111,11 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
   app.get('/v1/alerts/events', async (req, reply) => {
     if (!requirePermission(reply, authOf(req), 'alert:read')) return;
     const ws = authOf(req).workspaceId;
+    // This endpoint's documented contract is to fall back on unparseable input rather
+    // than 400. `trunc` is the fix that matters: a fractional value reaches a bigint
+    // LIMIT parameter, and the 22P02 surfaces as a 500 carrying the driver's error text.
     const raw = Number((req.query as { limit?: string }).limit ?? 50);
-    const limit = Number.isFinite(raw) ? raw : 50;
+    const limit = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 1), 100) : 50;
     return {
       items: await listAlertEvents(deps.pool, ws, limit),
       unacknowledged: await countUnacknowledgedAlerts(deps.pool, ws),
