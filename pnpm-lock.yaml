@@ -419,6 +419,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@xperiment/plans':
+        specifier: workspace:*
+        version: link:../plans
       pg:
         specifier: ^8.12.0
         version: 8.22.0

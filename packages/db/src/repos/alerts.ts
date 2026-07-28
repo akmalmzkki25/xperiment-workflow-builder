@@ -1,7 +1,8 @@
 import { type Db } from '../pool.js';
 import { insertOutbox } from './outbox.js';
 
-export type AlertType = 'failure_rate' | 'usage_threshold';
+/** `quota` rules are system-managed: created with the workspace, disableable, not deletable. */
+export type AlertType = 'failure_rate' | 'usage_threshold' | 'quota';
 
 export interface AlertRuleRow {
   id: string;
@@ -11,6 +12,7 @@ export interface AlertRuleRow {
   params: Record<string, unknown>;
   webhookUrl: string | null;
   enabled: boolean;
+  managed: boolean;
   cooldownMinutes: number;
   lastFiredAt: string | null;
   createdAt: string;
@@ -37,6 +39,7 @@ function mapRule(r: Record<string, unknown>): AlertRuleRow {
     params: (r['params'] as Record<string, unknown>) ?? {},
     webhookUrl: (r['webhook_url'] as string | null) ?? null,
     enabled: r['enabled'] as boolean,
+    managed: r['managed'] === true,
     cooldownMinutes: Number(r['cooldown_minutes']),
     lastFiredAt: ts(r['last_fired_at']),
     createdAt: ts(r['created_at'])!,

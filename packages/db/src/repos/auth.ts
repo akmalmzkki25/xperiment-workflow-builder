@@ -82,6 +82,14 @@ export async function createWorkspaceWithOwner(
       row.id,
       args.userId,
     ]);
+    // A workspace is born with a plan and a managed quota alert rule, so enforcement
+    // and warning are never retro-fitted onto a workspace that predates them.
+    await client.query(`INSERT INTO workspace_plans (workspace_id) VALUES ($1)`, [row.id]);
+    await client.query(
+      `INSERT INTO alert_rules (workspace_id, name, type, params, managed, cooldown_minutes)
+       VALUES ($1, 'Plan quota', 'quota', '{}'::jsonb, true, 720)`,
+      [row.id],
+    );
     return row;
   });
 }
