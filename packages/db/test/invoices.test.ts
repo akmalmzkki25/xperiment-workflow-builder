@@ -61,6 +61,18 @@ describe('issueInvoice', () => {
     expect(full!.lines[0]!.kind).toBe('subscription');
   });
 
+  test('the period round-trips as the exact calendar dates it was issued for', async () => {
+    const ws = await newWorkspace();
+    const inv = await issue(ws);
+    // node-postgres parses a DATE into *local* midnight, so a naive toISOString() rolls
+    // the day back east of Greenwich — this pins the boundary against that.
+    expect(inv!.periodStart).toBe(period.start.toISOString().slice(0, 10));
+    expect(inv!.periodEnd).toBe(period.end.toISOString().slice(0, 10));
+    const reread = await getInvoice(pool, inv!.id, ws);
+    expect(reread!.invoice.periodStart).toBe(inv!.periodStart);
+    expect(reread!.invoice.periodEnd).toBe(inv!.periodEnd);
+  });
+
   test('every persisted amount is an integer', async () => {
     const ws = await newWorkspace();
     const inv = await issue(ws, 'builder', 999_999);

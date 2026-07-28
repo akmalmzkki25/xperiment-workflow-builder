@@ -33,7 +33,28 @@ export interface InvoiceLineRow {
 }
 
 const ts = (v: unknown): string | null => (v instanceof Date ? v.toISOString() : (v as string | null));
-const day = (v: unknown): string => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
+
+/**
+ * A DATE column is a calendar date, not an instant, but node-postgres parses one into a
+ * Date at *local* midnight. Reading UTC components would therefore roll back a day east
+ * of Greenwich (UTC+7 turns 2026-06-01 into 2026-05-31), so the local components are
+ * what actually spell the stored date.
+ */
+const day = (v: unknown): string => {
+  if (!(v instanceof Date)) return String(v);
+  const y = v.getFullYear();
+  const m = String(v.getMonth() + 1).padStart(2, '0');
+  const d = String(v.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+/**
+ * Bind a period boundary as a bare `YYYY-MM-DD` string rather than a Date, so Postgres
+ * never casts an instant through the session timezone — west of Greenwich that would
+ * store the previous day. Period boundaries are built with `Date.UTC`, so the UTC
+ * components are the intended calendar date.
+ */
+const dateParam = (d: Date): string => d.toISOString().slice(0, 10);
 
 function mapInvoice(r: Record<string, unknown>): InvoiceRow {
   return {
@@ -84,8 +105,8 @@ export async function issueInvoice(
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [
           args.workspaceId,
-          args.periodStart,
-          args.periodEnd,
+          dateParam(args.periodStart),
+          dateParam(args.periodEnd),
           args.planCode,
           CURRENCY,
           args.draft.subtotalMinor,
@@ -178,9 +199,9 @@ export async function workspacesNeedingInvoice(
   const r = await db.query(
     `SELECT w.id FROM workspaces w
      WHERE w.created_at < $2
-       AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.workspace_id = w.id AND i.period_start = $1)
+       AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.workspace_id = w.id AND i.period_start = $1::date)
      ORDER BY w.created_at`,
-    [period.start, period.end],
+    [dateParam(period.start), period.end],
   );
   return (r.rows as { id: string }[]).map((row) => ({ workspaceId: row.id }));
 }
