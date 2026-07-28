@@ -1,4 +1,14 @@
-import { dueAlertRules, evaluateFailureRate, evaluateUsageMetric, fireAlert, withTx, type AlertRuleRow } from '@xperiment/db';
+import {
+  dueAlertRules,
+  evaluateFailureRate,
+  evaluateUsageMetric,
+  fireAlert,
+  getQuotaUsage,
+  getWorkspacePlan,
+  withTx,
+  type AlertRuleRow,
+} from '@xperiment/db';
+import { evaluateQuota, periodStart, resolveLimits } from '@xperiment/plans';
 import type pg from 'pg';
 
 export interface AlertSweepDeps {
@@ -35,6 +45,20 @@ export async function runAlertSweep(deps: AlertSweepDeps): Promise<{ fired: numb
 }
 
 async function evaluate(client: pg.PoolClient, rule: AlertRuleRow): Promise<Record<string, unknown> | null> {
+  if (rule.type === 'quota') {
+    // Plan quota is a period-to-date state, not a rolling window, so it ignores
+    // windowMinutes entirely and reads the same numbers the enforcement path does.
+    const plan = await getWorkspacePlan(client, rule.workspaceId);
+    const limits = resolveLimits(plan.planCode, plan.limitOverrides);
+    const start = periodStart(new Date());
+    const usage = await getQuotaUsage(client, rule.workspaceId, start);
+    const lines = evaluateQuota(limits, usage, plan.allowOverage);
+    // Report the worst line: blocked outranks warn, and ok never fires.
+    const worst = lines.find((l) => l.status === 'blocked') ?? lines.find((l) => l.status === 'warn');
+    if (!worst) return null;
+    return { metric: worst.metric, status: worst.status, used: worst.used, limit: worst.limit };
+  }
+
   const windowMinutes = num(rule.params['windowMinutes'], 60);
   const windowStart = new Date(Date.now() - windowMinutes * 60_000);
 

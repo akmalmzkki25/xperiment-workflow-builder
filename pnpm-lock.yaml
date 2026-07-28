@@ -203,6 +203,9 @@ importers:
       '@xperiment/ir':
         specifier: workspace:*
         version: link:../../packages/ir
+      '@xperiment/plans':
+        specifier: workspace:*
+        version: link:../../packages/plans
       '@xperiment/queue':
         specifier: workspace:*
         version: link:../../packages/queue

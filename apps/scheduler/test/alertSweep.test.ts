@@ -141,3 +141,44 @@ describe('runAlertSweep', () => {
     expect((await runAlertSweep(deps())).fired).toBe(1);
   });
 });
+
+describe('the managed quota rule', () => {
+  /** beforeEach truncates alert_rules, so the workspace's managed rule is re-seeded here. */
+  async function seedQuotaRule(executionsPerMonth: number, used: number): Promise<void> {
+    await pool.query(
+      `INSERT INTO alert_rules (workspace_id, name, type, params, managed, cooldown_minutes)
+       VALUES ($1,'Plan quota','quota','{}'::jsonb,true,720)`,
+      [WS],
+    );
+    await pool.query(
+      `INSERT INTO workspace_plans (workspace_id, limit_overrides) VALUES ($1,$2)
+       ON CONFLICT (workspace_id) DO UPDATE SET limit_overrides = $2`,
+      [WS, JSON.stringify({ executionsPerMonth, activeWorkflows: null, members: null, aiTokensPerMonth: null })],
+    );
+    await pool.query(
+      `INSERT INTO workspace_usage_counters (workspace_id, period_start, metric, quantity)
+       VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 'execution', $2)
+       ON CONFLICT (workspace_id, period_start, metric) DO UPDATE SET quantity = $2`,
+      [WS, used],
+    );
+  }
+
+  test('fires when a limit reaches the soft threshold', async () => {
+    await seedQuotaRule(10, 8);
+    expect((await runAlertSweep(deps())).fired).toBe(1);
+    const events = await listAlertEvents(pool, WS, 10);
+    expect(events[0]!.detail).toMatchObject({ metric: 'executionsPerMonth', status: 'warn', used: 8, limit: 10 });
+  });
+
+  test('reports blocked once the limit is reached', async () => {
+    await seedQuotaRule(10, 10);
+    expect((await runAlertSweep(deps())).fired).toBe(1);
+    expect((await listAlertEvents(pool, WS, 10))[0]!.detail).toMatchObject({ status: 'blocked' });
+  });
+
+  test('stays quiet well under the limit', async () => {
+    await seedQuotaRule(1000, 5);
+    expect((await runAlertSweep(deps())).fired).toBe(0);
+    expect(await listAlertEvents(pool, WS, 10)).toHaveLength(0);
+  });
+});
