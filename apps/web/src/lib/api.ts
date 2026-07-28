@@ -420,6 +420,26 @@ export class ApiClient {
   updatePlan(patch: { planCode?: string; allowOverage?: boolean }): Promise<PlanSnapshot> {
     return this.request('PUT', '/v1/plan', { body: patch });
   }
+
+  listInvoices(): Promise<{ items: InvoiceSummary[] }> {
+    return this.request('GET', '/v1/invoices');
+  }
+
+  markInvoicePaid(id: string): Promise<{ status: string }> {
+    return this.request('POST', `/v1/invoices/${id}/mark-paid`);
+  }
+}
+
+export interface InvoiceSummary {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  planCode: string;
+  currency: string;
+  subtotalMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  status: 'issued' | 'paid' | 'void';
 }
 
 export type QuotaMetric = 'executionsPerMonth' | 'aiTokensPerMonth' | 'activeWorkflows' | 'members';

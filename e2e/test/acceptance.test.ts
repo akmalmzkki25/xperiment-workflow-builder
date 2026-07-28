@@ -571,4 +571,55 @@ describe('PRD acceptance scenario', () => {
     // Leave the shared e2e workspace unconstrained for whatever runs next.
     await pool.query(`UPDATE workspace_plans SET limit_overrides = '{}'::jsonb WHERE workspace_id = $1`, [ws]);
   }, 60000);
+
+  test('a closed period becomes an invoice that can be settled', async () => {
+    // Resolve the shared e2e workspace via a created workflow row.
+    const probe = await api<{ id: string }>('POST', '/v1/workflows', { name: 'invoice-probe' });
+    const wsRow = await pool.query(`SELECT workspace_id FROM workflows WHERE id=$1`, [probe.body.id]);
+    const ws = (wsRow.rows[0] as { workspace_id: string }).workspace_id;
+
+    // Back-date the workspace and seed last month's counters, then let the scheduler close it.
+    const periodRow = await pool.query(
+      `SELECT (date_trunc('month', now() AT TIME ZONE 'UTC') - INTERVAL '1 month')::date AS start`,
+    );
+    const start = (periodRow.rows[0] as { start: Date }).start;
+    const startDay = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(
+      start.getDate(),
+    ).padStart(2, '0')}`;
+    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [ws, start]);
+    await pool.query(`UPDATE workspace_plans SET plan_code = 'builder' WHERE workspace_id = $1`, [ws]);
+    await pool.query(
+      `INSERT INTO workspace_usage_counters (workspace_id, period_start, metric, quantity)
+       VALUES ($1,$2,'execution',10040)
+       ON CONFLICT (workspace_id, period_start, metric) DO UPDATE SET quantity = 10040`,
+      [ws, startDay],
+    );
+    await pool.query(`DELETE FROM invoices WHERE workspace_id = $1 AND period_start = $2`, [ws, startDay]);
+
+    // The scheduler sweeps every 500ms in e2e; poll for the invoice.
+    const deadline = Date.now() + 20000;
+    let invoice: { id: string; totalMinor: number; status: string } | undefined;
+    while (Date.now() < deadline) {
+      const list = await api<{ items: { id: string; periodStart: string; totalMinor: number; status: string }[] }>(
+        'GET',
+        '/v1/invoices',
+      );
+      invoice = list.body.items.find((i) => i.periodStart === startDay);
+      if (invoice) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    expect(invoice).toBeDefined();
+
+    // builder: 149_000 subscription + 40 executions over 10_000 at 25 = 150_000 subtotal, +11% tax.
+    const subtotal = 149_000 + 40 * 25;
+    expect(invoice!.totalMinor).toBe(subtotal + Math.round((subtotal * 1100) / 10_000));
+
+    const settled = await api<{ status: string }>('POST', `/v1/invoices/${invoice!.id}/mark-paid`);
+    expect(settled.status).toBe(200);
+    expect(settled.body.status).toBe('paid');
+    expect((await api('POST', `/v1/invoices/${invoice!.id}/mark-paid`)).status).toBe(409);
+
+    // Leave the shared workspace on its default plan for whatever runs next.
+    await pool.query(`UPDATE workspace_plans SET plan_code = 'free' WHERE workspace_id = $1`, [ws]);
+  }, 60000);
 });

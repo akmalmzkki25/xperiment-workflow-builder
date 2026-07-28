@@ -142,6 +142,8 @@ describe('endpoint helpers', () => {
     await client.updateMemberRole('u1', 'operator');
     await client.getPlan();
     await client.updatePlan({ allowOverage: true });
+    await client.listInvoices();
+    await client.markInvoicePaid('i1');
     const seen = calls.map((c) => `${c.init.method} ${c.url.replace('http://api.test', '')}`);
     expect(seen).toEqual([
       'POST /v1/auth/register',
@@ -181,6 +183,8 @@ describe('endpoint helpers', () => {
       'PUT /v1/workspaces/members/u1',
       'GET /v1/plan',
       'PUT /v1/plan',
+      'GET /v1/invoices',
+      'POST /v1/invoices/i1/mark-paid',
     ]);
   });
 

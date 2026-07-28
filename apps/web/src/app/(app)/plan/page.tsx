@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { InvoiceTable } from '../../../components/plan/InvoiceTable';
 import { PermissionNotice } from '../../../components/ui/PermissionNotice';
 import { ApiError, getBrowserClient } from '../../../lib/api';
 import type { PlanSnapshot, QuotaLineView } from '../../../lib/api';
@@ -143,6 +144,9 @@ export default function PlanPage() {
                 Period-to-date usage counts executions from the moment they start; the Usage page reports runs that
                 have finished, so a run in flight appears here first.
               </p>
+
+              <h2 style={{ fontSize: 'var(--text-h2)', margin: 'var(--space-6) 0 var(--space-3)' }}>Invoices</h2>
+              <InvoiceTable />
             </>
           ) : null}
         </>

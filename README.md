@@ -205,6 +205,52 @@ single enforcement site. Enterprise is `business` plus per-workspace `limit_over
 - `GET /v1/plan` needs `billing:read`; `PUT /v1/plan` needs `billing:manage` and refuses a
   downgrade the workspace already exceeds (409). The web app exposes this at `/plan`.
 
+## Invoices & payment (Phase 3O)
+
+Each closed calendar month becomes one immutable invoice per workspace: a subscription
+line plus metered overage, with tax.
+
+| Plan | Monthly | Overage / execution | Overage / 1k AI tokens |
+|---|---|---|---|
+| free | 0 | — | — |
+| builder | Rp 149.000 | Rp 25 | Rp 150 |
+| team | Rp 599.000 | Rp 20 | Rp 120 |
+| business | Rp 2.499.000 | unlimited, not metered | unlimited, not metered |
+
+The figures are placeholders — PRD §15 defers pricing to customer discovery, and the
+whole table is one object in `packages/plans` that a billing provider can replace.
+
+- **All money is integer rupiah.** No float ever touches an amount; DB columns are
+  `BIGINT`. Tax is `round(subtotal × rate_bps / 10000)`, stamped onto the invoice **once**
+  at issue and never recomputed — changing `INVOICE_TAX_RATE_BPS` affects only invoices
+  issued afterwards.
+- **The 11% default is a placeholder.** It records whatever rate it is configured with and
+  asserts no legal position. A live deployment needs real tax advice.
+- **Stock limits are not billed.** `activeWorkflows` and `members` are hard caps enforced
+  at their gates, so a workspace can never exceed them; only executions and AI tokens
+  meter. A partial thousand of AI tokens rounds up to a whole billable unit.
+- **The close sweep is idempotent by construction**, not by being careful:
+  `UNIQUE (workspace_id, period_start)` means two scheduler instances racing produce one
+  invoice and one skipped duplicate. It only ever closes the *previous* period, and skips
+  any workspace created after that period ended.
+- **An invoice is immutable except for settlement.** The repo exposes no generic update —
+  only `setInvoiceProvider` and a compare-and-set to `paid`, so a replayed webhook or a
+  double-clicked button settles nothing twice (409).
+- **Payment is behind an interface.** `manual` (bank transfer, admin settles) ships now;
+  a Midtrans or Xendit adapter implements the same `PaymentProvider` without touching the
+  invoice engine. `verifyWebhook` returns null for anything it cannot positively verify,
+  so `POST /v1/payments/:provider/webhook` fails closed with 401 and mutates nothing.
+- Routes: `GET /v1/invoices` and `GET /v1/invoices/:id` need `billing:read`;
+  `POST /v1/invoices/:id/pay` and `/mark-paid` need `billing:manage`. The web app lists
+  them on `/plan`.
+- Config: `INVOICE_TAX_RATE_BPS` (default 1100), `PAYMENT_PROVIDER` (default `manual`; an
+  unknown key fails at **startup**, not per request), `PAYMENT_WEBHOOK_SECRET` (unset means
+  every webhook is refused rather than verified against an empty string).
+
+**Not in this slice:** dunning and retry schedules, refunds, credit notes, proration on a
+mid-period plan change (the plan active at close is charged), multi-currency, and faktur
+pajak e-filing.
+
 ## Connections (Phase 1B, extended in 2G)
 
 Credentialed connectors reference stored connections instead of embedding secrets:
