@@ -525,4 +525,50 @@ describe('PRD acceptance scenario', () => {
     const edit = await asOperator('PUT', `/v1/workflows/${created.body.id}/draft`, { definition }, { 'if-match': '2' });
     expect(edit.status).toBe(403);
   }, 60000);
+
+  test('a workspace at its execution cap is refused until overage is enabled', async () => {
+    const definition = {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_quota', name: 'Quota' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+        { id: 'done', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: { ok: true } } },
+      ],
+      edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'done', port: 'input' } }],
+    };
+    const created = await api<{ id: string }>('POST', '/v1/workflows', { name: 'Quota' });
+    await api('PUT', `/v1/workflows/${created.body.id}/draft`, { definition }, { 'if-match': '1' });
+    expect((await api('POST', `/v1/workflows/${created.body.id}/publish`)).status).toBe(201);
+
+    // Pin the cap to what the workspace has already consumed, so the next run is the
+    // one that crosses it regardless of what earlier tests ran.
+    const wsRow = await pool.query(`SELECT workspace_id FROM workflows WHERE id=$1`, [created.body.id]);
+    const ws = (wsRow.rows[0] as { workspace_id: string }).workspace_id;
+    const usedRow = await pool.query(
+      `SELECT COALESCE(quantity,0) AS q FROM workspace_usage_counters
+       WHERE workspace_id=$1 AND metric='execution'
+         AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date`,
+      [ws],
+    );
+    const used = Number((usedRow.rows[0] as { q: string } | undefined)?.q ?? 0);
+    await pool.query(`UPDATE workspace_plans SET limit_overrides = $2, allow_overage = false WHERE workspace_id = $1`, [
+      ws,
+      JSON.stringify({ executionsPerMonth: used }),
+    ]);
+
+    const blocked = await api('POST', `/v1/workflows/${created.body.id}/execute`, {});
+    expect(blocked.status).toBe(402);
+
+    const enabled = await api<{ allowOverage: boolean }>('PUT', '/v1/plan', { allowOverage: true });
+    expect(enabled.status).toBe(200);
+    expect(enabled.body.allowOverage).toBe(true);
+
+    const allowed = await api<{ executionId: string }>('POST', `/v1/workflows/${created.body.id}/execute`, {});
+    expect(allowed.status).toBe(201);
+    expect((await waitForTerminal(allowed.body.executionId)).execution.status).toBe('SUCCEEDED');
+
+    // Leave the shared e2e workspace unconstrained for whatever runs next.
+    await pool.query(`UPDATE workspace_plans SET limit_overrides = '{}'::jsonb WHERE workspace_id = $1`, [ws]);
+  }, 60000);
 });

@@ -412,6 +412,33 @@ export class ApiClient {
   updateMemberRole(userId: string, role: string): Promise<{ userId: string; role: string }> {
     return this.request('PUT', `/v1/workspaces/members/${userId}`, { body: { role } });
   }
+
+  getPlan(): Promise<PlanSnapshot> {
+    return this.request('GET', '/v1/plan');
+  }
+
+  updatePlan(patch: { planCode?: string; allowOverage?: boolean }): Promise<PlanSnapshot> {
+    return this.request('PUT', '/v1/plan', { body: patch });
+  }
+}
+
+export type QuotaMetric = 'executionsPerMonth' | 'aiTokensPerMonth' | 'activeWorkflows' | 'members';
+
+export interface QuotaLineView {
+  metric: QuotaMetric;
+  used: number;
+  /** null means unlimited. */
+  limit: number | null;
+  status: 'ok' | 'warn' | 'blocked';
+}
+
+export interface PlanSnapshot {
+  planCode: string;
+  allowOverage: boolean;
+  limits: Record<QuotaMetric, number | null>;
+  usage: Record<QuotaMetric, number>;
+  lines: QuotaLineView[];
+  period: { start: string; end: string };
 }
 
 export interface WorkspaceMember {

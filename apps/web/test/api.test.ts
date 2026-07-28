@@ -140,6 +140,8 @@ describe('endpoint helpers', () => {
     await client.acknowledgeAlert('a1');
     await client.listMembers();
     await client.updateMemberRole('u1', 'operator');
+    await client.getPlan();
+    await client.updatePlan({ allowOverage: true });
     const seen = calls.map((c) => `${c.init.method} ${c.url.replace('http://api.test', '')}`);
     expect(seen).toEqual([
       'POST /v1/auth/register',
@@ -177,6 +179,8 @@ describe('endpoint helpers', () => {
       'POST /v1/alerts/events/a1/ack',
       'GET /v1/workspaces/members',
       'PUT /v1/workspaces/members/u1',
+      'GET /v1/plan',
+      'PUT /v1/plan',
     ]);
   });
 

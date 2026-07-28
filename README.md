@@ -161,6 +161,43 @@ call returns 403 `Requires the '<permission>' permission`.
   role, and `apps/api/test/rbac.test.ts` asserts the full role × permission matrix
   against the live routes.
 
+## Plans & quota (Phase 3N)
+
+Every workspace has a plan, and four limits derive from it. `null` means unlimited.
+
+| Limit | free | builder | team | business |
+|---|---|---|---|---|
+| Executions / month | 500 | 10,000 | 50,000 | ∞ |
+| AI tokens / month | 50,000 | 500,000 | 2,000,000 | ∞ |
+| Active workflows | 3 | 20 | 100 | ∞ |
+| Members | 2 | 3 | 15 | ∞ |
+
+The tiers are a hypothesis (PRD §15 defers pricing to customer discovery), so the catalog
+is one object in `packages/plans` that a billing provider can replace without touching a
+single enforcement site. Enterprise is `business` plus per-workspace `limit_overrides`.
+
+- **Flows are counted at the start, stocks are counted live.** Executions and AI tokens
+  increment `workspace_usage_counters` in the same transaction as the event they count;
+  active workflows and members are a `count(*)` at check time. The Phase 2I ledger stays
+  the billing source of truth and `recomputeCounters` rebuilds the counters from it.
+- **Quota counts starts; the Usage page reports finished runs.** A run in flight counts
+  against the cap before it appears on the dashboard. Counting finalized runs instead
+  would let a workspace at 999/1000 start hundreds of concurrent runs, because none of
+  them would have finalized when the check ran.
+- **Enforcement points.** `POST /v1/workflows/:id/execute` and `/executions/:id/retry`,
+  `/activate`, `/workspaces/invites`, `/ai/generate` and `/ai/edit` return **402** naming
+  the metric, usage, limit and reset. The webhook gateway returns a deliberately generic
+  **429** — an unauthenticated caller must not learn the workspace's plan state. A blocked
+  cron fire is skipped and logged, and `next_fire_at` still advances so an upgrade does
+  not release a backlog all at once. Duplicate (idempotent) requests consume no quota.
+- **Soft limit at 80%** raises the workspace's *managed* `quota` alert rule, which rides
+  Phase 2J's cooldown, acknowledgement, signed webhook delivery and incident banner. It
+  can be disabled but not deleted (409).
+- **`allowOverage`** turns every block into a warning: work proceeds and the counter keeps
+  climbing, so overage is `max(0, used - limit)`.
+- `GET /v1/plan` needs `billing:read`; `PUT /v1/plan` needs `billing:manage` and refuses a
+  downgrade the workspace already exceeds (409). The web app exposes this at `/plan`.
+
 ## Connections (Phase 1B, extended in 2G)
 
 Credentialed connectors reference stored connections instead of embedding secrets:
