@@ -162,6 +162,15 @@ export async function createExecutionWithTrigger(
       );
       const adopted = orphan.rows[0] as { id: string; workspace_id: string } | undefined;
       if (!adopted) throw new Error(`trigger event vanished for ${args.workflowId}/${args.idempotencyKey}`);
+
+      // Re-read under the lock. The check above ran on a pre-lock snapshot, so a
+      // concurrent replay may have adopted this same event and committed while we
+      // waited — without this, both would create an execution and both would be
+      // charged, which is exactly the idempotency guarantee this function exists for.
+      const settled = await client.query(`SELECT * FROM executions WHERE trigger_event_id = $1`, [adopted.id]);
+      const winner = settled.rows[0] as Record<string, unknown> | undefined;
+      if (winner) return { outcome: 'duplicate', execution: mapExecution(winner) };
+
       triggerEventId = adopted.id;
       workspaceId = adopted.workspace_id;
     }

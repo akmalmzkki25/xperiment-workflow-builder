@@ -151,6 +151,31 @@ describe('execution quota', () => {
     expect((rows.rows[0] as { c: number }).c).toBe(1); // adopted, not duplicated
   });
 
+  test('concurrent replays of an orphaned key produce exactly one execution', async () => {
+    const s = await seeded(100);
+    await pool.query(
+      `INSERT INTO trigger_events (workspace_id, workflow_id, idempotency_key, payload_json)
+       VALUES ($1,$2,'orphan-race','null'::jsonb)`,
+      [s.workspaceId, s.workflowId],
+    );
+    await Promise.all(Array.from({ length: 8 }, () => pool.query('SELECT 1')));
+
+    // The existence check runs on a pre-lock snapshot, so without a re-read under the
+    // FOR UPDATE every waiter adopts the same event: N executions, N quota units, and
+    // the workflow dispatched N times for one idempotency key.
+    const results = await Promise.all(Array.from({ length: 3 }, () => create(s, 'orphan-race')));
+    expect(results.filter((r) => r.outcome === 'created')).toHaveLength(1);
+    expect(results.filter((r) => r.outcome === 'duplicate')).toHaveLength(2);
+
+    const rows = await pool.query(
+      `SELECT count(*)::int AS c FROM executions e JOIN trigger_events t ON t.id = e.trigger_event_id
+       WHERE t.workflow_id = $1 AND t.idempotency_key = 'orphan-race'`,
+      [s.workflowId],
+    );
+    expect((rows.rows[0] as { c: number }).c).toBe(1);
+    expect((await getQuotaUsage(pool, s.workspaceId, period)).executionsPerMonth).toBe(1);
+  }, 30000);
+
   // The M lesson: a sequential version of this passes against a broken guard.
   test('parallel creations at the boundary cannot exceed the cap', async () => {
     const s = await seeded(5);
