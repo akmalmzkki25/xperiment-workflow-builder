@@ -16,14 +16,25 @@ import {
   waitsForExecution,
   withTx,
 } from '@xperiment/db';
+import type { QuotaRefusal } from '@xperiment/db';
 import { workflowIrSchema } from '@xperiment/ir';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
 const DEFAULT_EXECUTION_TIMEOUT_MS = 900000;
+
+/** 402: the request is well-formed and authorized, but the workspace has no budget for it. */
+function sendQuotaProblem(reply: FastifyReply, refusal: QuotaRefusal): void {
+  sendProblem(
+    reply,
+    402,
+    'Quota exceeded',
+    `${refusal.metric}: ${refusal.used} of ${refusal.limit} used this period. Upgrade the plan or enable overage.`,
+  );
+}
 
 const listQuerySchema = z.object({
   workflowId: z.string().uuid().optional(),
@@ -46,7 +57,7 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
     const ir = workflowIrSchema.parse(version.definition);
     const idempotencyKey = (req.headers['idempotency-key'] as string | undefined) ?? randomUUID();
 
-    const { execution, created } = await createExecutionWithTrigger(deps.pool, {
+    const result = await createExecutionWithTrigger(deps.pool, {
       workflowId: id,
       versionId: version.id,
       idempotencyKey,
@@ -54,7 +65,14 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       nodeIds: ir.nodes.map((n) => n.id),
       executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
     });
-    return reply.status(created ? 201 : 200).send({ executionId: execution.id, status: execution.status, created });
+    if (result.outcome === 'quota_exceeded') {
+      sendQuotaProblem(reply, result);
+      return;
+    }
+    const created = result.outcome === 'created';
+    return reply
+      .status(created ? 201 : 200)
+      .send({ executionId: result.execution.id, status: result.execution.status, created });
   });
 
   app.get('/v1/executions', async (req, reply) => {
@@ -152,7 +170,7 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
     const ir = workflowIrSchema.parse(version.definition);
     const payload = await getTriggerPayload(deps.pool, id);
     const idempotencyKey = (req.headers['idempotency-key'] as string | undefined) ?? randomUUID();
-    const { execution, created } = await createExecutionWithTrigger(deps.pool, {
+    const result = await createExecutionWithTrigger(deps.pool, {
       workflowId: detail.execution.workflowId,
       versionId: version.id,
       idempotencyKey,
@@ -160,6 +178,13 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       nodeIds: ir.nodes.map((n) => n.id),
       executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
     });
-    return reply.status(created ? 201 : 200).send({ executionId: execution.id, status: execution.status, created });
+    if (result.outcome === 'quota_exceeded') {
+      sendQuotaProblem(reply, result);
+      return;
+    }
+    const created = result.outcome === 'created';
+    return reply
+      .status(created ? 201 : 200)
+      .send({ executionId: result.execution.id, status: result.execution.status, created });
   });
 }

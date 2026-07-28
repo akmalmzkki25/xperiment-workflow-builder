@@ -16,6 +16,7 @@ import {
   succeededOutputs,
 } from '../src/repos/executions.js';
 import { fetchUnpublished, markPublished } from '../src/repos/outbox.js';
+import { executionOf } from './execHelpers.js';
 
 let pool: Pool;
 let workflowId: string;
@@ -50,8 +51,9 @@ function createArgs(key = 'k1') {
 
 describe('createExecutionWithTrigger', () => {
   test('creates execution, PENDING node rows, outbox rows, event — atomically', async () => {
-    const { execution, created } = await createExecutionWithTrigger(pool, createArgs());
-    expect(created).toBe(true);
+    const result = await createExecutionWithTrigger(pool, createArgs());
+    expect(result.outcome).toBe('created');
+    const execution = executionOf(result);
     expect(execution.status).toBe('CREATED');
     const nodes = await latestNodeStates(pool, execution.id);
     expect(nodes).toHaveLength(3);
@@ -64,11 +66,11 @@ describe('createExecutionWithTrigger', () => {
     expect(await getTriggerPayload(pool, execution.id)).toEqual({ name: 'Budi' });
   });
 
-  test('duplicate idempotency key returns existing execution with created:false', async () => {
+  test('a duplicate idempotency key returns the existing execution as a duplicate', async () => {
     const first = await createExecutionWithTrigger(pool, createArgs('same'));
     const second = await createExecutionWithTrigger(pool, createArgs('same'));
-    expect(second.created).toBe(false);
-    expect(second.execution.id).toBe(first.execution.id);
+    expect(second.outcome).toBe('duplicate');
+    expect(executionOf(second).id).toBe(executionOf(first).id);
     const r = await pool.query(`SELECT count(*)::int AS c FROM executions`);
     expect((r.rows[0] as { c: number }).c).toBe(1);
   });
@@ -76,7 +78,7 @@ describe('createExecutionWithTrigger', () => {
 
 describe('CAS updates', () => {
   test('casExecution succeeds from expected status and refuses otherwise', async () => {
-    const { execution } = await createExecutionWithTrigger(pool, createArgs());
+    const execution = executionOf(await createExecutionWithTrigger(pool, createArgs()));
     expect(await casExecution(pool, { executionId: execution.id, from: ['CREATED'], to: 'QUEUED' })).toBe(true);
     expect(await casExecution(pool, { executionId: execution.id, from: ['CREATED'], to: 'QUEUED' })).toBe(false);
     expect(
@@ -85,7 +87,7 @@ describe('CAS updates', () => {
   });
 
   test('casNode transitions one attempt row and stores patch', async () => {
-    const { execution } = await createExecutionWithTrigger(pool, createArgs());
+    const execution = executionOf(await createExecutionWithTrigger(pool, createArgs()));
     expect(
       await casNode(pool, { executionId: execution.id, nodeId: 't', attempt: 1, from: ['PENDING'], to: 'READY' }),
     ).toBe(true);
@@ -121,7 +123,7 @@ describe('CAS updates', () => {
   });
 
   test('payload cap enforced', async () => {
-    const { execution } = await createExecutionWithTrigger(pool, createArgs());
+    const execution = executionOf(await createExecutionWithTrigger(pool, createArgs()));
     const huge = { data: 'x'.repeat(262145) };
     await expect(
       casNode(pool, {
@@ -138,7 +140,7 @@ describe('CAS updates', () => {
 
 describe('attempts and reads', () => {
   test('latestNodeStates picks max attempt; insertNodeAttempt adds QUEUED row', async () => {
-    const { execution } = await createExecutionWithTrigger(pool, createArgs());
+    const execution = executionOf(await createExecutionWithTrigger(pool, createArgs()));
     await casNode(pool, { executionId: execution.id, nodeId: 'a', attempt: 1, from: ['PENDING'], to: 'READY' });
     await casNode(pool, { executionId: execution.id, nodeId: 'a', attempt: 1, from: ['READY'], to: 'QUEUED' });
     await casNode(pool, { executionId: execution.id, nodeId: 'a', attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
@@ -158,7 +160,7 @@ describe('attempts and reads', () => {
   });
 
   test('appendEvent and getExecutionDetail return full timeline', async () => {
-    const { execution } = await createExecutionWithTrigger(pool, createArgs());
+    const execution = executionOf(await createExecutionWithTrigger(pool, createArgs()));
     await appendEvent(pool, { executionId: execution.id, eventType: 'node.started', nodeId: 't' });
     const detail = await getExecutionDetail(pool, execution.id);
     expect(detail?.execution.id).toBe(execution.id);

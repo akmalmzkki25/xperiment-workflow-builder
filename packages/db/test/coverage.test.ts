@@ -12,6 +12,7 @@ import {
   listExecutions,
 } from '../src/repos/executions.js';
 import { fetchUnpublished, markPublished } from '../src/repos/outbox.js';
+import { executionOf } from './execHelpers.js';
 import { createVersion, createWorkflow, getDraft, getVersion, getWorkflow, updateDraft } from '../src/repos/workflows.js';
 
 let pool: Pool;
@@ -84,14 +85,16 @@ describe('misc branch coverage', () => {
   });
 
   test('casExecution stores errorSummary and completedAt', async () => {
-    const { execution } = await createExecutionWithTrigger(pool, {
-      workflowId,
-      versionId,
-      idempotencyKey: 'cov-1',
-      payload: null,
-      nodeIds: ['t'],
-      executionTimeoutMs: 1000,
-    });
+    const execution = executionOf(
+      await createExecutionWithTrigger(pool, {
+        workflowId,
+        versionId,
+        idempotencyKey: 'cov-1',
+        payload: null,
+        nodeIds: ['t'],
+        executionTimeoutMs: 1000,
+      }),
+    );
     await casExecution(pool, { executionId: execution.id, from: ['CREATED'], to: 'QUEUED' });
     await casExecution(pool, { executionId: execution.id, from: ['QUEUED'], to: 'RUNNING', startedAt: true });
     const ok = await casExecution(pool, {

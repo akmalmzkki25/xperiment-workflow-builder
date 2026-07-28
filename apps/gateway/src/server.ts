@@ -76,7 +76,7 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
       if (!version) return reply.status(404).send({ title: 'Not found', status: 404 });
       const ir = workflowIrSchema.parse(version.definition);
 
-      const { execution, created } = await createExecutionWithTrigger(deps.pool, {
+      const result = await createExecutionWithTrigger(deps.pool, {
         workflowId: trigger.workflowId,
         versionId: version.id,
         idempotencyKey: `${mode === 'test' ? 'test:' : ''}${dedupKey}`,
@@ -88,10 +88,16 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
         nodeIds: ir.nodes.map((n) => n.id),
         executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
       });
-      if (created && mode === 'test') {
-        await deps.pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [execution.id]);
+      if (result.outcome === 'quota_exceeded') {
+        // Deliberately generic: an unauthenticated caller must not learn the
+        // workspace's plan state from a webhook response.
+        return reply.status(429).send({ title: 'Too Many Requests', status: 429 });
       }
-      return reply.status(created ? 202 : 200).send({ executionId: execution.id, created });
+      const created = result.outcome === 'created';
+      if (created && mode === 'test') {
+        await deps.pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [result.execution.id]);
+      }
+      return reply.status(created ? 202 : 200).send({ executionId: result.execution.id, created });
     };
 
   app.post('/t/test/:routeKey', handle('test'));

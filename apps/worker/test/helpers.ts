@@ -31,7 +31,7 @@ export async function seedExecution(
 ): Promise<{ workflowId: string; executionId: string }> {
   const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: ir.workflow.name });
   const version = await createVersion(pool, { workflowId: wf.id, definition: ir, hash: 'test-hash' });
-  const { execution } = await createExecutionWithTrigger(pool, {
+  const result = await createExecutionWithTrigger(pool, {
     workflowId: wf.id,
     versionId: version.id,
     idempotencyKey: `seed-${randomUUID()}`,
@@ -39,7 +39,8 @@ export async function seedExecution(
     nodeIds: ir.nodes.map((n) => n.id),
     executionTimeoutMs: 900000,
   });
-  return { workflowId: wf.id, executionId: execution.id };
+  if (result.outcome === 'quota_exceeded') throw new Error('seedExecution hit a quota refusal');
+  return { workflowId: wf.id, executionId: result.execution.id };
 }
 
 export async function truncateAll(pool: Pool): Promise<void> {

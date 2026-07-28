@@ -1,4 +1,6 @@
+import { periodStart } from '@xperiment/plans';
 import { type Db } from '../pool.js';
+import { incrementUsageCounter } from './entitlements.js';
 
 export type UsageMetric = 'execution' | 'node' | 'compute_ms' | 'ai_tokens';
 
@@ -76,6 +78,13 @@ export async function recordAiUsage(
       occurredAt: new Date(),
     },
   ]);
+  // The ledger is the billing truth; the counter is the O(1) index quota reads.
+  await incrementUsageCounter(db, {
+    workspaceId: args.workspaceId,
+    periodStart: periodStart(new Date()),
+    metric: 'ai_tokens',
+    quantity: args.tokens,
+  });
 }
 
 export interface UsageSummary {

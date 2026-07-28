@@ -1,6 +1,8 @@
+import { evaluateQuota, isBlocked, periodStart, resolveLimits, type LimitKey } from '@xperiment/plans';
 import type pg from 'pg';
 import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
+import { getQuotaUsage, getWorkspacePlan } from './entitlements.js';
 import { insertOutbox } from './outbox.js';
 
 export const PAYLOAD_CAP_BYTES = 262144;
@@ -48,6 +50,64 @@ function mapExecution(r: Record<string, unknown>): ExecutionRow {
   };
 }
 
+export interface QuotaRefusal {
+  outcome: 'quota_exceeded';
+  metric: LimitKey;
+  used: number;
+  limit: number;
+}
+
+/**
+ * A union rather than a nullable field: every caller must branch on `outcome`, so a
+ * new refusal can never be silently ignored by an existing call site.
+ */
+export type CreateExecutionResult = { outcome: 'created' | 'duplicate'; execution: ExecutionRow } | QuotaRefusal;
+
+/**
+ * Reserve one execution against the workspace's monthly cap.
+ *
+ * `FOR UPDATE` alone would lock nothing on the first request of a period, because the
+ * row does not exist yet — precisely when a burst is most likely. So the row is
+ * materialised first, then locked, then compared, then incremented. Every concurrent
+ * creation for this workspace and period contends on that one row, which makes the
+ * check and the increment atomic with respect to each other and to the execution insert.
+ */
+async function checkAndConsumeExecutionQuota(
+  client: pg.PoolClient,
+  workspaceId: string,
+  period: Date,
+): Promise<QuotaRefusal | null> {
+  const plan = await getWorkspacePlan(client, workspaceId);
+  const limits = resolveLimits(plan.planCode, plan.limitOverrides);
+  const limit = limits.executionsPerMonth;
+  if (limit === null) return null; // unlimited: no row to touch, no lock to take
+
+  await client.query(
+    `INSERT INTO workspace_usage_counters (workspace_id, period_start, metric, quantity)
+     VALUES ($1,$2,'execution',0) ON CONFLICT DO NOTHING`,
+    [workspaceId, period],
+  );
+  const locked = await client.query(
+    `SELECT quantity FROM workspace_usage_counters
+     WHERE workspace_id=$1 AND period_start=$2 AND metric='execution' FOR UPDATE`,
+    [workspaceId, period],
+  );
+  const used = Number((locked.rows[0] as { quantity: string }).quantity);
+
+  const usage = await getQuotaUsage(client, workspaceId, period);
+  const lines = evaluateQuota(limits, { ...usage, executionsPerMonth: used }, plan.allowOverage);
+  if (isBlocked(lines, 'executionsPerMonth')) {
+    return { outcome: 'quota_exceeded', metric: 'executionsPerMonth', used, limit };
+  }
+
+  await client.query(
+    `UPDATE workspace_usage_counters SET quantity = quantity + 1
+     WHERE workspace_id=$1 AND period_start=$2 AND metric='execution'`,
+    [workspaceId, period],
+  );
+  return null;
+}
+
 export async function createExecutionWithTrigger(
   pool: pg.Pool,
   args: {
@@ -58,7 +118,7 @@ export async function createExecutionWithTrigger(
     nodeIds: string[];
     executionTimeoutMs: number;
   },
-): Promise<{ execution: ExecutionRow; created: boolean }> {
+): Promise<CreateExecutionResult> {
   return withTx(pool, async (client) => {
     // workspace_id is inherited from the workflow row — tenancy by construction.
     const te = await client.query(
@@ -74,9 +134,14 @@ export async function createExecutionWithTrigger(
          WHERE t.workflow_id = $1 AND t.idempotency_key = $2`,
         [args.workflowId, args.idempotencyKey],
       );
-      return { execution: mapExecution(existing.rows[0] as Record<string, unknown>), created: false };
+      // A replay is free: it consumes no quota because it starts no new work.
+      return { outcome: 'duplicate', execution: mapExecution(existing.rows[0] as Record<string, unknown>) };
     }
     const { id: triggerEventId, workspace_id: workspaceId } = te.rows[0] as { id: string; workspace_id: string };
+
+    const refusal = await checkAndConsumeExecutionQuota(client, workspaceId, periodStart(new Date()));
+    if (refusal) return refusal;
+
     const ex = await client.query(
       `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, trigger_event_id, status, idempotency_key)
        VALUES ($1, $2, $3, $4, 'CREATED', $5) RETURNING *`,
@@ -101,7 +166,7 @@ export async function createExecutionWithTrigger(
        VALUES ($1, $2, 'execution.created', $3)`,
       [workspaceId, execution.id, JSON.stringify({ idempotencyKey: args.idempotencyKey })],
     );
-    return { execution, created: true };
+    return { outcome: 'created', execution };
   });
 }
 

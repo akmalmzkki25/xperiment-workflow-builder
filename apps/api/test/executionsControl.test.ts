@@ -84,7 +84,7 @@ async function seedRunning(workspaceId: string): Promise<{ executionId: string }
 /** Seed an execution created via the real trigger path so its trigger payload round-trips. */
 async function seedWithTrigger(workspaceId: string, payload: unknown): Promise<{ executionId: string }> {
   const { workflowId, versionId } = await seedWorkflowVersion(workspaceId);
-  const { execution } = await createExecutionWithTrigger(pool, {
+  const result = await createExecutionWithTrigger(pool, {
     workflowId,
     versionId,
     idempotencyKey: randomUUID(),
@@ -92,7 +92,8 @@ async function seedWithTrigger(workspaceId: string, payload: unknown): Promise<{
     nodeIds: ['t'],
     executionTimeoutMs: 900_000,
   });
-  return { executionId: execution.id };
+  if (result.outcome === 'quota_exceeded') throw new Error('seedWithTrigger hit a quota refusal');
+  return { executionId: result.execution.id };
 }
 
 describe('POST /v1/executions/:id/cancel', () => {

@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createPool, DEFAULT_WORKSPACE_ID, runMigrations, withTx } from '../src/index.js';
 import { createExecutionWithTrigger } from '../src/repos/executions.js';
+import { executionOf } from './execHelpers.js';
 import {
   deleteTriggersNotIn,
   dueScheduleTriggers,
@@ -120,14 +121,16 @@ describe('triggers repo', () => {
       [1, 'production'],
       [2, 'test'],
     ] as const) {
-      const { execution } = await createExecutionWithTrigger(pool, {
-        workflowId,
-        versionId,
-        idempotencyKey: `s-${i}`,
-        payload: { n: i },
-        nodeIds: ['t'],
-        executionTimeoutMs: 60000,
-      });
+      const execution = executionOf(
+        await createExecutionWithTrigger(pool, {
+          workflowId,
+          versionId,
+          idempotencyKey: `s-${i}`,
+          payload: { n: i },
+          nodeIds: ['t'],
+          executionTimeoutMs: 60000,
+        }),
+      );
       await pool.query(`UPDATE executions SET mode = $1 WHERE id = $2`, [mode, execution.id]);
     }
     const samples = await recentTestTriggerPayloads(pool, workflowId, 5);

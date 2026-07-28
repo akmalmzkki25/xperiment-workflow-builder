@@ -44,7 +44,7 @@ export async function runSchedulerTick(deps: SchedulerDeps): Promise<{ fired: nu
 
       // Fires in its own transaction; if this lease tx later rolls back the
       // idempotency key makes the re-fire a no-op.
-      await createExecutionWithTrigger(deps.pool, {
+      const result = await createExecutionWithTrigger(deps.pool, {
         workflowId: trigger.workflowId,
         versionId: version.id,
         idempotencyKey: `sched:${trigger.id}:${scheduledFor.toISOString()}`,
@@ -52,6 +52,18 @@ export async function runSchedulerTick(deps: SchedulerDeps): Promise<{ fired: nu
         nodeIds: ir.nodes.map((n) => n.id),
         executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
       });
+      if (result.outcome === 'quota_exceeded') {
+        // Skip this fire but keep the sweep going, and still advance next_fire_at so a
+        // blocked workspace does not accumulate a backlog that all fires at once on
+        // upgrade. The managed quota alert is what notifies.
+        skipped += 1;
+        deps.log('schedule.quota_blocked', { triggerId: trigger.id, used: result.used, limit: result.limit });
+        await client.query(`UPDATE workflow_triggers SET next_fire_at = $1, updated_at = now() WHERE id = $2`, [
+          nextFireAt(trigger.cron!, tz, scheduledFor),
+          trigger.id,
+        ]);
+        continue;
+      }
       fired += 1;
       deps.log('schedule.fired', { triggerId: trigger.id, scheduledFor: scheduledFor.toISOString() });
 
