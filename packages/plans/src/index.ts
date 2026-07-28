@@ -76,3 +76,7 @@ export function periodStart(now: Date): Date {
 export function periodEnd(start: Date): Date {
   return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
 }
+
+// Pricing and invoice arithmetic. The cycle is type-only in the other direction —
+// invoice.ts imports these types with `import type`, which TypeScript erases.
+export * from './invoice.js';
