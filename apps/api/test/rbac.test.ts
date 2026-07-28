@@ -30,7 +30,12 @@ const uuid = '00000000-0000-0000-0000-0000000000aa';
  * One representative route per permission. Only 403-ness is asserted: a permitted
  * call may still legitimately fail (404/409/422) for unrelated reasons.
  */
-const MATRIX: { permission: Permission; method: 'GET' | 'POST'; url: string; payload?: Record<string, unknown> }[] = [
+const MATRIX: {
+  permission: Permission;
+  method: 'GET' | 'POST' | 'PUT';
+  url: string;
+  payload?: Record<string, unknown>;
+}[] = [
   { permission: 'workflow:read', method: 'GET', url: '/v1/workflows' },
   { permission: 'workflow:read', method: 'GET', url: `/v1/workflows/${uuid}` },
   { permission: 'workflow:read', method: 'GET', url: `/v1/workflows/${uuid}/triggers` },
