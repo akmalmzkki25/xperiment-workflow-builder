@@ -130,18 +130,20 @@ export async function createVersion(
 
 export async function setWorkflowCallback(
   db: Db,
-  args: { workflowId: string; url: string; secretEncrypted: Buffer },
+  args: { workflowId: string; url: string; secretEncrypted: Buffer; encVersion?: number },
 ): Promise<void> {
   await db.query(
-    `UPDATE workflows SET completion_webhook_url = $1, completion_webhook_secret_encrypted = $2, updated_at = now()
-     WHERE id = $3`,
-    [args.url, args.secretEncrypted, args.workflowId],
+    `UPDATE workflows SET completion_webhook_url = $1, completion_webhook_secret_encrypted = $2,
+       completion_webhook_enc_version = COALESCE($3, 0), updated_at = now()
+     WHERE id = $4`,
+    [args.url, args.secretEncrypted, args.encVersion ?? null, args.workflowId],
   );
 }
 
 export async function clearWorkflowCallback(db: Db, workflowId: string): Promise<void> {
   await db.query(
-    `UPDATE workflows SET completion_webhook_url = NULL, completion_webhook_secret_encrypted = NULL, updated_at = now()
+    `UPDATE workflows SET completion_webhook_url = NULL, completion_webhook_secret_encrypted = NULL,
+       completion_webhook_enc_version = 0, updated_at = now()
      WHERE id = $1`,
     [workflowId],
   );
@@ -150,15 +152,27 @@ export async function clearWorkflowCallback(db: Db, workflowId: string): Promise
 export async function getWorkflowCallback(
   db: Db,
   workflowId: string,
-): Promise<{ url: string; secretEncrypted: Buffer } | null> {
+): Promise<{ workspaceId: string; url: string; secretEncrypted: Buffer; encVersion: number } | null> {
   const r = await db.query(
-    `SELECT completion_webhook_url, completion_webhook_secret_encrypted FROM workflows WHERE id = $1`,
+    `SELECT workspace_id, completion_webhook_url, completion_webhook_secret_encrypted,
+            completion_webhook_enc_version
+       FROM workflows WHERE id = $1`,
     [workflowId],
   );
   if (!r.rowCount) return null;
-  const row = r.rows[0] as { completion_webhook_url: string | null; completion_webhook_secret_encrypted: Buffer | null };
+  const row = r.rows[0] as {
+    workspace_id: string;
+    completion_webhook_url: string | null;
+    completion_webhook_secret_encrypted: Buffer | null;
+    completion_webhook_enc_version: number;
+  };
   if (!row.completion_webhook_url || !row.completion_webhook_secret_encrypted) return null;
-  return { url: row.completion_webhook_url, secretEncrypted: row.completion_webhook_secret_encrypted };
+  return {
+    workspaceId: row.workspace_id,
+    url: row.completion_webhook_url,
+    secretEncrypted: row.completion_webhook_secret_encrypted,
+    encVersion: row.completion_webhook_enc_version,
+  };
 }
 
 /**

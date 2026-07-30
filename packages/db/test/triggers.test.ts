@@ -66,6 +66,62 @@ describe('triggers repo', () => {
     expect(await listTriggers(pool, workflowId)).toHaveLength(1);
   });
 
+  test('a trigger row carries its workspace and secret version', async () => {
+    const t = await upsertTrigger(pool, {
+      workflowId,
+      nodeId: 'n1',
+      type: 'webhook',
+      authMode: 'token',
+      secretEncrypted: Buffer.from([9]),
+      secretEncVersion: 1,
+    });
+    expect(t.workspaceId).toBe(DEFAULT_WORKSPACE_ID);
+    expect(t.secretEncVersion).toBe(1);
+    // The gateway reads by route key and needs both fields to decrypt.
+    const fetched = await getTriggerByRouteKey(pool, t.routeKey);
+    expect(fetched!.workspaceId).toBe(DEFAULT_WORKSPACE_ID);
+    expect(fetched!.secretEncVersion).toBe(1);
+  });
+
+  test('re-upsert keeps the existing secret AND its version together', async () => {
+    // The ON CONFLICT clause preserves an existing secret. If the version were
+    // overwritten independently, a v1 blob would be relabelled v0 and become
+    // permanently unreadable.
+    const first = await upsertTrigger(pool, {
+      workflowId,
+      nodeId: 'n1',
+      type: 'webhook',
+      authMode: 'token',
+      secretEncrypted: Buffer.from([1, 1, 1]),
+      secretEncVersion: 1,
+    });
+    const second = await upsertTrigger(pool, {
+      workflowId,
+      nodeId: 'n1',
+      type: 'webhook',
+      authMode: 'token',
+      secretEncrypted: Buffer.from([2, 2, 2]),
+      secretEncVersion: 0,
+    });
+    expect(second.secretEncrypted!.equals(first.secretEncrypted!)).toBe(true);
+    expect(second.secretEncVersion).toBe(1);
+  });
+
+  test('an upsert with no prior secret takes the incoming version', async () => {
+    const t = await upsertTrigger(pool, { workflowId, nodeId: 'n2', type: 'schedule', cron: '* * * * *' });
+    expect(t.secretEncrypted).toBeNull();
+    expect(t.secretEncVersion).toBe(0);
+    const withSecret = await upsertTrigger(pool, {
+      workflowId,
+      nodeId: 'n3',
+      type: 'webhook',
+      authMode: 'token',
+      secretEncrypted: Buffer.from([7]),
+      secretEncVersion: 1,
+    });
+    expect(withSecret.secretEncVersion).toBe(1);
+  });
+
   test('activation flags and pruning removed nodes', async () => {
     await upsertTrigger(pool, { workflowId, nodeId: 'a', type: 'webhook', authMode: 'none' });
     await upsertTrigger(pool, { workflowId, nodeId: 'b', type: 'schedule', cron: '* * * * *', timezone: 'UTC' });

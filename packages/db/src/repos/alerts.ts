@@ -67,12 +67,14 @@ export async function createAlertRule(
     params: Record<string, unknown>;
     webhookUrl?: string;
     webhookSecretEncrypted?: Buffer;
+    webhookSecretEncVersion?: number;
     cooldownMinutes?: number;
   },
 ): Promise<AlertRuleRow> {
   const r = await db.query(
-    `INSERT INTO alert_rules (workspace_id, name, type, params, webhook_url, webhook_secret_encrypted, cooldown_minutes)
-     VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,60)) RETURNING *`,
+    `INSERT INTO alert_rules (workspace_id, name, type, params, webhook_url, webhook_secret_encrypted,
+       webhook_secret_enc_version, cooldown_minutes)
+     VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,0),COALESCE($8,60)) RETURNING *`,
     [
       args.workspaceId,
       args.name,
@@ -80,6 +82,7 @@ export async function createAlertRule(
       JSON.stringify(args.params),
       args.webhookUrl ?? null,
       args.webhookSecretEncrypted ?? null,
+      args.webhookSecretEncVersion ?? null,
       args.cooldownMinutes ?? null,
     ],
   );
@@ -210,13 +213,23 @@ export async function acknowledgeAlert(db: Db, id: string, workspaceId: string):
 export async function getAlertWebhook(
   db: Db,
   ruleId: string,
-): Promise<{ url: string; secretEncrypted: Buffer } | null> {
+): Promise<{ workspaceId: string; url: string; secretEncrypted: Buffer; encVersion: number } | null> {
   const r = await db.query(
-    `SELECT webhook_url, webhook_secret_encrypted FROM alert_rules
+    `SELECT workspace_id, webhook_url, webhook_secret_encrypted, webhook_secret_enc_version FROM alert_rules
      WHERE id=$1 AND webhook_url IS NOT NULL AND webhook_secret_encrypted IS NOT NULL`,
     [ruleId],
   );
   if (!r.rowCount) return null;
-  const row = r.rows[0] as { webhook_url: string; webhook_secret_encrypted: Buffer };
-  return { url: row.webhook_url, secretEncrypted: row.webhook_secret_encrypted };
+  const row = r.rows[0] as {
+    workspace_id: string;
+    webhook_url: string;
+    webhook_secret_encrypted: Buffer;
+    webhook_secret_enc_version: number;
+  };
+  return {
+    workspaceId: row.workspace_id,
+    url: row.webhook_url,
+    secretEncrypted: row.webhook_secret_encrypted,
+    encVersion: row.webhook_secret_enc_version,
+  };
 }

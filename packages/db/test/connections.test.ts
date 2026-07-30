@@ -58,6 +58,29 @@ describe('connections repo', () => {
     expect(await getConnectionWithPayload(pool, row.id)).toBeNull();
   });
 
+  test('defaults to the legacy version and reports it, with the workspace, on read', async () => {
+    const row = await createConnection(pool, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      connectorKey: 'telegram',
+      name: 'Legacy',
+      encryptedPayload: encryptSecret('{}', key),
+    });
+    const read = await getConnectionWithPayload(pool, row.id);
+    expect(read!.encVersion).toBe(0);
+    expect(read!.workspaceId).toBe(DEFAULT_WORKSPACE_ID);
+  });
+
+  test('an explicit version is stored and read back', async () => {
+    const row = await createConnection(pool, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      connectorKey: 'telegram',
+      name: 'Enveloped',
+      encryptedPayload: Buffer.from([1, 2, 3]),
+      encVersion: 1,
+    });
+    expect((await getConnectionWithPayload(pool, row.id))!.encVersion).toBe(1);
+  });
+
   test('countPublishedRefs finds connectionRef inside published versions', async () => {
     const conn = await createConnection(pool, {
       workspaceId: DEFAULT_WORKSPACE_ID,

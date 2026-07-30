@@ -21,12 +21,19 @@ function mapConnection(r: Record<string, unknown>): ConnectionRow {
 
 export async function createConnection(
   db: Db,
-  args: { workspaceId: string; connectorKey: string; name: string; encryptedPayload: Buffer },
+  args: {
+    workspaceId: string;
+    connectorKey: string;
+    name: string;
+    encryptedPayload: Buffer;
+    /** Omit only for a legacy write; new code passes ENC_VERSION_ENVELOPE. */
+    encVersion?: number;
+  },
 ): Promise<ConnectionRow> {
   const r = await db.query(
-    `INSERT INTO connections (workspace_id, connector_key, name, encrypted_payload)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [args.workspaceId, args.connectorKey, args.name, args.encryptedPayload],
+    `INSERT INTO connections (workspace_id, connector_key, name, encrypted_payload, enc_version)
+     VALUES ($1, $2, $3, $4, COALESCE($5, 0)) RETURNING *`,
+    [args.workspaceId, args.connectorKey, args.name, args.encryptedPayload, args.encVersion ?? null],
   );
   return mapConnection(r.rows[0] as Record<string, unknown>);
 }
@@ -43,13 +50,18 @@ export async function getConnectionWithPayload(
   db: Db,
   id: string,
   workspaceId?: string,
-): Promise<(ConnectionRow & { encryptedPayload: Buffer }) | null> {
+): Promise<(ConnectionRow & { workspaceId: string; encryptedPayload: Buffer; encVersion: number }) | null> {
   const r = workspaceId
     ? await db.query(`SELECT * FROM connections WHERE id = $1 AND workspace_id = $2`, [id, workspaceId])
     : await db.query(`SELECT * FROM connections WHERE id = $1`, [id]);
   if (!r.rowCount) return null;
   const row = r.rows[0] as Record<string, unknown>;
-  return { ...mapConnection(row), encryptedPayload: row['encrypted_payload'] as Buffer };
+  return {
+    ...mapConnection(row),
+    workspaceId: row['workspace_id'] as string,
+    encryptedPayload: row['encrypted_payload'] as Buffer,
+    encVersion: row['enc_version'] as number,
+  };
 }
 
 export async function deleteConnection(db: Db, id: string, workspaceId: string): Promise<boolean> {
