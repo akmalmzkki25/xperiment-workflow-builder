@@ -1,16 +1,16 @@
 import { CONNECTION_PAYLOAD_SCHEMAS, type ConnectorKey } from '@xperiment/connectors';
 import {
+  appendAuditEvent,
   countPublishedRefs,
   createConnection,
-  decryptSecret,
   deleteConnection,
-  encryptSecret,
   getConnectionWithPayload,
   listConnections,
+  withTx,
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, requirePermission } from '../auth/plugin.js';
+import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -24,18 +24,36 @@ const createSchema = z
 
 export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/connections', async (req, reply) => {
-    if (!requirePermission(reply, authOf(req), 'connection:write')) return;
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'connection:write')) return;
     const parsed = createSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     const schema = CONNECTION_PAYLOAD_SCHEMAS[parsed.data.connectorKey as ConnectorKey];
     if (!schema) return sendProblem(reply, 400, 'Unknown connector key');
     const payload = schema.safeParse(parsed.data.payload);
     if (!payload.success) return sendProblem(reply, 400, 'Invalid connection payload', payload.error.message);
-    const row = await createConnection(deps.pool, {
-      workspaceId: authOf(req).workspaceId,
-      connectorKey: parsed.data.connectorKey,
-      name: parsed.data.name,
-      encryptedPayload: encryptSecret(JSON.stringify(payload.data), deps.credentialsKey),
+
+    const sealed = await deps.credentialsVault.encrypt(ctx.workspaceId, JSON.stringify(payload.data));
+    // One transaction: the audit row must not survive a failed insert, and must not be
+    // lost when the insert commits.
+    const row = await withTx(deps.pool, async (client) => {
+      const created = await createConnection(client, {
+        workspaceId: ctx.workspaceId,
+        connectorKey: parsed.data.connectorKey,
+        name: parsed.data.name,
+        encryptedPayload: sealed.blob,
+        encVersion: sealed.encVersion,
+      });
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'credential.create',
+        targetType: 'connection',
+        targetId: created.id,
+        // Named scalars only — never the payload.
+        metadata: { connectorKey: created.connectorKey, name: created.name },
+      });
+      return created;
     });
     return reply.status(201).send(row);
   });
@@ -47,34 +65,64 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
   });
 
   app.delete('/v1/connections/:id', async (req, reply) => {
-    if (!requirePermission(reply, authOf(req), 'connection:write')) return;
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'connection:write')) return;
     const { id } = req.params as { id: string };
     const refs = await countPublishedRefs(deps.pool, id);
     if (refs > 0) {
       return sendProblem(reply, 409, 'Connection in use', `Referenced by ${refs} published workflow version(s)`);
     }
-    const deleted = await deleteConnection(deps.pool, id, authOf(req).workspaceId);
+    const deleted = await withTx(deps.pool, async (client) => {
+      const ok = await deleteConnection(client, id, ctx.workspaceId);
+      if (!ok) return false;
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'credential.delete',
+        targetType: 'connection',
+        targetId: id,
+      });
+      return true;
+    });
     if (!deleted) return sendProblem(reply, 404, 'Connection not found');
     return reply.status(204).send();
   });
 
   app.post('/v1/connections/:id/test', async (req, reply) => {
     // Testing dials a third party with the stored credential — a write-shaped action.
-    if (!requirePermission(reply, authOf(req), 'connection:write')) return;
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'connection:write')) return;
     const { id } = req.params as { id: string };
-    const row = await getConnectionWithPayload(deps.pool, id, authOf(req).workspaceId);
+    const row = await getConnectionWithPayload(deps.pool, id, ctx.workspaceId);
     if (!row) return sendProblem(reply, 404, 'Connection not found');
     const def = deps.registry
       .list()
       .find((d) => d.requiresConnection === row.connectorKey && d.testConnection !== undefined);
     if (!def?.testConnection) return sendProblem(reply, 400, 'Connector does not support test');
+    let outcome: 'success' | 'failure' = 'success';
     try {
-      const payload: unknown = JSON.parse(decryptSecret(row.encryptedPayload, deps.credentialsKey));
+      const payload: unknown = JSON.parse(
+        await deps.credentialsVault.decrypt(ctx.workspaceId, {
+          blob: row.encryptedPayload,
+          encVersion: row.encVersion,
+        }),
+      );
       await def.testConnection(payload, AbortSignal.timeout(10000));
-      return { ok: true };
     } catch {
-      // Never surface provider/internal error text — it may embed credentials.
-      return { ok: false, error: 'connection test failed' };
+      outcome = 'failure';
     }
+    // A human decrypting a credential on demand is an auditable read, whether or not the
+    // third party accepted it. Emitted on the pool: nothing was mutated.
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      workspaceId: ctx.workspaceId,
+      action: 'credential.test',
+      targetType: 'connection',
+      targetId: id,
+      outcome,
+      metadata: { connectorKey: row.connectorKey },
+    });
+    // Never surface provider/internal error text — it may embed credentials.
+    return outcome === 'success' ? { ok: true } : { ok: false, error: 'connection test failed' };
   });
 }

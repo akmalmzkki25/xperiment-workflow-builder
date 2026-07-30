@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildServer } from '../src/server.js';
-import { createAuthedUser, type AuthedUser } from './authHelpers.js';
+import { createApiKeyClient, createAuthedUser, type AuthedUser } from './authHelpers.js';
 
 let pool: Pool;
 let app: FastifyInstance;
@@ -38,7 +38,7 @@ afterAll(async () => {
 beforeEach(async () => {
   stubStatus = 200;
   await pool.query(
-    `TRUNCATE connections, workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
+    `TRUNCATE connections, workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows, audit_events CASCADE`,
   );
 });
 
@@ -51,6 +51,96 @@ async function createTelegramConnection(): Promise<string> {
   expect(r.statusCode).toBe(201);
   return r.json<{ id: string }>().id;
 }
+
+describe('connections envelope encryption and audit', () => {
+  async function auditRows(action: string): Promise<
+    { action: string; target_id: string | null; actor_kind: string; actor_api_key_id: string | null; actor_user_id: string | null; outcome: string; metadata: Record<string, unknown> }[]
+  > {
+    const r = await pool.query<{
+      action: string;
+      target_id: string | null;
+      actor_kind: string;
+      actor_api_key_id: string | null;
+      actor_user_id: string | null;
+      outcome: string;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT action, target_id, actor_kind, actor_api_key_id, actor_user_id, outcome, metadata
+         FROM audit_events WHERE action = $1 ORDER BY id`,
+      [action],
+    );
+    return r.rows;
+  }
+
+  test('a created connection is stored at the envelope version', async () => {
+    const id = await createTelegramConnection();
+    const row = await pool.query<{ enc_version: number; encrypted_payload: Buffer }>(
+      `SELECT enc_version, encrypted_payload FROM connections WHERE id = $1`,
+      [id],
+    );
+    expect(row.rows[0]!.enc_version).toBe(1);
+    expect(row.rows[0]!.encrypted_payload.toString('utf8')).not.toContain('SECRET-TOKEN');
+    // Marker byte of the v1 envelope layout.
+    expect(row.rows[0]!.encrypted_payload[0]).toBe(1);
+  });
+
+  test('creating a connection writes exactly one credential.create audit row', async () => {
+    const id = await createTelegramConnection();
+    const rows = await auditRows('credential.create');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.target_id).toBe(id);
+    expect(rows[0]!.actor_kind).toBe('user');
+    expect(rows[0]!.metadata).toMatchObject({ connectorKey: 'telegram' });
+    // The secret must never reach the audit row.
+    expect(JSON.stringify(rows[0]!.metadata)).not.toContain('SECRET-TOKEN');
+  });
+
+  test('a rejected create writes no audit row', async () => {
+    const r = await auth.inject({
+      method: 'POST',
+      url: '/v1/connections',
+      payload: { connectorKey: 'telegram', name: 'Bad', payload: {} },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(await auditRows('credential.create')).toHaveLength(0);
+  });
+
+  test('deleting a connection audits it, and a 404 delete does not', async () => {
+    const id = await createTelegramConnection();
+    expect((await auth.inject({ method: 'DELETE', url: `/v1/connections/${id}` })).statusCode).toBe(204);
+    expect((await auth.inject({ method: 'DELETE', url: `/v1/connections/${id}` })).statusCode).toBe(404);
+    const rows = await auditRows('credential.delete');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.target_id).toBe(id);
+  });
+
+  test('testing a connection audits the read with its outcome', async () => {
+    const id = await createTelegramConnection();
+    const ok = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
+    expect(ok.json<{ ok: boolean }>().ok).toBe(true);
+    stubStatus = 500;
+    const bad = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
+    expect(bad.json<{ ok: boolean }>().ok).toBe(false);
+    const rows = await auditRows('credential.test');
+    expect(rows.map((r) => r.outcome)).toEqual(['success', 'failure']);
+    expect(JSON.stringify(rows)).not.toContain('SECRET-TOKEN');
+  });
+
+  test('an api-key caller is recorded as the api_key actor, not as a user', async () => {
+    const key = await createApiKeyClient(app, auth, 'builder');
+    const r = await key.inject({
+      method: 'POST',
+      url: '/v1/connections',
+      payload: { connectorKey: 'telegram', name: 'ByKey', payload: { botToken: 'K-SECRET', baseUrl: stubUrl } },
+    });
+    expect(r.statusCode).toBe(201);
+    const rows = await auditRows('credential.create');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.actor_kind).toBe('api_key');
+    expect(rows[0]!.actor_api_key_id).toBe(key.id);
+    expect(rows[0]!.actor_user_id).toBeNull();
+  });
+});
 
 describe('connections API', () => {
   test('create stores encrypted and never echoes the payload', async () => {

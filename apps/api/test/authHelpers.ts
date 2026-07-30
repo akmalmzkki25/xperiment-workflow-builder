@@ -34,6 +34,34 @@ export async function createAuthedUser(app: FastifyInstance): Promise<AuthedUser
 }
 
 /**
+ * Issues an api key in `owner`'s workspace and returns an inject bound to it. The
+ * resulting requests authenticate as an api key rather than a session, so
+ * `AuthContext.apiKeyId` is populated and audit rows name the key as the actor.
+ */
+export async function createApiKeyClient(
+  app: FastifyInstance,
+  owner: AuthedUser,
+  role?: string,
+): Promise<{ id: string; token: string; inject: (opts: InjectOptions) => Promise<InjectResponse> }> {
+  const r = await owner.inject({
+    method: 'POST',
+    url: '/v1/api-keys',
+    payload: { name: `k-${randomUUID().slice(0, 8)}`, ...(role ? { role } : {}) },
+  });
+  if (r.statusCode !== 201) throw new Error(`api key issue failed: ${r.body}`);
+  const body = r.json<{ id: string; key: string }>();
+  return {
+    id: body.id,
+    token: body.key,
+    inject: (opts: InjectOptions) =>
+      app.inject({
+        ...opts,
+        headers: { authorization: `Bearer ${body.key}`, ...(opts.headers ?? {}) },
+      } as InjectOptions) as Promise<InjectResponse>,
+  };
+}
+
+/**
  * Registers a fresh user and adds them to `workspaceId` with `role`, returning an
  * inject bound to that workspace (via X-Xperiment-Workspace) so the request's auth
  * context carries the requested role.
