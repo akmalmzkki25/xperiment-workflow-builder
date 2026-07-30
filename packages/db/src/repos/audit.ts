@@ -1,0 +1,133 @@
+import { type Db } from '../pool.js';
+
+export const AUDIT_PAGE_MAX = 200;
+
+export type ActorKind = 'user' | 'api_key' | 'system' | 'anonymous';
+
+/**
+ * Scalars only, on purpose. A request body, a connector payload or a provider response
+ * may carry a secret, so spreading one into an audit row must not typecheck. Build
+ * metadata field by field at the call site.
+ */
+export type AuditMetadata = Record<string, string | number | boolean | null>;
+
+export interface AuditEventInput {
+  workspaceId?: string | null;
+  actorKind: ActorKind;
+  actorUserId?: string | null;
+  actorApiKeyId?: string | null;
+  /** Email for an anonymous attempt, or a retained label once the user row is gone. */
+  actorLabel?: string | null;
+  action: string;
+  targetType?: string | null;
+  targetId?: string | null;
+  outcome?: 'success' | 'failure';
+  metadata?: AuditMetadata;
+  requestId?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+}
+
+export interface AuditEventRow {
+  /** BIGSERIAL: node-postgres returns int8 as a string, and it is the page cursor. */
+  id: string;
+  workspaceId: string | null;
+  actorKind: ActorKind;
+  actorUserId: string | null;
+  actorApiKeyId: string | null;
+  actorLabel: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  outcome: 'success' | 'failure';
+  metadata: AuditMetadata;
+  requestId: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+function mapEvent(r: Record<string, unknown>): AuditEventRow {
+  const ts = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string));
+  return {
+    id: String(r['id']),
+    workspaceId: (r['workspace_id'] as string | null) ?? null,
+    actorKind: r['actor_kind'] as ActorKind,
+    actorUserId: (r['actor_user_id'] as string | null) ?? null,
+    actorApiKeyId: (r['actor_api_key_id'] as string | null) ?? null,
+    actorLabel: (r['actor_label'] as string | null) ?? null,
+    action: r['action'] as string,
+    targetType: (r['target_type'] as string | null) ?? null,
+    targetId: (r['target_id'] as string | null) ?? null,
+    outcome: r['outcome'] as 'success' | 'failure',
+    metadata: (r['metadata'] as AuditMetadata | null) ?? {},
+    requestId: (r['request_id'] as string | null) ?? null,
+    ip: (r['ip'] as string | null) ?? null,
+    userAgent: (r['user_agent'] as string | null) ?? null,
+    createdAt: ts(r['created_at']),
+  };
+}
+
+/**
+ * Pass a transaction client when the event describes a mutation, so the row commits or
+ * rolls back with it. Pass the pool for events that mutate nothing — a credential
+ * read-use, a failed login.
+ */
+export async function appendAuditEvent(db: Db, input: AuditEventInput): Promise<void> {
+  await db.query(
+    `INSERT INTO audit_events
+       (workspace_id, actor_kind, actor_user_id, actor_api_key_id, actor_label,
+        action, target_type, target_id, outcome, metadata, request_id, ip, user_agent)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9,'success'),COALESCE($10::jsonb,'{}'::jsonb),$11,$12,$13)`,
+    [
+      input.workspaceId ?? null,
+      input.actorKind,
+      input.actorUserId ?? null,
+      input.actorApiKeyId ?? null,
+      input.actorLabel ?? null,
+      input.action,
+      input.targetType ?? null,
+      input.targetId ?? null,
+      input.outcome ?? null,
+      input.metadata ? JSON.stringify(input.metadata) : null,
+      input.requestId ?? null,
+      input.ip ?? null,
+      input.userAgent ?? null,
+    ],
+  );
+}
+
+/**
+ * Ordered and paginated on `id`, not `created_at`. created_at is now(), which is
+ * transaction start time, so a long transaction can commit a row with an earlier
+ * timestamp than one already visible — and ties on a timestamp make the order
+ * nondeterministic. BIGSERIAL is monotonic in insert order.
+ *
+ * Rows with workspace_id IS NULL are global (a failed login for an unknown email) and
+ * are never returned here.
+ */
+export async function listAuditEvents(
+  db: Db,
+  args: {
+    workspaceId: string;
+    limit: number;
+    before?: string;
+    action?: string;
+    targetType?: string;
+    targetId?: string;
+  },
+): Promise<AuditEventRow[]> {
+  const limit = Math.min(Math.max(1, Math.trunc(args.limit)), AUDIT_PAGE_MAX);
+  const r = await db.query(
+    `SELECT * FROM audit_events
+     WHERE workspace_id = $1
+       AND ($2::bigint IS NULL OR id < $2::bigint)
+       AND ($3::text IS NULL OR action = $3)
+       AND ($4::text IS NULL OR target_type = $4)
+       AND ($5::text IS NULL OR target_id = $5)
+     ORDER BY id DESC
+     LIMIT $6`,
+    [args.workspaceId, args.before ?? null, args.action ?? null, args.targetType ?? null, args.targetId ?? null, limit],
+  );
+  return (r.rows as Record<string, unknown>[]).map(mapEvent);
+}

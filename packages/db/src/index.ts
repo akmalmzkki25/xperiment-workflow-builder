@@ -13,6 +13,7 @@ export * from './repos/usage.js';
 export * from './repos/entitlements.js';
 export * from './repos/invoices.js';
 export * from './repos/alerts.js';
+export * from './repos/audit.js';
 export { hashPassword, verifyPassword, generateToken, hashToken } from './authCrypto.js';
 export {
   createKeyProviderFromEnv,
