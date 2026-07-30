@@ -1,6 +1,17 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { createPool, deriveLegacyKey, encryptSecret, runMigrations, setWorkflowCallback } from '@xperiment/db';
+import {
+  createPool,
+  createSecretVault,
+  DEFAULT_LOCAL_KEK_MASTER,
+  createWorkspaceKeyring,
+  deriveLegacyKey,
+  encryptSecret,
+  localKeyProvider,
+  runMigrations,
+  setWorkflowCallback,
+  type SecretVault,
+} from '@xperiment/db';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { runCallback, type CallbackDeps } from '../src/callback.js';
@@ -8,7 +19,9 @@ import { truncateAll } from './helpers.js';
 
 let pool: Pool;
 let deps: CallbackDeps;
+let triggerVault: SecretVault;
 const triggerKey = deriveLegacyKey('xperiment-dev-trigger-secret-change-me');
+const WS = '00000000-0000-0000-0000-000000000001';
 
 let server: Server;
 let baseUrl: string;
@@ -38,7 +51,11 @@ async function seedExecution(url: string | null, secret: string | null, status =
 beforeAll(async () => {
   pool = createPool();
   await runMigrations(pool);
-  deps = { pool, triggerKey, allowPrivateIps: true, log: () => {} };
+  triggerVault = createSecretVault({
+    keyring: createWorkspaceKeyring({ pool, provider: localKeyProvider(DEFAULT_LOCAL_KEK_MASTER) }),
+    legacyKey: triggerKey,
+  });
+  deps = { pool, triggerVault, allowPrivateIps: true, log: () => {} };
   server = createServer((req, res) => {
     let raw = '';
     req.on('data', (c: Buffer) => (raw += c.toString()));
@@ -63,6 +80,21 @@ beforeEach(async () => {
 });
 
 describe('runCallback', () => {
+  test('signs correctly with an ENVELOPE-encrypted secret', async () => {
+    const secret = randomBytes(16).toString('hex');
+    const executionId = await seedExecution(`${baseUrl}/hook`, secret);
+    // Re-write the seeded v0 secret as v1, the format the api now produces.
+    const sealed = await triggerVault.encrypt(WS, secret);
+    await pool.query(
+      `UPDATE workflows SET completion_webhook_secret_encrypted = $1, completion_webhook_enc_version = $2`,
+      [sealed.blob, sealed.encVersion],
+    );
+    await runCallback(deps, { executionId });
+    expect(received).toHaveLength(1);
+    const body = JSON.stringify(received[0]!.body);
+    expect(received[0]!.sig).toBe('sha256=' + createHmac('sha256', secret).update(body).digest('hex'));
+  });
+
   test('POSTs a body signed with the workflow secret', async () => {
     const secret = randomBytes(16).toString('hex');
     const executionId = await seedExecution(`${baseUrl}/hook`, secret);

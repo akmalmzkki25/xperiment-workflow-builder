@@ -1,5 +1,15 @@
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, deriveLegacyKey, latestNodeStates, runMigrations, waitsForExecution } from '@xperiment/db';
+import {
+  createPool,
+  createSecretVault,
+  DEFAULT_LOCAL_KEK_MASTER,
+  createWorkspaceKeyring,
+  deriveLegacyKey,
+  latestNodeStates,
+  localKeyProvider,
+  runMigrations,
+  waitsForExecution,
+} from '@xperiment/db';
 import type { WorkflowIR } from '@xperiment/ir';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -16,7 +26,10 @@ beforeAll(async () => {
     pool,
     registry: createDefaultRegistry({ allowPrivateIps: true }),
     workerId: 'w-test',
-    credentialsKey: deriveLegacyKey('xperiment-dev-credentials-secret-change-me'),
+    credentialsVault: createSecretVault({
+      keyring: createWorkspaceKeyring({ pool, provider: localKeyProvider(DEFAULT_LOCAL_KEK_MASTER) }),
+      legacyKey: deriveLegacyKey('xperiment-dev-credentials-secret-change-me'),
+    }),
     log: () => {},
   };
 });

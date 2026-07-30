@@ -32,13 +32,29 @@ export function createWorkspaceKeyring(args: {
   const ttlMs = args.ttlMs ?? DEFAULT_KEK_CACHE_TTL_MS;
   const cache = new Map<string, CacheEntry>();
 
+  /**
+   * A KEK can only be unwrapped by the root key that wrapped it. Without this check the
+   * mismatch surfaces as "Unsupported state or unable to authenticate data" from the GCM
+   * layer, which tells an operator nothing. Naming the recorded root key turns
+   * "rotated KEK_MASTER_KEY without re-wrapping" into a diagnosable error.
+   */
+  function assertSameRootKey(workspaceId: string, rootKeyId: string): void {
+    if (rootKeyId === args.provider.keyId) return;
+    throw new Error(
+      `workspace ${workspaceId} key was wrapped by root key ${rootKeyId}, but the configured provider is ${args.provider.keyId}`,
+    );
+  }
+
   async function load(workspaceId: string): Promise<Buffer> {
-    const existing = await args.pool.query<{ wrapped_key: Buffer }>(
-      `SELECT wrapped_key FROM workspace_keys WHERE workspace_id = $1`,
+    const existing = await args.pool.query<{ wrapped_key: Buffer; root_key_id: string }>(
+      `SELECT wrapped_key, root_key_id FROM workspace_keys WHERE workspace_id = $1`,
       [workspaceId],
     );
     const found = existing.rows[0];
-    if (found) return args.provider.unwrap(found.wrapped_key);
+    if (found) {
+      assertSameRootKey(workspaceId, found.root_key_id);
+      return args.provider.unwrap(found.wrapped_key);
+    }
 
     const fresh = randomBytes(KEK_LEN);
     const wrapped = await args.provider.wrap(fresh);
@@ -56,12 +72,13 @@ export function createWorkspaceKeyring(args: {
     // never used to encrypt anything, or the two racers encrypt this workspace under two
     // different keys and half its secrets become unreadable. Verified by deliberately
     // returning `fresh` here — the race test fails 3/3 when this re-read is removed.
-    const settled = await args.pool.query<{ wrapped_key: Buffer }>(
-      `SELECT wrapped_key FROM workspace_keys WHERE workspace_id = $1`,
+    const settled = await args.pool.query<{ wrapped_key: Buffer; root_key_id: string }>(
+      `SELECT wrapped_key, root_key_id FROM workspace_keys WHERE workspace_id = $1`,
       [workspaceId],
     );
     const winner = settled.rows[0];
     if (!winner) throw new Error(`workspace key missing after insert for workspace ${workspaceId}`);
+    assertSameRootKey(workspaceId, winner.root_key_id);
     return args.provider.unwrap(winner.wrapped_key);
   }
 

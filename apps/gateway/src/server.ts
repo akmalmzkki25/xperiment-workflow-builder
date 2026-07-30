@@ -2,12 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   applyResume,
   createExecutionWithTrigger,
-  decryptSecret,
   getOpenWaitByToken,
   getTriggerByRouteKey,
   getVersion,
   getWorkflow,
   withTx,
+  type SecretVault,
 } from '@xperiment/db';
 import { workflowIrSchema } from '@xperiment/ir';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -19,7 +19,7 @@ const RESUME_BODY_CAP_BYTES = 262144; // matches the node output cap in @xperime
 
 export interface GatewayDeps {
   pool: pg.Pool;
-  triggerKey: Buffer;
+  triggerVault: SecretVault;
 }
 
 export function buildGateway(deps: GatewayDeps): FastifyInstance {
@@ -50,7 +50,12 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
 
       const rawBody = (req.body as Buffer | undefined) ?? Buffer.alloc(0);
       if (trigger.authMode === 'token' || trigger.authMode === 'hmac') {
-        const secret = trigger.secretEncrypted ? decryptSecret(trigger.secretEncrypted, deps.triggerKey) : '';
+        const secret = trigger.secretEncrypted
+          ? await deps.triggerVault.decrypt(trigger.workspaceId, {
+              blob: trigger.secretEncrypted,
+              encVersion: trigger.secretEncVersion,
+            })
+          : '';
         const ok =
           trigger.authMode === 'token'
             ? verifyToken(req.headers['authorization'], secret)

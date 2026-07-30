@@ -1,11 +1,12 @@
 import { createHmac } from 'node:crypto';
 import { assertUrlAllowed } from '@xperiment/connectors';
-import { decryptSecret, getAlertEventById, getAlertWebhook } from '@xperiment/db';
+import { getAlertEventById, getAlertWebhook, type SecretVault } from '@xperiment/db';
 import type pg from 'pg';
 
 export interface AlertDeliveryDeps {
   pool: pg.Pool;
-  alertKey: Buffer;
+  /** The same vault family as trigger and callback secrets — `alertKey` implied a third key family that never existed. */
+  triggerVault: SecretVault;
   allowPrivateIps: boolean;
   log: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -49,7 +50,10 @@ export async function runAlertDelivery(
     firedAt: event.firedAt,
     detail: event.detail,
   });
-  const secret = decryptSecret(cb.secretEncrypted, deps.alertKey);
+  const secret = await deps.triggerVault.decrypt(cb.workspaceId, {
+    blob: cb.secretEncrypted,
+    encVersion: cb.encVersion,
+  });
   const signature = 'sha256=' + createHmac('sha256', secret).update(body).digest('hex');
 
   const res = await fetch(cb.url, {

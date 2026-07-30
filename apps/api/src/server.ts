@@ -5,6 +5,7 @@ import type { ConnectorRegistry } from '@xperiment/connectors';
 import {
   createSecretVault,
   createWorkspaceKeyring,
+  DEFAULT_LOCAL_KEK_MASTER,
   deriveLegacyKey,
   localKeyProvider,
   type KeyProvider,
@@ -93,8 +94,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // KMS traffic: one unwrap per workspace per cache window for the whole process.
   const keyring = createWorkspaceKeyring({
     pool: deps.pool,
-    provider:
-      deps.keyProvider ?? localKeyProvider(process.env['KEK_MASTER_KEY'] ?? 'xperiment-dev-kek-master-change-me'),
+    provider: deps.keyProvider ?? localKeyProvider(process.env['KEK_MASTER_KEY'] ?? DEFAULT_LOCAL_KEK_MASTER),
     ...(process.env['KEK_CACHE_TTL_MS'] ? { ttlMs: Number(process.env['KEK_CACHE_TTL_MS']) } : {}),
   });
   const resolvedDeps = {

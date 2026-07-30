@@ -17,6 +17,7 @@ export * from './repos/audit.js';
 export { hashPassword, verifyPassword, generateToken, hashToken } from './authCrypto.js';
 export {
   createKeyProviderFromEnv,
+  DEFAULT_LOCAL_KEK_MASTER,
   gcpKmsKeyProvider,
   localKeyProvider,
   type KeyProvider,

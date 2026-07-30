@@ -127,6 +127,19 @@ describe('WorkspaceKeyring', () => {
     expect(after.equals(before)).toBe(true);
   });
 
+  test('a KEK wrapped by a different root key is refused by name, not by a GCM error', async () => {
+    // What happens when KEK_MASTER_KEY changes without re-wrapping. The raw failure is
+    // "Unsupported state or unable to authenticate data", which tells an operator
+    // nothing; the error must name both root keys instead.
+    const ws = await makeWorkspace();
+    const original = localKeyProvider('original-master');
+    await createWorkspaceKeyring({ pool, provider: original }).keyFor(ws);
+    const rotated = localKeyProvider('rotated-master');
+    await expect(createWorkspaceKeyring({ pool, provider: rotated }).keyFor(ws)).rejects.toThrow(
+      new RegExp(`wrapped by root key ${original.keyId}.*configured provider is ${rotated.keyId}`),
+    );
+  });
+
   test('a corrupted wrapped key surfaces as an error, not as a wrong key', async () => {
     const ws = await makeWorkspace();
     const provider = localKeyProvider('m');

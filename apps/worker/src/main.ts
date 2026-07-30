@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, deriveLegacyKey, runMigrations } from '@xperiment/db';
+import {
+  createKeyProviderFromEnv,
+  createPool,
+  createSecretVault,
+  createWorkspaceKeyring,
+  deriveLegacyKey,
+  runMigrations,
+} from '@xperiment/db';
 import {
   createQueues,
   createRedisConnection,
@@ -19,11 +26,27 @@ const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
 const pool = createPool();
 await runMigrations(pool);
 
+// One keyring for all three dep objects, so the whole worker process makes one KMS
+// unwrap per workspace per cache window rather than three.
+const keyring = createWorkspaceKeyring({
+  pool,
+  provider: await createKeyProviderFromEnv(),
+  ...(process.env['KEK_CACHE_TTL_MS'] ? { ttlMs: Number(process.env['KEK_CACHE_TTL_MS']) } : {}),
+});
+const credentialsVault = createSecretVault({
+  keyring,
+  legacyKey: deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+});
+const triggerVault = createSecretVault({
+  keyring,
+  legacyKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+});
+
 const deps: WorkerDeps = {
   pool,
   registry: createDefaultRegistry({ allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true' }),
   workerId: `worker-${randomUUID().slice(0, 8)}`,
-  credentialsKey: deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+  credentialsVault,
   log: (msg, extra) => logger.info(extra ?? {}, msg),
 };
 
@@ -42,7 +65,7 @@ taskWorker.on('failed', (job, err) => logger.error({ jobId: job?.id, err: err.me
 
 const callbackDeps: CallbackDeps = {
   pool,
-  triggerKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+  triggerVault,
   allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true',
   log: deps.log,
 };
@@ -55,7 +78,7 @@ callbackWorker.on('failed', (job, err) => logger.warn({ jobId: job?.id, err: err
 
 const alertDeps: AlertDeliveryDeps = {
   pool,
-  alertKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+  triggerVault,
   allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true',
   log: deps.log,
 };

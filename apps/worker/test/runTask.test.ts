@@ -2,9 +2,13 @@ import { createServer, type Server } from 'node:http';
 import { createDefaultRegistry } from '@xperiment/connectors';
 import {
   createPool,
+  createSecretVault,
+  DEFAULT_LOCAL_KEK_MASTER,
+  createWorkspaceKeyring,
   deriveLegacyKey,
   fetchUnpublished,
   latestNodeStates,
+  localKeyProvider,
   runMigrations,
   succeededOutputs,
 } from '@xperiment/db';
@@ -26,7 +30,10 @@ beforeAll(async () => {
     pool,
     registry: createDefaultRegistry({ allowPrivateIps: true }),
     workerId: 'w-test',
-    credentialsKey: deriveLegacyKey('xperiment-dev-credentials-secret-change-me'),
+    credentialsVault: createSecretVault({
+      keyring: createWorkspaceKeyring({ pool, provider: localKeyProvider(DEFAULT_LOCAL_KEK_MASTER) }),
+      legacyKey: deriveLegacyKey('xperiment-dev-credentials-secret-change-me'),
+    }),
     log: () => {},
   };
   server = createServer((req, res) => {

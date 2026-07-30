@@ -2,6 +2,7 @@ import { createDefaultRegistry } from '@xperiment/connectors';
 import {
   createPool,
   createSecretVault,
+  DEFAULT_LOCAL_KEK_MASTER,
   createWorkspaceKeyring,
   deriveLegacyKey,
   getWorkflowCallback,
@@ -27,7 +28,7 @@ beforeAll(async () => {
   // The test owns the vault so the round-trip assertion is deterministic rather than
   // depending on the server's env-derived default.
   triggerVault = createSecretVault({
-    keyring: createWorkspaceKeyring({ pool, provider: localKeyProvider('callback-test-master') }),
+    keyring: createWorkspaceKeyring({ pool, provider: localKeyProvider(DEFAULT_LOCAL_KEK_MASTER) }),
     legacyKey: triggerKey,
   });
   app = buildServer({ pool, registry: createDefaultRegistry(), triggerKey, triggerVault });

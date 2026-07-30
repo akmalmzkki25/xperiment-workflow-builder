@@ -1,11 +1,15 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import {
   createPool,
+  createSecretVault,
+  DEFAULT_LOCAL_KEK_MASTER,
   createVersion,
   createWorkflow,
+  createWorkspaceKeyring,
   DEFAULT_WORKSPACE_ID,
   deriveLegacyKey,
   encryptSecret,
+  localKeyProvider,
   getExecutionDetail,
   latestNodeStates,
   openWait,
@@ -13,6 +17,7 @@ import {
   setTriggersActive,
   setWorkflowActive,
   upsertTrigger,
+  type SecretVault,
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
@@ -22,6 +27,7 @@ import { buildGateway } from '../src/server.js';
 let pool: Pool;
 let app: FastifyInstance;
 const key = deriveLegacyKey('xperiment-dev-trigger-secret-change-me');
+let triggerVault: SecretVault;
 
 const hookIr = {
   schemaVersion: '0.1',
@@ -49,7 +55,11 @@ const hookIr = {
 beforeAll(async () => {
   pool = createPool();
   await runMigrations(pool);
-  app = buildGateway({ pool, triggerKey: key });
+  triggerVault = createSecretVault({
+    keyring: createWorkspaceKeyring({ pool, provider: localKeyProvider(DEFAULT_LOCAL_KEK_MASTER) }),
+    legacyKey: key,
+  });
+  app = buildGateway({ pool, triggerVault });
 });
 afterAll(async () => {
   await app.close();
@@ -61,7 +71,10 @@ beforeEach(async () => {
   );
 });
 
-async function seedHook(authMode: 'none' | 'token' | 'hmac', opts: { active?: boolean; idemPath?: string } = {}) {
+async function seedHook(
+  authMode: 'none' | 'token' | 'hmac',
+  opts: { active?: boolean; idemPath?: string; envelope?: boolean } = {},
+) {
   const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Hook' });
   await createVersion(pool, { workflowId: wf.id, definition: hookIr, hash: 'h' });
   const secret = randomBytes(12).toString('hex');
@@ -73,6 +86,14 @@ async function seedHook(authMode: 'none' | 'token' | 'hmac', opts: { active?: bo
     ...(opts.idemPath ? { idempotencyKeyPath: opts.idemPath } : {}),
     secretEncrypted: authMode === 'none' ? null : encryptSecret(secret, key),
   });
+  if (opts.envelope && authMode !== 'none') {
+    // Rewrite the seeded v0 secret as v1, the format the api now produces.
+    const sealed = await triggerVault.encrypt(DEFAULT_WORKSPACE_ID, secret);
+    await pool.query(
+      `UPDATE workflow_triggers SET secret_encrypted = $1, secret_enc_version = $2 WHERE id = $3`,
+      [sealed.blob, sealed.encVersion, row.id],
+    );
+  }
   const active = opts.active ?? true;
   await setTriggersActive(pool, wf.id, active);
   await setWorkflowActive(pool, wf.id, active);
@@ -82,6 +103,39 @@ async function seedHook(authMode: 'none' | 'token' | 'hmac', opts: { active?: bo
 function sign(secret: string, body: string): string {
   return 'sha256=' + createHmac('sha256', secret).update(Buffer.from(body)).digest('hex');
 }
+
+describe('gateway envelope-encrypted trigger secrets', () => {
+  test('a token webhook authenticates against a v1 secret, and a wrong one is refused', async () => {
+    const { routeKey, secret } = await seedHook('token', { envelope: true });
+    const ok = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+      payload: { event: { id: 'e1' } },
+    });
+    expect(ok.statusCode).toBe(202);
+    const bad = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { authorization: 'Bearer wrong-secret', 'content-type': 'application/json' },
+      payload: { event: { id: 'e2' } },
+    });
+    expect(bad.statusCode).toBe(401);
+  });
+
+  test('an hmac webhook authenticates against a v1 secret', async () => {
+    const { routeKey, secret } = await seedHook('hmac', { envelope: true });
+    const body = JSON.stringify({ event: { id: 'h1' } });
+    const sig = 'sha256=' + createHmac('sha256', secret).update(body).digest('hex');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'x-xperiment-signature': sig, 'content-type': 'application/json' },
+      payload: body,
+    });
+    expect(res.statusCode).toBe(202);
+  });
+});
 
 describe('gateway', () => {
   test('hmac-authenticated production webhook creates an execution (202)', async () => {

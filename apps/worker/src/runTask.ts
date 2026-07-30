@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import type { ConnectorRegistry, SuspendSpec } from '@xperiment/connectors';
 import {
+  appendAuditEvent,
   appendEvent,
   casNode,
-  decryptSecret,
   getConnectionWithPayload,
   getExecutionDetail,
   getTriggerPayload,
@@ -12,6 +12,7 @@ import {
   openWait,
   succeededOutputs,
   withTx,
+  type SecretVault,
 } from '@xperiment/db';
 import {
   buildContext,
@@ -36,14 +37,22 @@ export interface WorkerDeps {
   pool: pg.Pool;
   registry: ConnectorRegistry;
   workerId: string;
-  credentialsKey: Buffer;
+  credentialsVault: SecretVault;
   log: (msg: string, extra?: Record<string, unknown>) => void;
 }
 
-/** Resolves and decrypts the node's connection payload; throws NormalizedError-shaped info via recordFailure at the call site. */
+/**
+ * Resolves and decrypts the node's connection payload; throws NormalizedError-shaped info via recordFailure at the call site.
+ *
+ * The workspace id is required, not optional. Before envelope encryption this call
+ * omitted it and would resolve any connection UUID in the database, so a published IR
+ * could reach another tenant's credential — publish-time validation was the only guard.
+ * Decryption now needs the workspace anyway, so the filter cannot be dropped again.
+ */
 async function resolveConnection(
   deps: WorkerDeps,
   node: IRNode,
+  ctx: { workspaceId: string; executionId: string; workflowId: string },
 ): Promise<{ ok: true; connection: unknown } | { ok: false; error: NormalizedError }> {
   const def = deps.registry.get(node.type);
   if (!def?.requiresConnection) return { ok: true, connection: undefined };
@@ -53,15 +62,39 @@ async function resolveConnection(
       error: normalizedError('connection_required', `Node requires a '${def.requiresConnection}' connection`, false),
     };
   }
-  const row = await getConnectionWithPayload(deps.pool, node.connectionRef);
+  const row = await getConnectionWithPayload(deps.pool, node.connectionRef, ctx.workspaceId);
   if (!row || row.connectorKey !== def.requiresConnection) {
     return { ok: false, error: normalizedError('connection_not_found', 'Referenced connection not found', false) };
   }
+  let connection: unknown;
   try {
-    return { ok: true, connection: JSON.parse(decryptSecret(row.encryptedPayload, deps.credentialsKey)) };
+    connection = JSON.parse(
+      await deps.credentialsVault.decrypt(ctx.workspaceId, {
+        blob: row.encryptedPayload,
+        encVersion: row.encVersion,
+      }),
+    );
   } catch {
+    // A failed decrypt is deliberately not audited as a read-use: nothing was read.
+    // This is also the fail-closed path when KMS is unreachable with a cold cache.
     return { ok: false, error: normalizedError('connection_invalid', 'Stored connection could not be decrypted', false) };
   }
+  // SEC-009: one row per node that actually consumed a credential. Emitted on the pool —
+  // nothing was mutated — with a system actor, since no user is present.
+  await appendAuditEvent(deps.pool, {
+    workspaceId: ctx.workspaceId,
+    actorKind: 'system',
+    action: 'credential.read_use',
+    targetType: 'connection',
+    targetId: row.id,
+    metadata: {
+      executionId: ctx.executionId,
+      nodeId: node.id,
+      workflowId: ctx.workflowId,
+      connectorKey: row.connectorKey,
+    },
+  });
+  return { ok: true, connection };
 }
 
 export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): Promise<void> {
@@ -105,7 +138,11 @@ export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): P
   const policy = resolveRetryPolicy(node.settings?.retry);
   let resolvedParams: unknown;
   try {
-    const connectionResult = await resolveConnection(deps, node);
+    const connectionResult = await resolveConnection(deps, node, {
+      workspaceId: detail.execution.workspaceId,
+      executionId,
+      workflowId: detail.execution.workflowId,
+    });
     if (!connectionResult.ok) {
       await recordFailure(deps, {
         executionId,

@@ -81,7 +81,13 @@ export function gcpKmsKeyProvider(args: { keyName: string; client: KmsClientLike
   };
 }
 
-const DEFAULT_LOCAL_MASTER = 'xperiment-dev-kek-master-change-me';
+/**
+ * Dev default for the local provider's master secret. Exported so the api, gateway,
+ * worker and tests all derive the same root key — a workspace KEK can only be unwrapped
+ * by the root key that wrapped it, so a per-caller literal would produce KEKs one
+ * process cannot read.
+ */
+export const DEFAULT_LOCAL_KEK_MASTER = 'xperiment-dev-kek-master-change-me';
 
 /**
  * Startup-time provider selection. A misconfiguration throws here rather than on the
@@ -98,7 +104,7 @@ export async function createKeyProviderFromEnv(
 ): Promise<KeyProvider> {
   const provider = env['KMS_PROVIDER'] ?? 'local';
   if (provider === 'local') {
-    return localKeyProvider(env['KEK_MASTER_KEY'] ?? DEFAULT_LOCAL_MASTER);
+    return localKeyProvider(env['KEK_MASTER_KEY'] ?? DEFAULT_LOCAL_KEK_MASTER);
   }
   if (provider !== 'gcp-kms') {
     throw new Error(`Unsupported KMS_PROVIDER '${provider}' — expected 'local' or 'gcp-kms'`);

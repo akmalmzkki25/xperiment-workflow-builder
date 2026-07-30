@@ -3,12 +3,17 @@ import { createServer, type Server } from 'node:http';
 import {
   createAlertRule,
   createPool,
+  createSecretVault,
+  DEFAULT_LOCAL_KEK_MASTER,
+  createWorkspaceKeyring,
   deriveLegacyKey,
   encryptSecret,
   fireAlert,
   listAlertEvents,
+  localKeyProvider,
   runMigrations,
   withTx,
+  type SecretVault,
 } from '@xperiment/db';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -18,6 +23,7 @@ const WS = '00000000-0000-0000-0000-000000000001';
 const alertKey = deriveLegacyKey('xperiment-dev-trigger-secret-change-me');
 let pool: Pool;
 let deps: AlertDeliveryDeps;
+let triggerVault: SecretVault;
 let server: Server;
 let baseUrl: string;
 let received: { sig: string | undefined; body: unknown }[] = [];
@@ -26,7 +32,11 @@ let respStatus = 200;
 beforeAll(async () => {
   pool = createPool();
   await runMigrations(pool);
-  deps = { pool, alertKey, allowPrivateIps: true, log: () => {} };
+  triggerVault = createSecretVault({
+    keyring: createWorkspaceKeyring({ pool, provider: localKeyProvider(DEFAULT_LOCAL_KEK_MASTER) }),
+    legacyKey: alertKey,
+  });
+  deps = { pool, triggerVault, allowPrivateIps: true, log: () => {} };
   server = createServer((req, res) => {
     let raw = '';
     req.on('data', (c: Buffer) => (raw += c.toString()));
@@ -67,6 +77,21 @@ async function seedFiring(url: string | null, secret: string | null): Promise<{ 
 }
 
 describe('runAlertDelivery', () => {
+  test('signs correctly with an ENVELOPE-encrypted rule secret', async () => {
+    const secret = randomBytes(16).toString('hex');
+    const { ruleId, eventId } = await seedFiring(`${baseUrl}/a`, secret);
+    // Re-write the seeded v0 secret as v1, the format the api now produces.
+    const sealed = await triggerVault.encrypt(WS, secret);
+    await pool.query(
+      `UPDATE alert_rules SET webhook_secret_encrypted = $1, webhook_secret_enc_version = $2 WHERE id = $3`,
+      [sealed.blob, sealed.encVersion, ruleId],
+    );
+    await runAlertDelivery(deps, { ruleId, eventId });
+    expect(received).toHaveLength(1);
+    const body = JSON.stringify(received[0]!.body);
+    expect(received[0]!.sig).toBe('sha256=' + createHmac('sha256', secret).update(body).digest('hex'));
+  });
+
   test('POSTs a body signed with the rule secret', async () => {
     const secret = randomBytes(16).toString('hex');
     const ids = await seedFiring(`${baseUrl}/hook`, secret);

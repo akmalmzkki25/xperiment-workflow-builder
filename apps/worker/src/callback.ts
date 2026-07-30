@@ -1,11 +1,11 @@
 import { createHmac } from 'node:crypto';
 import { assertUrlAllowed } from '@xperiment/connectors';
-import { decryptSecret, getExecutionDetail, getWorkflowCallback } from '@xperiment/db';
+import { getExecutionDetail, getWorkflowCallback, type SecretVault } from '@xperiment/db';
 import type pg from 'pg';
 
 export interface CallbackDeps {
   pool: pg.Pool;
-  triggerKey: Buffer;
+  triggerVault: SecretVault;
   allowPrivateIps: boolean;
   log: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -38,7 +38,10 @@ export async function runCallback(deps: CallbackDeps, payload: { executionId: st
     status: detail.execution.status,
     completedAt: detail.execution.completedAt,
   });
-  const secret = decryptSecret(cb.secretEncrypted, deps.triggerKey);
+  const secret = await deps.triggerVault.decrypt(cb.workspaceId, {
+    blob: cb.secretEncrypted,
+    encVersion: cb.encVersion,
+  });
   const signature = 'sha256=' + createHmac('sha256', secret).update(body).digest('hex');
 
   const res = await fetch(cb.url, {
