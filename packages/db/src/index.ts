@@ -22,3 +22,10 @@ export {
   type KmsClientLike,
 } from './crypto/keyProvider.js';
 export { createWorkspaceKeyring, DEFAULT_KEK_CACHE_TTL_MS, type WorkspaceKeyring } from './crypto/keyring.js';
+export {
+  createSecretVault,
+  ENC_VERSION_ENVELOPE,
+  ENC_VERSION_LEGACY,
+  type EncryptedSecret,
+  type SecretVault,
+} from './crypto/vault.js';
