@@ -66,12 +66,26 @@ describe('SecretVault', () => {
     await expect(v.decrypt(wsB, sealed)).rejects.toThrow();
   });
 
-  test('a legacy blob labelled as envelope is rejected by the marker check', async () => {
+  test('a legacy blob labelled as envelope is always rejected, whatever its first byte', async () => {
+    // A legacy blob starts with a random 12-byte IV, so ~1 in 256 of them happen to
+    // begin with the v1 marker. Those get past the marker check and are rejected one
+    // stage later, by the length bound or the GCM tag. Either way the read fails — which
+    // is the guarantee that matters, and asserting a specific message here would make
+    // the test 1/256 flaky. This residual ambiguity is exactly why enc_version is a
+    // column rather than a byte inside the blob.
     const ws = await makeWorkspace();
-    const mislabelled = { blob: encryptSecret('x', legacyKey), encVersion: ENC_VERSION_ENVELOPE };
-    // The version column says v1 but the bytes are v0. Without the marker this would
-    // read a random IV byte as a length and produce garbage or a confusing GCM error.
-    await expect(vault().decrypt(ws, mislabelled)).rejects.toThrow(/format/i);
+    const v = vault();
+    for (let i = 0; i < 40; i += 1) {
+      const mislabelled = { blob: encryptSecret(`x-${i}`, legacyKey), encVersion: ENC_VERSION_ENVELOPE };
+      await expect(v.decrypt(ws, mislabelled)).rejects.toThrow();
+    }
+  });
+
+  test('the marker check names the failure when the first byte is not the marker', async () => {
+    const ws = await makeWorkspace();
+    const blob = encryptSecret('x', legacyKey);
+    blob[0] = 0x02; // deterministically not the v1 marker
+    await expect(vault().decrypt(ws, { blob, encVersion: ENC_VERSION_ENVELOPE })).rejects.toThrow(/format/i);
   });
 
   test('an unknown version is rejected by name', async () => {

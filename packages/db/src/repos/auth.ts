@@ -318,14 +318,7 @@ export async function revokeApiKey(db: Db, id: string, workspaceId: string): Pro
   return (r.rowCount ?? 0) > 0;
 }
 
-export async function appendAuthEvent(
-  db: Db,
-  args: { userId?: string; email?: string; eventType: string; ip?: string },
-): Promise<void> {
-  await db.query(`INSERT INTO auth_events (user_id, email, event_type, ip) VALUES ($1, $2, $3, $4)`, [
-    args.userId ?? null,
-    args.email ?? null,
-    args.eventType,
-    args.ip ?? null,
-  ]);
-}
+// appendAuthEvent was here. Authentication events now go to audit_events via
+// appendAuditEvent (packages/db/src/repos/audit.ts), which carries the workspace, the
+// actor/target split and metadata that auth_events lacks. auth_events is retained as
+// historical data and receives no further writes.

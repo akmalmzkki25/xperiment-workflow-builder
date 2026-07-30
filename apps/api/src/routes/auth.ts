@@ -1,5 +1,5 @@
 import {
-  appendAuthEvent,
+  appendAuditEvent,
   createSession,
   createUser,
   createWorkspaceWithOwner,
@@ -15,12 +15,29 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { LoginLimiter } from '../auth/rateLimit.js';
-import { authOf } from '../auth/plugin.js';
+import { auditActor, authOf } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
 const credentialsSchema = z.object({ email: z.string().email(), password: z.string().min(8) }).strict();
+
+/**
+ * Request provenance for the two routes that sit outside the auth plugin. `/register`
+ * and `/login` are in EXEMPT, so there is no authContext and auditActor cannot be used;
+ * the actor fields are supplied explicitly at those call sites instead.
+ */
+function requestFacts(req: { id: string; ip: string; headers: Record<string, unknown> }): {
+  requestId: string;
+  ip: string;
+  userAgent: string | null;
+} {
+  return {
+    requestId: req.id,
+    ip: req.ip,
+    userAgent: (req.headers['user-agent'] as string | undefined) ?? null,
+  };
+}
 
 export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   const limiter = new LoginLimiter();
@@ -39,7 +56,15 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
     });
     const { token, hash } = generateToken('qs');
     await createSession(deps.pool, { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
-    await appendAuthEvent(deps.pool, { userId: user.id, email: user.email, eventType: 'register', ip: req.ip });
+    await appendAuditEvent(deps.pool, {
+      ...requestFacts(req),
+      actorKind: 'user',
+      actorUserId: user.id,
+      actorLabel: user.email,
+      action: 'auth.register',
+      targetType: 'user',
+      targetId: user.id,
+    });
     return reply.status(201).send({
       token,
       user: { id: user.id, email: user.email },
@@ -57,13 +82,29 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
     const user = await getUserByEmail(deps.pool, parsed.data.email);
     const ok = user !== null && (await verifyPassword(parsed.data.password, user.passwordHash));
     if (!ok || !user) {
-      await appendAuthEvent(deps.pool, { email: parsed.data.email, eventType: 'login_failed', ip: req.ip });
+      // No workspace and no user id: the email may not correspond to an account at all,
+      // and a global row must never surface in a workspace's audit view.
+      await appendAuditEvent(deps.pool, {
+        ...requestFacts(req),
+        actorKind: 'anonymous',
+        actorLabel: parsed.data.email,
+        action: 'auth.login_failed',
+        outcome: 'failure',
+      });
       return sendProblem(reply, 401, 'Invalid credentials');
     }
     limiter.reset(limiterKey);
     const { token, hash } = generateToken('qs');
     await createSession(deps.pool, { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
-    await appendAuthEvent(deps.pool, { userId: user.id, email: user.email, eventType: 'login_succeeded', ip: req.ip });
+    await appendAuditEvent(deps.pool, {
+      ...requestFacts(req),
+      actorKind: 'user',
+      actorUserId: user.id,
+      actorLabel: user.email,
+      action: 'auth.login_succeeded',
+      targetType: 'user',
+      targetId: user.id,
+    });
     return { token };
   });
 
@@ -72,7 +113,15 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
     const token = typeof header === 'string' ? header.slice('Bearer '.length) : '';
     await revokeSession(deps.pool, hashToken(token));
     const ctx = authOf(req);
-    await appendAuthEvent(deps.pool, { userId: ctx.userId ?? undefined, eventType: 'logout', ip: req.ip });
+    // Behind the auth plugin, so the actor is known and the event belongs to the
+    // workspace the session was acting in.
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      workspaceId: ctx.workspaceId,
+      action: 'auth.logout',
+      targetType: 'user',
+      targetId: ctx.userId,
+    });
     return reply.status(204).send();
   });
 
@@ -80,7 +129,13 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
     const ctx = authOf(req);
     if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only', 'API keys cannot revoke sessions');
     await revokeAllSessions(deps.pool, ctx.userId);
-    await appendAuthEvent(deps.pool, { userId: ctx.userId, eventType: 'logout_all', ip: req.ip });
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      workspaceId: ctx.workspaceId,
+      action: 'auth.logout_all',
+      targetType: 'user',
+      targetId: ctx.userId,
+    });
     return reply.status(204).send();
   });
 

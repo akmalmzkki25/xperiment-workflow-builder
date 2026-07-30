@@ -60,10 +60,58 @@ describe('auth flows', () => {
       last = r.statusCode;
     }
     expect(last).toBe(429);
-    const audited = await pool.query(`SELECT count(*)::int AS c FROM auth_events WHERE email = $1 AND event_type = 'login_failed'`, [
-      attackEmail,
-    ]);
-    expect((audited.rows[0] as { c: number }).c).toBeGreaterThanOrEqual(4);
+    const audited = await pool.query<{ c: number }>(
+      `SELECT count(*)::int AS c FROM audit_events
+        WHERE actor_label = $1 AND action = 'auth.login_failed' AND outcome = 'failure'`,
+      [attackEmail],
+    );
+    expect(audited.rows[0]!.c).toBeGreaterThanOrEqual(4);
+  });
+
+  test('a failed login for an unknown email is global, not attributed to a workspace', async () => {
+    const ghost = `ghost-${randomUUID()}@xperiment.test`;
+    await app.inject({ method: 'POST', url: '/v1/auth/login', payload: { email: ghost, password: 'whatever-123' } });
+    const row = await pool.query<{ workspace_id: string | null; actor_kind: string; actor_user_id: string | null }>(
+      `SELECT workspace_id, actor_kind, actor_user_id FROM audit_events WHERE actor_label = $1`,
+      [ghost],
+    );
+    expect(row.rows[0]).toMatchObject({ workspace_id: null, actor_kind: 'anonymous', actor_user_id: null });
+  });
+
+  test('register and a successful login are attributed to the user, with no password material', async () => {
+    const email = `aud-${randomUUID()}@xperiment.test`;
+    const password = 'password-123';
+    const reg = await app.inject({ method: 'POST', url: '/v1/auth/register', payload: { email, password } });
+    const userId = reg.json<{ user: { id: string } }>().user.id;
+    await app.inject({ method: 'POST', url: '/v1/auth/login', payload: { email, password } });
+    const rows = await pool.query<{ action: string; actor_kind: string; actor_user_id: string; metadata: unknown }>(
+      `SELECT action, actor_kind, actor_user_id, metadata FROM audit_events WHERE actor_label = $1 ORDER BY id`,
+      [email],
+    );
+    expect(rows.rows.map((r) => r.action)).toEqual(['auth.register', 'auth.login_succeeded']);
+    for (const r of rows.rows) {
+      expect(r.actor_kind).toBe('user');
+      expect(r.actor_user_id).toBe(userId);
+      expect(JSON.stringify(r.metadata)).not.toContain(password);
+    }
+  });
+
+  test('logout is attributed to the workspace the session was acting in', async () => {
+    const user = await createAuthedUser(app);
+    await user.inject({ method: 'POST', url: '/v1/auth/logout' });
+    const row = await pool.query<{ workspace_id: string | null; action: string }>(
+      `SELECT workspace_id, action FROM audit_events WHERE actor_user_id = $1 AND action = 'auth.logout'`,
+      [user.userId],
+    );
+    expect(row.rows[0]).toMatchObject({ workspace_id: user.workspaceId, action: 'auth.logout' });
+  });
+
+  test('auth_events receives no new writes', async () => {
+    const before = await pool.query<{ c: number }>(`SELECT count(*)::int AS c FROM auth_events`);
+    const user = await createAuthedUser(app);
+    await user.inject({ method: 'POST', url: '/v1/auth/logout-all' });
+    const after = await pool.query<{ c: number }>(`SELECT count(*)::int AS c FROM auth_events`);
+    expect(after.rows[0]!.c).toBe(before.rows[0]!.c);
   });
 
   test('logout revokes the session; logout-all revokes every session', async () => {

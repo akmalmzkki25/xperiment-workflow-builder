@@ -5,7 +5,6 @@ import { createPool, runMigrations } from '../src/index.js';
 import {
   acceptInvite,
   addMember,
-  appendAuthEvent,
   createApiKey,
   createInvite,
   createSession,
@@ -34,7 +33,9 @@ afterAll(async () => {
   await pool.end();
 });
 beforeEach(async () => {
-  await pool.query(`TRUNCATE users, sessions, workspace_members, workspace_invites, api_keys, auth_events CASCADE`);
+  // auth_events is deliberately absent: it is historical data now, no longer written to,
+  // and wiping it would destroy records this slice is meant to preserve.
+  await pool.query(`TRUNCATE users, sessions, workspace_members, workspace_invites, api_keys CASCADE`);
 });
 
 describe('authCrypto', () => {
@@ -134,11 +135,6 @@ describe('api keys and auth events', () => {
     expect(await revokeApiKey(pool, row.id, ws.id)).toBe(false);
   });
 
-  test('auth events append', async () => {
-    await appendAuthEvent(pool, { email: 'x@y.test', eventType: 'login_failed', ip: '127.0.0.1' });
-    const r = await pool.query(`SELECT event_type FROM auth_events`);
-    expect((r.rows[0] as { event_type: string }).event_type).toBe('login_failed');
-  });
 });
 
 describe('rbac member + api key roles', () => {
