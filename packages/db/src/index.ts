@@ -31,3 +31,4 @@ export {
   type EncryptedSecret,
   type SecretVault,
 } from './crypto/vault.js';
+export { rekeyAll, type RekeyProgress } from './crypto/rekey.js';

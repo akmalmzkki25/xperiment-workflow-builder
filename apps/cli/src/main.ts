@@ -130,4 +130,55 @@ program
     }
   });
 
+program
+  .command('rekey')
+  .description('Re-encrypt legacy secrets under per-workspace envelope encryption')
+  .option('--batch-size <n>', 'rows per query', '100')
+  .action(async (opts: { batchSize: string }) => {
+    // Imported dynamically so no other CLI command pays for a database connection.
+    const {
+      appendAuditEvent,
+      createKeyProviderFromEnv,
+      createPool,
+      createSecretVault,
+      createWorkspaceKeyring,
+      deriveLegacyKey,
+      rekeyAll,
+    } = await import('@xperiment/db');
+    const pool = createPool();
+    try {
+      const keyring = createWorkspaceKeyring({ pool, provider: await createKeyProviderFromEnv() });
+      const progress = await rekeyAll({
+        pool,
+        credentialsVault: createSecretVault({
+          keyring,
+          legacyKey: deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+        }),
+        triggerVault: createSecretVault({
+          keyring,
+          legacyKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+        }),
+        batchSize: Number(opts.batchSize),
+      });
+      for (const p of progress) console.log(`${p.table.padEnd(20)} rekeyed=${p.rekeyed}  remaining=${p.remaining}`);
+      // One event per run, not per row: a backfill is bulk mechanical work and per-row
+      // rows would flood the table. workspaceId is null because a run spans every
+      // workspace, and global rows never surface in a workspace's audit view.
+      await appendAuditEvent(pool, {
+        actorKind: 'system',
+        action: 'secret.rekey_batch',
+        metadata: Object.fromEntries(progress.map((p) => [p.table, p.rekeyed])),
+      });
+      const left = progress.reduce((sum, p) => sum + p.remaining, 0);
+      if (left > 0) {
+        console.error(`${left} row(s) still at enc_version 0 — keep the legacy keys configured and re-run.`);
+        process.exit(2);
+      }
+    } catch (e) {
+      fail(e);
+    } finally {
+      await pool.end();
+    }
+  });
+
 await program.parseAsync(process.argv);
