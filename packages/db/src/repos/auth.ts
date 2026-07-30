@@ -222,14 +222,18 @@ export async function createApiKey(
   };
 }
 
-export async function getActiveApiKey(db: Db, keyHash: string): Promise<{ workspaceId: string; role: Role } | null> {
+export async function getActiveApiKey(
+  db: Db,
+  keyHash: string,
+): Promise<{ id: string; workspaceId: string; role: Role } | null> {
   const r = await db.query(
-    `UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1 AND revoked_at IS NULL RETURNING workspace_id, role`,
+    `UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1 AND revoked_at IS NULL
+     RETURNING id, workspace_id, role`,
     [keyHash],
   );
   if (!r.rowCount) return null;
-  const row = r.rows[0] as { workspace_id: string; role: Role };
-  return { workspaceId: row.workspace_id, role: row.role };
+  const row = r.rows[0] as { id: string; workspace_id: string; role: Role };
+  return { id: row.id, workspaceId: row.workspace_id, role: row.role };
 }
 
 export async function listApiKeys(db: Db, workspaceId: string): Promise<ApiKeyRow[]> {

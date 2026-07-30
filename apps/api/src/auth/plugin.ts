@@ -6,6 +6,8 @@ import { hasPermission, type Permission } from './permissions.js';
 
 export interface AuthContext {
   userId: string | null;
+  /** Which api key authenticated, when one did. Needed to name an audit actor. */
+  apiKeyId: string | null;
   workspaceId: string;
   role: Role;
 }
@@ -56,20 +58,20 @@ export function registerAuthPlugin(app: FastifyInstance, deps: { pool: pg.Pool }
       if (requestedWorkspace) {
         const role = await getMembership(deps.pool, requestedWorkspace, session.userId);
         if (!role) return sendProblem(reply, 403, 'Forbidden', 'Not a member of that workspace');
-        req.authContext = { userId: session.userId, workspaceId: requestedWorkspace, role };
+        req.authContext = { userId: session.userId, apiKeyId: null, workspaceId: requestedWorkspace, role };
         return;
       }
       const memberships = await listMemberships(deps.pool, session.userId);
       const first = memberships[0];
       if (!first) return sendProblem(reply, 403, 'Forbidden', 'No workspace membership');
-      req.authContext = { userId: session.userId, workspaceId: first.workspaceId, role: first.role };
+      req.authContext = { userId: session.userId, apiKeyId: null, workspaceId: first.workspaceId, role: first.role };
       return;
     }
 
     if (token.startsWith('qk_')) {
       const key = await getActiveApiKey(deps.pool, hashToken(token));
       if (!key) return sendProblem(reply, 401, 'Unauthorized', 'Invalid api key');
-      req.authContext = { userId: null, workspaceId: key.workspaceId, role: key.role };
+      req.authContext = { userId: null, apiKeyId: key.id, workspaceId: key.workspaceId, role: key.role };
       return;
     }
 
@@ -81,4 +83,28 @@ export function registerAuthPlugin(app: FastifyInstance, deps: { pool: pg.Pool }
 export function authOf(req: FastifyRequest): AuthContext {
   if (!req.authContext) throw new Error('authContext missing — route not behind auth plugin');
   return req.authContext;
+}
+
+/**
+ * The audit actor for the current request, in the exact field names AuditEventInput
+ * accepts so it spreads directly. Kept here so no route re-derives it and gets the
+ * user-versus-api-key distinction subtly wrong.
+ */
+export function auditActor(req: FastifyRequest): {
+  actorKind: 'user' | 'api_key';
+  actorUserId: string | null;
+  actorApiKeyId: string | null;
+  requestId: string;
+  ip: string;
+  userAgent: string | null;
+} {
+  const ctx = authOf(req);
+  return {
+    actorKind: ctx.apiKeyId ? 'api_key' : 'user',
+    actorUserId: ctx.userId,
+    actorApiKeyId: ctx.apiKeyId,
+    requestId: req.id,
+    ip: req.ip,
+    userAgent: (req.headers['user-agent'] as string | undefined) ?? null,
+  };
 }

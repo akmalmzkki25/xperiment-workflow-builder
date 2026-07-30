@@ -3,8 +3,10 @@ import { hasPermission, ROLE_PERMISSIONS, type Permission } from '../src/auth/pe
 
 /** The authoritative table from the spec, written out literally (never derived from the implementation). */
 const EXPECTED: Record<string, Permission[]> = {
-  owner: ['workflow:read','workflow:write','workflow:activate','execution:read','execution:run','execution:cancel','approval:decide','connection:read','connection:write','alert:read','alert:write','usage:read','billing:read','billing:manage','member:manage'],
-  admin: ['workflow:read','workflow:write','workflow:activate','execution:read','execution:run','execution:cancel','approval:decide','connection:read','connection:write','alert:read','alert:write','usage:read','billing:read','billing:manage','member:manage'],
+  // audit:read stops at admin: a builder seeing every member's credential use would
+  // itself be a privilege escalation.
+  owner: ['workflow:read','workflow:write','workflow:activate','execution:read','execution:run','execution:cancel','approval:decide','connection:read','connection:write','alert:read','alert:write','usage:read','billing:read','billing:manage','member:manage','audit:read'],
+  admin: ['workflow:read','workflow:write','workflow:activate','execution:read','execution:run','execution:cancel','approval:decide','connection:read','connection:write','alert:read','alert:write','usage:read','billing:read','billing:manage','member:manage','audit:read'],
   builder: ['workflow:read','workflow:write','workflow:activate','execution:read','execution:run','execution:cancel','approval:decide','connection:read','connection:write','alert:read','alert:write','usage:read'],
   operator: ['workflow:read','execution:read','execution:run','execution:cancel','approval:decide','alert:read','alert:write','usage:read'],
   billing: ['alert:read','usage:read','billing:read','billing:manage'],

@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
 import { createOpenRouterClient, type ChatClient } from '@xperiment/ai';
 import type { ConnectorRegistry } from '@xperiment/connectors';
-import { deriveLegacyKey } from '@xperiment/db';
+import {
+  createSecretVault,
+  createWorkspaceKeyring,
+  deriveLegacyKey,
+  localKeyProvider,
+  type KeyProvider,
+  type SecretVault,
+} from '@xperiment/db';
 import { providerFor, type PaymentProvider } from '@xperiment/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
@@ -13,6 +20,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAlertRoutes } from './routes/alerts.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
+import { registerAuditRoutes } from './routes/audit.js';
 import { registerConnectionRoutes } from './routes/connections.js';
 import { registerConnectorRoutes } from './routes/connectors.js';
 import { registerExecutionRoutes } from './routes/executions.js';
@@ -32,6 +40,14 @@ export interface ServerDeps {
   gatewayUrl?: string;
   triggerKey?: Buffer;
   credentialsKey?: Buffer;
+  /**
+   * Root key provider for envelope encryption. buildServer is synchronous and used
+   * that way by every test, so it defaults to the local provider; the long-running
+   * entrypoint resolves the async createKeyProviderFromEnv and passes the result here.
+   */
+  keyProvider?: KeyProvider;
+  credentialsVault?: SecretVault;
+  triggerVault?: SecretVault;
   ai?: AiConfig;
   aiClientFactory?: (cfg: { apiKey: string; model: string; baseUrl: string; appUrl?: string }) => ChatClient;
   rateLimitPerMinute?: number;
@@ -73,6 +89,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['authorization', 'content-type', 'if-match', 'idempotency-key', 'x-xperiment-workspace'],
   });
+  // One keyring for both vaults, so the split by legacy key family does not double
+  // KMS traffic: one unwrap per workspace per cache window for the whole process.
+  const keyring = createWorkspaceKeyring({
+    pool: deps.pool,
+    provider:
+      deps.keyProvider ?? localKeyProvider(process.env['KEK_MASTER_KEY'] ?? 'xperiment-dev-kek-master-change-me'),
+    ...(process.env['KEK_CACHE_TTL_MS'] ? { ttlMs: Number(process.env['KEK_CACHE_TTL_MS']) } : {}),
+  });
   const resolvedDeps = {
     pool: deps.pool,
     registry: deps.registry,
@@ -84,6 +108,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     credentialsKey:
       deps.credentialsKey ??
       deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+    credentialsVault:
+      deps.credentialsVault ??
+      createSecretVault({
+        keyring,
+        legacyKey: deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+      }),
+    triggerVault:
+      deps.triggerVault ??
+      createSecretVault({
+        keyring,
+        legacyKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+      }),
     ai: resolveAiConfig(deps.ai),
     aiClientFactory: deps.aiClientFactory ?? createOpenRouterClient,
   };
@@ -106,6 +142,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerPlanRoutes(app, resolvedDeps);
   registerInvoiceRoutes(app, resolvedDeps);
   registerAlertRoutes(app, resolvedDeps);
+  registerAuditRoutes(app, resolvedDeps);
   registerTemplateRoutes(app, resolvedDeps);
   return app;
 }

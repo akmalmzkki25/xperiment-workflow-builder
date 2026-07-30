@@ -15,7 +15,8 @@ export type Permission =
   | 'usage:read'
   | 'billing:read'
   | 'billing:manage'
-  | 'member:manage';
+  | 'member:manage'
+  | 'audit:read';
 
 const READ_ONLY: Permission[] = ['workflow:read', 'execution:read', 'alert:read', 'usage:read'];
 const RUNTIME: Permission[] = ['execution:run', 'execution:cancel', 'approval:decide', 'alert:write'];
@@ -24,7 +25,8 @@ const BILLING: Permission[] = ['billing:read', 'billing:manage'];
 
 const OPERATOR: Permission[] = [...READ_ONLY, ...RUNTIME];
 const BUILDER: Permission[] = [...OPERATOR, ...AUTHORING];
-const ADMIN: Permission[] = [...BUILDER, ...BILLING, 'member:manage'];
+// Not granted to builder: seeing every member's credential use is itself a privilege.
+const ADMIN: Permission[] = [...BUILDER, ...BILLING, 'member:manage', 'audit:read'];
 
 /**
  * Built-in role → permission sets. Deliberately a plain data structure: WS-006's
@@ -49,6 +51,7 @@ export const ALL_PERMISSIONS: readonly Permission[] = [
   ...AUTHORING,
   ...BILLING,
   'member:manage',
+  'audit:read',
 ];
 
 /** Fails closed: an unknown role has no permissions and never throws. */

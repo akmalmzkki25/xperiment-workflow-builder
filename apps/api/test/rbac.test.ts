@@ -62,6 +62,7 @@ const MATRIX: {
   { permission: 'billing:read', method: 'GET', url: `/v1/invoices/${uuid}` },
   { permission: 'billing:manage', method: 'POST', url: `/v1/invoices/${uuid}/pay` },
   { permission: 'billing:manage', method: 'POST', url: `/v1/invoices/${uuid}/mark-paid` },
+  { permission: 'audit:read', method: 'GET', url: '/v1/audit' },
 ];
 
 /** Every declared permission is now routed. */
