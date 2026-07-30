@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildServer } from '../src/server.js';
-import { createAuthedUser, type AuthedUser } from './authHelpers.js';
+import { addMemberWithRole, createAuthedUser, type AuthedUser } from './authHelpers.js';
 
 let pool: Pool;
 let app: FastifyInstance;
@@ -76,7 +76,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await pool.query(
-    `TRUNCATE workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
+    `TRUNCATE workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows, audit_events CASCADE`,
   );
 });
 
@@ -93,6 +93,84 @@ async function publishedWorkflow(definition: unknown): Promise<string> {
   expect(pub.statusCode).toBe(201);
   return id;
 }
+
+describe('trigger secret encryption and reveal audit', () => {
+  async function revealRows(): Promise<{ target_id: string | null; metadata: Record<string, unknown> }[]> {
+    const r = await pool.query<{ target_id: string | null; metadata: Record<string, unknown> }>(
+      `SELECT target_id, metadata FROM audit_events WHERE action = 'trigger_secret.reveal' ORDER BY id`,
+    );
+    return r.rows;
+  }
+
+  test('an activated webhook trigger stores its secret at the envelope version', async () => {
+    const id = await publishedWorkflow(webhookIr());
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    const row = await pool.query<{ secret_enc_version: number; secret_encrypted: Buffer }>(
+      `SELECT secret_enc_version, secret_encrypted FROM workflow_triggers WHERE workflow_id = $1`,
+      [id],
+    );
+    expect(row.rows[0]!.secret_enc_version).toBe(1);
+    expect(row.rows[0]!.secret_encrypted[0]).toBe(1); // v1 marker
+  });
+
+  test('a trigger with authMode none stores no secret and no version', async () => {
+    const id = await publishedWorkflow(webhookIr('none'));
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    const row = await pool.query<{ secret_enc_version: number; secret_encrypted: Buffer | null }>(
+      `SELECT secret_enc_version, secret_encrypted FROM workflow_triggers WHERE workflow_id = $1`,
+      [id],
+    );
+    expect(row.rows[0]!.secret_encrypted).toBeNull();
+    expect(row.rows[0]!.secret_enc_version).toBe(0);
+  });
+
+  test('listing triggers with credentials reveals the secret and audits the reveal', async () => {
+    const id = await publishedWorkflow(webhookIr());
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    await pool.query(`TRUNCATE audit_events CASCADE`); // isolate the GET from the activate
+    const res = await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/triggers` });
+    expect(res.statusCode).toBe(200);
+    const triggers = res.json<{ triggers: { nodeId: string; secret?: string | null }[] }>().triggers;
+    const hook = triggers.find((t) => t.nodeId === 'hook')!;
+    expect(typeof hook.secret).toBe('string');
+    const rows = await revealRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.target_id).toBe('hook');
+    // The revealed secret must not also be written into the audit row.
+    expect(JSON.stringify(rows[0]!.metadata)).not.toContain(hook.secret!);
+  });
+
+  test('a reader gets no secret and no reveal is audited', async () => {
+    const id = await publishedWorkflow(webhookIr());
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    const res = await viewer.inject({ method: 'GET', url: `/v1/workflows/${id}/triggers` });
+    expect(res.statusCode).toBe(200);
+    const triggers = res.json<{ triggers: Record<string, unknown>[] }>().triggers;
+    expect(triggers.find((t) => t['nodeId'] === 'hook')).not.toHaveProperty('secret');
+    expect(await revealRows()).toHaveLength(0);
+  });
+
+  test('the activate response also reveals the secret, and is audited too', async () => {
+    // Activate returns url/testUrl/secret for every webhook trigger. Auditing only the
+    // GET would leave a hole: activate then read the secret from that response, with no
+    // reveal row anywhere.
+    const id = await publishedWorkflow(webhookIr());
+    const res = await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    const triggers = res.json<{ triggers: { nodeId: string; secret?: string | null }[] }>().triggers;
+    expect(typeof triggers.find((t) => t.nodeId === 'hook')!.secret).toBe('string');
+    expect(await revealRows()).toHaveLength(1);
+  });
+
+  test('a schedule trigger is never a reveal', async () => {
+    const id = await publishedWorkflow(scheduleIr());
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/triggers` });
+    expect(await revealRows()).toHaveLength(0);
+  });
+});
 
 describe('activation', () => {
   test('activate requires a published version', async () => {

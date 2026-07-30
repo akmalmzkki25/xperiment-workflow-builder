@@ -3,7 +3,6 @@ import {
   clearWorkflowCallback,
   createVersion,
   createWorkflow,
-  encryptSecret,
   getDraft,
   getVersion,
   getWorkflow,
@@ -134,10 +133,12 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
     const parsed = callbackSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     const secret = randomBytes(24).toString('base64url');
+    const sealed = await deps.triggerVault.encrypt(ctx.workspaceId, secret);
     await setWorkflowCallback(deps.pool, {
       workflowId: id,
       url: parsed.data.url,
-      secretEncrypted: encryptSecret(secret, deps.triggerKey),
+      secretEncrypted: sealed.blob,
+      encVersion: sealed.encVersion,
     });
     // The signing secret is shown once, like a trigger secret.
     return { url: parsed.data.url, secret };

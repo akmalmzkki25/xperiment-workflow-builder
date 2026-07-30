@@ -4,7 +4,6 @@ import {
   countUnacknowledgedAlerts,
   createAlertRule,
   deleteAlertRule,
-  encryptSecret,
   getAlertRule,
   listAlertEvents,
   listAlertRules,
@@ -46,10 +45,10 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid alert rule', parsed.error.message);
     const d = parsed.data;
     let secret: string | undefined;
-    let webhookSecretEncrypted: Buffer | undefined;
+    let sealed: { blob: Buffer; encVersion: number } | undefined;
     if (d.webhookUrl) {
       secret = randomBytes(24).toString('base64url');
-      webhookSecretEncrypted = encryptSecret(secret, deps.triggerKey);
+      sealed = await deps.triggerVault.encrypt(ctx.workspaceId, secret);
     }
     const rule = await createAlertRule(deps.pool, {
       workspaceId: ctx.workspaceId,
@@ -57,7 +56,7 @@ export function registerAlertRoutes(app: FastifyInstance, deps: ResolvedServerDe
       type: d.type,
       params: d.params,
       ...(d.webhookUrl ? { webhookUrl: d.webhookUrl } : {}),
-      ...(webhookSecretEncrypted ? { webhookSecretEncrypted } : {}),
+      ...(sealed ? { webhookSecretEncrypted: sealed.blob, webhookSecretEncVersion: sealed.encVersion } : {}),
       ...(d.cooldownMinutes ? { cooldownMinutes: d.cooldownMinutes } : {}),
     });
     return reply.status(201).send({ ...rule, ...(secret ? { secret } : {}) });

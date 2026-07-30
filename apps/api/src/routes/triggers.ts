@@ -1,8 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
-  decryptSecret,
+  appendAuditEvent,
   deleteTriggersNotIn,
-  encryptSecret,
   getVersion,
   getWorkflow,
   listTriggers,
@@ -10,13 +9,14 @@ import {
   setTriggersActive,
   setWorkflowActive,
   upsertTrigger,
+  type SecretVault,
   type TriggerRow,
 } from '@xperiment/db';
 import { nextFireAt } from '@xperiment/engine-core';
 import { workflowIrSchema, type IRNode } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
 import { hasPermission } from '../auth/permissions.js';
-import { authOf, requirePermission } from '../auth/plugin.js';
+import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { quotaBlocks } from './plan.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
@@ -30,7 +30,12 @@ const DEFAULT_TZ = 'Asia/Jakarta';
  * Handing them to a role without `workflow:activate` would turn `workflow:read`
  * into a transitive `execution:run`, so a reader sees only that a trigger exists.
  */
-function triggerView(t: TriggerRow, gatewayUrl: string, key: Buffer, includeCredentials: boolean) {
+async function triggerView(
+  t: TriggerRow,
+  gatewayUrl: string,
+  vault: SecretVault,
+  includeCredentials: boolean,
+): Promise<Record<string, unknown>> {
   const base = { nodeId: t.nodeId, type: t.type, active: t.active };
   if (t.type === 'webhook') {
     return {
@@ -40,12 +45,41 @@ function triggerView(t: TriggerRow, gatewayUrl: string, key: Buffer, includeCred
         ? {
             url: `${gatewayUrl}/t/${t.routeKey}`,
             testUrl: `${gatewayUrl}/t/test/${t.routeKey}`,
-            secret: t.secretEncrypted ? decryptSecret(t.secretEncrypted, key) : null,
+            secret: t.secretEncrypted
+              ? await vault.decrypt(t.workspaceId, { blob: t.secretEncrypted, encVersion: t.secretEncVersion })
+              : null,
           }
         : {}),
     };
   }
   return { ...base, cron: t.cron, timezone: t.timezone, nextFireAt: t.nextFireAt };
+}
+
+/**
+ * Handing out a plaintext signing secret transfers a capability — whoever holds it can
+ * make the gateway start a production run — so every response that carries one is
+ * audited, per trigger. Both the activate response and the trigger listing do; auditing
+ * only the listing would leave activate as an unlogged way to read the same secret.
+ *
+ * Emitted on the pool: nothing is mutated by a reveal.
+ */
+async function auditReveal(
+  deps: ResolvedServerDeps,
+  req: Parameters<typeof auditActor>[0],
+  workspaceId: string,
+  triggers: TriggerRow[],
+): Promise<void> {
+  for (const t of triggers) {
+    if (t.type !== 'webhook' || !t.secretEncrypted) continue;
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      workspaceId,
+      action: 'trigger_secret.reveal',
+      targetType: 'trigger',
+      targetId: t.nodeId,
+      metadata: { workflowId: t.workflowId, authMode: t.authMode ?? 'none' },
+    });
+  }
 }
 
 export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
@@ -67,16 +101,19 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     for (const node of triggerNodes) {
       if (node.type === 'webhook.trigger') {
         const p = node.parameters as { authMode: string; idempotencyKeyPath?: string };
+        // Hoisted out of the object literal because sealing is now async.
+        const sealed =
+          p.authMode === 'none'
+            ? null
+            : await deps.triggerVault.encrypt(ctx.workspaceId, randomBytes(24).toString('base64url'));
         await upsertTrigger(deps.pool, {
           workflowId: id,
           nodeId: node.id,
           type: 'webhook',
           authMode: p.authMode,
           ...(p.idempotencyKeyPath ? { idempotencyKeyPath: p.idempotencyKeyPath } : {}),
-          secretEncrypted:
-            p.authMode === 'none'
-              ? null
-              : encryptSecret(randomBytes(24).toString('base64url'), deps.triggerKey),
+          secretEncrypted: sealed?.blob ?? null,
+          ...(sealed ? { secretEncVersion: sealed.encVersion } : {}),
         });
       } else {
         const p = node.parameters as { cron: string; timezone?: string };
@@ -95,7 +132,9 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     await setTriggersActive(deps.pool, id, true);
     await setWorkflowActive(deps.pool, id, true);
     const fresh = await listTriggers(deps.pool, id);
-    return { active: true, triggers: fresh.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerKey, true)) };
+    const triggers = await Promise.all(fresh.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerVault, true)));
+    await auditReveal(deps, req, ctx.workspaceId, fresh);
+    return { active: true, triggers };
   });
 
   app.post('/v1/workflows/:id/deactivate', async (req, reply) => {
@@ -117,7 +156,11 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
     const rows = await listTriggers(deps.pool, id);
     const withCredentials = hasPermission(ctx.role, 'workflow:activate');
-    return { triggers: rows.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerKey, withCredentials)) };
+    const triggers = await Promise.all(
+      rows.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerVault, withCredentials)),
+    );
+    if (withCredentials) await auditReveal(deps, req, ctx.workspaceId, rows);
+    return { triggers };
   });
 
   app.get('/v1/workflows/:id/triggers/:nodeId/samples', async (req, reply) => {

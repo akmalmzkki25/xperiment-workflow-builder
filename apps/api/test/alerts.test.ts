@@ -26,6 +26,36 @@ beforeEach(async () => {
 
 const failureRule = { name: 'high failures', type: 'failure_rate', params: { windowMinutes: 60, threshold: 0.5, minSample: 3 } };
 
+describe('alert webhook secret encryption', () => {
+  test('an alert webhook secret is stored at the envelope version', async () => {
+    const res = await auth.inject({
+      method: 'POST',
+      url: '/v1/alerts',
+      payload: { ...failureRule, name: 'enveloped', webhookUrl: 'https://example.com/a' },
+    });
+    expect(res.statusCode).toBe(201);
+    const row = await pool.query<{ webhook_secret_enc_version: number; webhook_secret_encrypted: Buffer }>(
+      `SELECT webhook_secret_enc_version, webhook_secret_encrypted FROM alert_rules WHERE id = $1`,
+      [res.json<{ id: string }>().id],
+    );
+    expect(row.rows[0]!.webhook_secret_enc_version).toBe(1);
+    expect(row.rows[0]!.webhook_secret_encrypted[0]).toBe(1); // v1 marker
+    expect(row.rows[0]!.webhook_secret_encrypted.toString('utf8')).not.toContain(
+      res.json<{ secret: string }>().secret,
+    );
+  });
+
+  test('a rule with no webhook stores no secret and stays at version 0', async () => {
+    const res = await auth.inject({ method: 'POST', url: '/v1/alerts', payload: { ...failureRule, name: 'nohook' } });
+    const row = await pool.query<{ webhook_secret_enc_version: number; webhook_secret_encrypted: Buffer | null }>(
+      `SELECT webhook_secret_enc_version, webhook_secret_encrypted FROM alert_rules WHERE id = $1`,
+      [res.json<{ id: string }>().id],
+    );
+    expect(row.rows[0]!.webhook_secret_encrypted).toBeNull();
+    expect(row.rows[0]!.webhook_secret_enc_version).toBe(0);
+  });
+});
+
 describe('/v1/alerts', () => {
   test('create returns the rule; a webhook rule returns its secret once', async () => {
     const r = await auth.inject({ method: 'POST', url: '/v1/alerts', payload: failureRule });
