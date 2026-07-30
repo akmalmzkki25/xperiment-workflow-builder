@@ -21,3 +21,4 @@ export {
   type KeyProvider,
   type KmsClientLike,
 } from './crypto/keyProvider.js';
+export { createWorkspaceKeyring, DEFAULT_KEK_CACHE_TTL_MS, type WorkspaceKeyring } from './crypto/keyring.js';
