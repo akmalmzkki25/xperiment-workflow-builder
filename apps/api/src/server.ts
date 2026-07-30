@@ -39,6 +39,11 @@ export interface ServerDeps {
   pool: pg.Pool;
   registry: ConnectorRegistry;
   gatewayUrl?: string;
+  /**
+   * Legacy keys for reading enc_version = 0 rows. Overridable so a test can pin the key
+   * a seeded v0 fixture was written with. Removable once `xperiment rekey` reports zero
+   * remaining on all four columns.
+   */
   triggerKey?: Buffer;
   credentialsKey?: Buffer;
   /**
@@ -103,22 +108,20 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     paymentProvider: resolvePaymentProvider(deps.paymentProvider),
     paymentWebhookSecret: deps.paymentWebhookSecret ?? process.env['PAYMENT_WEBHOOK_SECRET'] ?? null,
     gatewayUrl: deps.gatewayUrl ?? process.env['GATEWAY_URL'] ?? 'http://localhost:3003',
-    triggerKey:
-      deps.triggerKey ?? deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
-    credentialsKey:
-      deps.credentialsKey ??
-      deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
     credentialsVault:
       deps.credentialsVault ??
       createSecretVault({
         keyring,
-        legacyKey: deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+        legacyKey:
+          deps.credentialsKey ??
+          deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
       }),
     triggerVault:
       deps.triggerVault ??
       createSecretVault({
         keyring,
-        legacyKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+        legacyKey:
+          deps.triggerKey ?? deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
       }),
     ai: resolveAiConfig(deps.ai),
     aiClientFactory: deps.aiClientFactory ?? createOpenRouterClient,

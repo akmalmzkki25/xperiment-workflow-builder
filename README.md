@@ -430,6 +430,53 @@ OPENROUTER_BASE_URL=https://openrouter.ai
 Without `OPENROUTER_API_KEY` the AI routes return `503 ai_unconfigured` and the rest
 of the app is unaffected.
 
+## Security: envelope encryption & audit (Phase 3P)
+
+Stored secrets sit under a three-tier key hierarchy. A root key — a Cloud KMS CryptoKey
+in production — wraps one KEK per workspace, held as ciphertext in `workspace_keys`. That
+KEK wraps a fresh data key for every individual secret, using local AES-256-GCM with no
+network call. KMS is therefore consulted once per workspace per cache window rather than
+once per secret, and destroying a single `workspace_keys` row makes every credential in
+that workspace permanently unreadable.
+
+Each data key is bound to its workspace as AES-GCM additional authenticated data, so a
+ciphertext copied into another tenant's row fails to open rather than decrypting.
+
+**With `KMS_PROVIDER=gcp-kms`, KMS is a hard runtime dependency.** If it is unreachable
+and the workspace key is not cached, credential resolution **fails closed** — the node
+fails with `connection_invalid` rather than guessing. `KEK_CACHE_TTL_MS` is the lever
+between KMS load and how quickly a destroyed key stops working. Cloud credentials are
+read from the ambient environment only.
+
+### Migrating existing secrets
+
+Secrets written before this phase carry `enc_version = 0` and are still readable. A SQL
+migration cannot convert them, because the old keys live in the application environment
+rather than the database, so the backfill is a command:
+
+```bash
+pnpm --filter @xperiment/cli exec tsx src/main.ts rekey
+```
+
+It is resumable, idempotent and safe to run against live traffic; interrupting it leaves
+a mixed state both read paths handle. **Keep `TRIGGER_SECRET_KEY` and
+`CREDENTIALS_SECRET_KEY` configured until it reports `remaining=0` on all four columns** —
+it exits non-zero while any row is left.
+
+### Audit trail
+
+`audit_events` records credential lifecycle (`credential.create`, `.delete`, `.test`),
+credential use by a workflow node (`credential.read_use`, one row per node), signing
+secret disclosure (`trigger_secret.reveal`), the backfill (`secret.rekey_batch`) and
+authentication (`auth.register`, `.login_failed`, `.login_succeeded`, `.logout`,
+`.logout_all`). Events describing a mutation commit inside that mutation's transaction.
+Metadata is a fixed set of named scalars, never a request body or provider response.
+
+Read it with `GET /v1/audit`, which requires the `audit:read` permission — **admin and
+owner only**, since seeing every member's credential use is itself a privilege. Rows with
+no workspace (a failed login for an unrecognised email) are never returned. `auth_events`
+is retained as historical data and receives no further writes.
+
 ## Layout
 
 ```text

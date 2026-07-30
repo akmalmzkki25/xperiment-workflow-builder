@@ -46,14 +46,19 @@ export async function listConnections(db: Db, workspaceId: string): Promise<Conn
   return (r.rows as Record<string, unknown>[]).map(mapConnection);
 }
 
+/**
+ * `workspaceId` is required. It used to be optional and the worker omitted it
+ * (runTask.ts:56), so a published IR naming any connection UUID resolved it — and for a
+ * pre-envelope row, which carries no workspace binding, the node would then succeed on
+ * another tenant's credential. Requiring the argument turns that class of omission into
+ * a compile error rather than something to remember.
+ */
 export async function getConnectionWithPayload(
   db: Db,
   id: string,
-  workspaceId?: string,
+  workspaceId: string,
 ): Promise<(ConnectionRow & { workspaceId: string; encryptedPayload: Buffer; encVersion: number }) | null> {
-  const r = workspaceId
-    ? await db.query(`SELECT * FROM connections WHERE id = $1 AND workspace_id = $2`, [id, workspaceId])
-    : await db.query(`SELECT * FROM connections WHERE id = $1`, [id]);
+  const r = await db.query(`SELECT * FROM connections WHERE id = $1 AND workspace_id = $2`, [id, workspaceId]);
   if (!r.rowCount) return null;
   const row = r.rows[0] as Record<string, unknown>;
   return {

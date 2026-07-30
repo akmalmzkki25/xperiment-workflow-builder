@@ -39,7 +39,7 @@ describe('connections repo', () => {
     const raw = await pool.query(`SELECT encrypted_payload FROM connections WHERE id = $1`, [row.id]);
     const stored = (raw.rows[0] as { encrypted_payload: Buffer }).encrypted_payload;
     expect(stored.toString('utf8')).not.toContain('tok-123'); // encrypted at rest
-    const withPayload = await getConnectionWithPayload(pool, row.id);
+    const withPayload = await getConnectionWithPayload(pool, row.id, DEFAULT_WORKSPACE_ID);
     expect(decryptSecret(withPayload!.encryptedPayload, key)).toBe(payload);
   });
 
@@ -55,7 +55,7 @@ describe('connections repo', () => {
     expect(Object.keys(list[0]!)).not.toContain('encryptedPayload');
     expect(await deleteConnection(pool, row.id, DEFAULT_WORKSPACE_ID)).toBe(true);
     expect(await deleteConnection(pool, row.id, DEFAULT_WORKSPACE_ID)).toBe(false);
-    expect(await getConnectionWithPayload(pool, row.id)).toBeNull();
+    expect(await getConnectionWithPayload(pool, row.id, DEFAULT_WORKSPACE_ID)).toBeNull();
   });
 
   test('defaults to the legacy version and reports it, with the workspace, on read', async () => {
@@ -65,7 +65,7 @@ describe('connections repo', () => {
       name: 'Legacy',
       encryptedPayload: encryptSecret('{}', key),
     });
-    const read = await getConnectionWithPayload(pool, row.id);
+    const read = await getConnectionWithPayload(pool, row.id, DEFAULT_WORKSPACE_ID);
     expect(read!.encVersion).toBe(0);
     expect(read!.workspaceId).toBe(DEFAULT_WORKSPACE_ID);
   });
@@ -78,7 +78,7 @@ describe('connections repo', () => {
       encryptedPayload: Buffer.from([1, 2, 3]),
       encVersion: 1,
     });
-    expect((await getConnectionWithPayload(pool, row.id))!.encVersion).toBe(1);
+    expect((await getConnectionWithPayload(pool, row.id, DEFAULT_WORKSPACE_ID))!.encVersion).toBe(1);
   });
 
   test('countPublishedRefs finds connectionRef inside published versions', async () => {
