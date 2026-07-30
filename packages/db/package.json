@@ -12,6 +12,7 @@
     "migrate": "tsx src/migrateCli.ts"
   },
   "dependencies": {
+    "@google-cloud/kms": "^5.7.0",
     "@xperiment/plans": "workspace:*",
     "pg": "^8.12.0"
   },
