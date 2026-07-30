@@ -1,5 +1,5 @@
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, deriveTriggerKey, decryptSecret, getWorkflowCallback, runMigrations } from '@xperiment/db';
+import { createPool, deriveLegacyKey, decryptSecret, getWorkflowCallback, runMigrations } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -9,7 +9,7 @@ import { createAuthedUser, type AuthedUser } from './authHelpers.js';
 let pool: Pool;
 let app: FastifyInstance;
 let auth: AuthedUser;
-const triggerKey = deriveTriggerKey('xperiment-dev-trigger-secret-change-me');
+const triggerKey = deriveLegacyKey('xperiment-dev-trigger-secret-change-me');
 
 beforeAll(async () => {
   pool = createPool();

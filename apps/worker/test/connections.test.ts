@@ -3,7 +3,7 @@ import {
   createConnection,
   DEFAULT_WORKSPACE_ID,
   createPool,
-  deriveTriggerKey,
+  deriveLegacyKey,
   encryptSecret,
   latestNodeStates,
   runMigrations,
@@ -17,7 +17,7 @@ import { queueNode, seedExecution, truncateAll } from './helpers.js';
 
 let pool: Pool;
 let deps: WorkerDeps;
-const credentialsKey = deriveTriggerKey('xperiment-dev-credentials-secret-change-me');
+const credentialsKey = deriveLegacyKey('xperiment-dev-credentials-secret-change-me');
 const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:dev_password_change_me@localhost:5432/xperiment';
 
 beforeAll(async () => {

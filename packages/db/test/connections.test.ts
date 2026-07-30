@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { createPool, DEFAULT_WORKSPACE_ID, decryptSecret, deriveTriggerKey, encryptSecret, runMigrations } from '../src/index.js';
+import { createPool, DEFAULT_WORKSPACE_ID, decryptSecret, deriveLegacyKey, encryptSecret, runMigrations } from '../src/index.js';
 import {
   countPublishedRefs,
   createConnection,
@@ -11,7 +11,7 @@ import {
 import { createVersion, createWorkflow } from '../src/repos/workflows.js';
 
 let pool: Pool;
-const key = deriveTriggerKey('xperiment-dev-credentials-secret-change-me');
+const key = deriveLegacyKey('xperiment-dev-credentials-secret-change-me');
 
 beforeAll(async () => {
   pool = createPool();

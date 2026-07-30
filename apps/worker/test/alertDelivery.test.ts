@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import {
   createAlertRule,
   createPool,
-  deriveTriggerKey,
+  deriveLegacyKey,
   encryptSecret,
   fireAlert,
   listAlertEvents,
@@ -15,7 +15,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { runAlertDelivery, type AlertDeliveryDeps } from '../src/alertDelivery.js';
 
 const WS = '00000000-0000-0000-0000-000000000001';
-const alertKey = deriveTriggerKey('xperiment-dev-trigger-secret-change-me');
+const alertKey = deriveLegacyKey('xperiment-dev-trigger-secret-change-me');
 let pool: Pool;
 let deps: AlertDeliveryDeps;
 let server: Server;

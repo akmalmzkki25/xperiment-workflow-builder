@@ -4,7 +4,7 @@ import {
   createVersion,
   createWorkflow,
   DEFAULT_WORKSPACE_ID,
-  deriveTriggerKey,
+  deriveLegacyKey,
   encryptSecret,
   getExecutionDetail,
   latestNodeStates,
@@ -21,7 +21,7 @@ import { buildGateway } from '../src/server.js';
 
 let pool: Pool;
 let app: FastifyInstance;
-const key = deriveTriggerKey('xperiment-dev-trigger-secret-change-me');
+const key = deriveLegacyKey('xperiment-dev-trigger-secret-change-me');
 
 const hookIr = {
   schemaVersion: '0.1',

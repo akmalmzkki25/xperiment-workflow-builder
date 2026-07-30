@@ -1,5 +1,5 @@
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, deriveTriggerKey, latestNodeStates, runMigrations, waitsForExecution } from '@xperiment/db';
+import { createPool, deriveLegacyKey, latestNodeStates, runMigrations, waitsForExecution } from '@xperiment/db';
 import type { WorkflowIR } from '@xperiment/ir';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -16,7 +16,7 @@ beforeAll(async () => {
     pool,
     registry: createDefaultRegistry({ allowPrivateIps: true }),
     workerId: 'w-test',
-    credentialsKey: deriveTriggerKey('xperiment-dev-credentials-secret-change-me'),
+    credentialsKey: deriveLegacyKey('xperiment-dev-credentials-secret-change-me'),
     log: () => {},
   };
 });

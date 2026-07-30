@@ -1,4 +1,4 @@
-import { createPool, deriveTriggerKey, runMigrations } from '@xperiment/db';
+import { createPool, deriveLegacyKey, runMigrations } from '@xperiment/db';
 import { createQueues, createRedisConnection, startOutboxPublisher } from '@xperiment/queue';
 import { buildGateway } from './server.js';
 
@@ -7,7 +7,7 @@ await runMigrations(pool);
 
 const app = buildGateway({
   pool,
-  triggerKey: deriveTriggerKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+  triggerKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
 });
 
 const redis = createRedisConnection();

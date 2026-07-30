@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
 import { createOpenRouterClient, type ChatClient } from '@xperiment/ai';
 import type { ConnectorRegistry } from '@xperiment/connectors';
-import { deriveTriggerKey } from '@xperiment/db';
+import { deriveLegacyKey } from '@xperiment/db';
 import { providerFor, type PaymentProvider } from '@xperiment/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
@@ -80,10 +80,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     paymentWebhookSecret: deps.paymentWebhookSecret ?? process.env['PAYMENT_WEBHOOK_SECRET'] ?? null,
     gatewayUrl: deps.gatewayUrl ?? process.env['GATEWAY_URL'] ?? 'http://localhost:3003',
     triggerKey:
-      deps.triggerKey ?? deriveTriggerKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+      deps.triggerKey ?? deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
     credentialsKey:
       deps.credentialsKey ??
-      deriveTriggerKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+      deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
     ai: resolveAiConfig(deps.ai),
     aiClientFactory: deps.aiClientFactory ?? createOpenRouterClient,
   };

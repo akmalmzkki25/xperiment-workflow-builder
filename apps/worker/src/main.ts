@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, deriveTriggerKey, runMigrations } from '@xperiment/db';
+import { createPool, deriveLegacyKey, runMigrations } from '@xperiment/db';
 import {
   createQueues,
   createRedisConnection,
@@ -23,7 +23,7 @@ const deps: WorkerDeps = {
   pool,
   registry: createDefaultRegistry({ allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true' }),
   workerId: `worker-${randomUUID().slice(0, 8)}`,
-  credentialsKey: deriveTriggerKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
+  credentialsKey: deriveLegacyKey(process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me'),
   log: (msg, extra) => logger.info(extra ?? {}, msg),
 };
 
@@ -42,7 +42,7 @@ taskWorker.on('failed', (job, err) => logger.error({ jobId: job?.id, err: err.me
 
 const callbackDeps: CallbackDeps = {
   pool,
-  triggerKey: deriveTriggerKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+  triggerKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
   allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true',
   log: deps.log,
 };
@@ -55,7 +55,7 @@ callbackWorker.on('failed', (job, err) => logger.warn({ jobId: job?.id, err: err
 
 const alertDeps: AlertDeliveryDeps = {
   pool,
-  alertKey: deriveTriggerKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
+  alertKey: deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
   allowPrivateIps: process.env['HTTP_ALLOW_PRIVATE_IPS'] === 'true',
   log: deps.log,
 };

@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { createDefaultRegistry } from '@xperiment/connectors';
 import {
   createPool,
-  deriveTriggerKey,
+  deriveLegacyKey,
   fetchUnpublished,
   latestNodeStates,
   runMigrations,
@@ -26,7 +26,7 @@ beforeAll(async () => {
     pool,
     registry: createDefaultRegistry({ allowPrivateIps: true }),
     workerId: 'w-test',
-    credentialsKey: deriveTriggerKey('xperiment-dev-credentials-secret-change-me'),
+    credentialsKey: deriveLegacyKey('xperiment-dev-credentials-secret-change-me'),
     log: () => {},
   };
   server = createServer((req, res) => {

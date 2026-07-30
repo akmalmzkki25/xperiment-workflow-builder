@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { createPool, deriveTriggerKey, encryptSecret, runMigrations, setWorkflowCallback } from '@xperiment/db';
+import { createPool, deriveLegacyKey, encryptSecret, runMigrations, setWorkflowCallback } from '@xperiment/db';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { runCallback, type CallbackDeps } from '../src/callback.js';
@@ -8,7 +8,7 @@ import { truncateAll } from './helpers.js';
 
 let pool: Pool;
 let deps: CallbackDeps;
-const triggerKey = deriveTriggerKey('xperiment-dev-trigger-secret-change-me');
+const triggerKey = deriveLegacyKey('xperiment-dev-trigger-secret-change-me');
 
 let server: Server;
 let baseUrl: string;

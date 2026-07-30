@@ -4,7 +4,7 @@ export { withTx } from './tx.js';
 export * from './repos/workflows.js';
 export * from './repos/executions.js';
 export * from './repos/outbox.js';
-export { deriveTriggerKey, encryptSecret, decryptSecret } from './crypto.js';
+export { deriveLegacyKey, encryptSecret, decryptSecret, openBytes, sealBytes } from './crypto.js';
 export * from './repos/triggers.js';
 export * from './repos/connections.js';
 export * from './repos/auth.js';
