@@ -106,9 +106,14 @@ describe('workspaces, memberships, invites', () => {
       role: 'builder',
       expiresAt: new Date(Date.now() + 60_000),
     });
-    expect(await acceptInvite(pool, inv.hash, joiner.id)).toEqual({ outcome: 'joined', workspaceId: ws.id });
+    expect(await acceptInvite(pool, inv.hash, joiner.id, SYSTEM_ACTOR)).toMatchObject({
+      outcome: 'joined',
+      workspaceId: ws.id,
+      role: 'builder',
+      alreadyMember: false,
+    });
     expect(await getMembership(pool, ws.id, joiner.id)).toBe('builder');
-    expect(await acceptInvite(pool, inv.hash, joiner.id)).toEqual({ outcome: 'invalid' }); // used
+    expect(await acceptInvite(pool, inv.hash, joiner.id, SYSTEM_ACTOR)).toEqual({ outcome: 'invalid' }); // used
     const stale = generateToken('qs');
     await createInvite(pool, {
       workspaceId: ws.id,
@@ -116,7 +121,7 @@ describe('workspaces, memberships, invites', () => {
       role: 'viewer',
       expiresAt: new Date(Date.now() - 1000),
     });
-    expect(await acceptInvite(pool, stale.hash, joiner.id)).toEqual({ outcome: 'invalid' }); // expired
+    expect(await acceptInvite(pool, stale.hash, joiner.id, SYSTEM_ACTOR)).toEqual({ outcome: 'invalid' }); // expired
     await addMember(pool, { workspaceId: ws.id, userId: joiner.id, role: 'admin' });
     expect(await getMembership(pool, ws.id, joiner.id)).toBe('admin'); // upsert role
   });

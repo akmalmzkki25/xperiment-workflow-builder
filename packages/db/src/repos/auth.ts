@@ -130,18 +130,27 @@ export async function addMember(db: Db, args: { workspaceId: string; userId: str
   );
 }
 
+/**
+ * Returns the invite id so an audit row can target it. The row is otherwise keyed by
+ * token_hash, which must never be logged, so without this both invite actions would have a
+ * null target and the (workspace_id, target_type, target_id) index could not follow one
+ * invite from creation to acceptance.
+ */
 export async function createInvite(
   db: Db,
   args: { workspaceId: string; tokenHash: string; role: Role; expiresAt: Date },
-): Promise<void> {
-  await db.query(
-    `INSERT INTO workspace_invites (workspace_id, token_hash, role, expires_at) VALUES ($1, $2, $3, $4)`,
+): Promise<{ id: string }> {
+  const r = await db.query(
+    `INSERT INTO workspace_invites (workspace_id, token_hash, role, expires_at) VALUES ($1, $2, $3, $4)
+     RETURNING id`,
     [args.workspaceId, args.tokenHash, args.role, args.expiresAt],
   );
+  return { id: (r.rows[0] as { id: string }).id };
 }
 
 export type AcceptInviteResult =
-  | { outcome: 'joined'; workspaceId: string }
+  /** `alreadyMember` matters: the membership insert is ON CONFLICT DO NOTHING, so a re-join grants nothing. */
+  | { outcome: 'joined'; workspaceId: string; inviteId: string; role: Role; alreadyMember: boolean }
   | { outcome: 'invalid' }
   | { outcome: 'quota_exceeded'; used: number; limit: number };
 
@@ -154,15 +163,20 @@ export type AcceptInviteResult =
  * check belongs — and it shares `updateMemberRole`'s workspace advisory lock, so
  * concurrent redemptions cannot both read the same pre-join count.
  */
-export async function acceptInvite(pool: pg.Pool, tokenHash: string, userId: string): Promise<AcceptInviteResult> {
+export async function acceptInvite(
+  pool: pg.Pool,
+  tokenHash: string,
+  userId: string,
+  actor: AuditActor,
+): Promise<AcceptInviteResult> {
   return withTx(pool, async (client) => {
     const invite = await client.query(
-      `SELECT workspace_id, role FROM workspace_invites
+      `SELECT id, workspace_id, role FROM workspace_invites
        WHERE token_hash = $1 AND accepted_by IS NULL AND expires_at > now() FOR UPDATE`,
       [tokenHash],
     );
     if (!invite.rowCount) return { outcome: 'invalid' };
-    const row = invite.rows[0] as { workspace_id: string; role: Role };
+    const row = invite.rows[0] as { id: string; workspace_id: string; role: Role };
     const workspaceId = row.workspace_id;
 
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`workspace_role:${workspaceId}`]);
@@ -172,7 +186,8 @@ export async function acceptInvite(pool: pg.Pool, tokenHash: string, userId: str
       `SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
       [workspaceId, userId],
     );
-    if (!already.rowCount) {
+    const alreadyMember = (already.rowCount ?? 0) > 0;
+    if (!alreadyMember) {
       const plan = await getWorkspacePlan(client, workspaceId);
       const limit = resolveLimits(plan.planCode, plan.limitOverrides).members;
       if (limit !== null && !plan.allowOverage) {
@@ -190,7 +205,17 @@ export async function acceptInvite(pool: pg.Pool, tokenHash: string, userId: str
        ON CONFLICT (workspace_id, user_id) DO NOTHING`,
       [workspaceId, userId, row.role],
     );
-    return { outcome: 'joined', workspaceId };
+    // Same transaction as the membership change, and alreadyMember is recorded because the
+    // insert above does nothing for an existing member — a row implying a grant would lie.
+    await appendAuditEvent(client, {
+      ...actor,
+      workspaceId,
+      action: 'invite.accept',
+      targetType: 'invite',
+      targetId: row.id,
+      metadata: { role: row.role, alreadyMember },
+    });
+    return { outcome: 'joined', workspaceId, inviteId: row.id, role: row.role, alreadyMember };
   });
 }
 

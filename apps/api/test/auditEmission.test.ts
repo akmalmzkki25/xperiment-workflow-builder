@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, runMigrations } from '@xperiment/db';
+import { createPool, runMigrations, setWorkspacePlan } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -16,6 +16,10 @@ beforeAll(async () => {
   await runMigrations(pool);
   app = buildServer({ pool, registry: createDefaultRegistry() });
   owner = await createAuthedUser(app);
+  // These tests seat many members in one workspace to exercise the emission sites. The
+  // free plan allows 2, so without this the invite route 402s on seat quota before it ever
+  // reaches the code under test. `business` is the only plan with members: null.
+  await setWorkspacePlan(pool, { workspaceId: owner.workspaceId, planCode: 'business' });
 });
 afterAll(async () => {
   await app.close();
@@ -117,5 +121,76 @@ describe('member.role_change', () => {
       actor_api_key_id: key.id,
       actor_user_id: null,
     });
+  });
+});
+
+describe('invite.create and invite.accept', () => {
+  test('creating an invite records the role and never the token', async () => {
+    const res = await owner.inject({ method: 'POST', url: '/v1/workspaces/invites', payload: { role: 'builder' } });
+    expect(res.statusCode).toBe(201);
+    const token = res.json<{ token: string }>().token;
+    const found = await rows('invite.create');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.target_type).toBe('invite');
+    expect(found[0]!.target_id).not.toBeNull();
+    expect(found[0]!.metadata).toMatchObject({ role: 'builder' });
+    // The token is shown once to the caller and must never be recoverable from the log.
+    expect(JSON.stringify(found[0])).not.toContain(token);
+  });
+
+  test('accepting an invite records the granted role against the same invite id', async () => {
+    const created = await owner.inject({
+      method: 'POST',
+      url: '/v1/workspaces/invites',
+      payload: { role: 'operator' },
+    });
+    const token = created.json<{ token: string }>().token;
+    const inviteId = (await rows('invite.create'))[0]!.target_id;
+    const joiner = await createAuthedUser(app);
+    const res = await joiner.inject({ method: 'POST', url: '/v1/invites/accept', payload: { token } });
+    expect(res.statusCode).toBe(200);
+    const found = await rows('invite.accept');
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      target_type: 'invite',
+      target_id: inviteId,
+      actor_kind: 'user',
+      actor_user_id: joiner.userId,
+      metadata: { role: 'operator', alreadyMember: false },
+    });
+  });
+
+  test('re-accepting as an existing member records alreadyMember and grants nothing', async () => {
+    const member = await addMemberWithRole(app, pool, owner.workspaceId, 'viewer');
+    const created = await owner.inject({ method: 'POST', url: '/v1/workspaces/invites', payload: { role: 'admin' } });
+    const token = created.json<{ token: string }>().token;
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    const res = await member.inject({ method: 'POST', url: '/v1/invites/accept', payload: { token } });
+    expect(res.statusCode).toBe(200);
+    expect((await rows('invite.accept'))[0]!.metadata).toMatchObject({ alreadyMember: true });
+    // ON CONFLICT DO NOTHING: the existing role is untouched, so the row must not imply a grant.
+    const role = await pool.query<{ role: string }>(
+      `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+      [owner.workspaceId, member.userId],
+    );
+    expect(role.rows[0]!.role).toBe('viewer');
+  });
+
+  test('an invalid token emits nothing', async () => {
+    const joiner = await createAuthedUser(app);
+    const res = await joiner.inject({ method: 'POST', url: '/v1/invites/accept', payload: { token: 'qs_nonsense' } });
+    expect(res.statusCode).toBe(404);
+    const any = await pool.query<{ c: string }>(
+      `SELECT count(*) AS c FROM audit_events WHERE action = 'invite.accept'`,
+    );
+    expect(any.rows[0]!.c).toBe('0');
+  });
+
+  test('a refused owner-grant invite emits nothing', async () => {
+    const admin = await addMemberWithRole(app, pool, owner.workspaceId, 'admin');
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    const res = await admin.inject({ method: 'POST', url: '/v1/workspaces/invites', payload: { role: 'owner' } });
+    expect(res.statusCode).toBe(403);
+    expect(await rows('invite.create')).toHaveLength(0);
   });
 });

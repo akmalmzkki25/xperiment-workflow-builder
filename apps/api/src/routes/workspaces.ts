@@ -1,5 +1,6 @@
 import {
   acceptInvite,
+  appendAuditEvent,
   createApiKey,
   createInvite,
   createWorkspaceWithOwner,
@@ -10,6 +11,7 @@ import {
   listMemberships,
   revokeApiKey,
   updateMemberRole,
+  withTx,
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -49,11 +51,23 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
       return sendProblem(reply, 403, 'Forbidden', 'Only an owner can grant the owner role');
     }
     const { token, hash } = generateToken('qs');
-    await createInvite(deps.pool, {
-      workspaceId: ctx.workspaceId,
-      tokenHash: hash,
-      role: parsed.data.role,
-      expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+    const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+    await withTx(deps.pool, async (client) => {
+      const invite = await createInvite(client, {
+        workspaceId: ctx.workspaceId,
+        tokenHash: hash,
+        role: parsed.data.role,
+        expiresAt,
+      });
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'invite.create',
+        targetType: 'invite',
+        targetId: invite.id,
+        // Never the token or its hash.
+        metadata: { role: parsed.data.role, expiresAt: expiresAt.toISOString() },
+      });
     });
     // Email delivery is deferred; the caller distributes the token.
     return reply.status(201).send({ token });
@@ -64,7 +78,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
     if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only');
     const parsed = z.object({ token: z.string().min(1) }).strict().safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    const result = await acceptInvite(deps.pool, hashToken(parsed.data.token), ctx.userId);
+    const result = await acceptInvite(deps.pool, hashToken(parsed.data.token), ctx.userId, auditActor(req));
     if (result.outcome === 'invalid') return sendProblem(reply, 404, 'Invite invalid or expired');
     if (result.outcome === 'quota_exceeded') {
       return sendProblem(
