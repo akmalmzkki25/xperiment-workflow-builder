@@ -30,7 +30,11 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
     if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only');
     const parsed = z.object({ name: z.string().min(1).max(200) }).strict().safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    const ws = await createWorkspaceWithOwner(deps.pool, { name: parsed.data.name, userId: ctx.userId });
+    const ws = await createWorkspaceWithOwner(deps.pool, {
+      name: parsed.data.name,
+      userId: ctx.userId,
+      actor: auditActor(req),
+    });
     return reply.status(201).send(ws);
   });
 

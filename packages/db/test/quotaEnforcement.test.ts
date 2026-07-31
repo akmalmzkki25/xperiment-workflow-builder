@@ -43,7 +43,7 @@ interface Seeded {
 /** A workspace holding one published workflow, with `executionsPerMonth` forced to `cap`. */
 async function seeded(cap: number): Promise<Seeded> {
   const user = await createUser(pool, { email: `q-${randomUUID()}@xperiment.test`, passwordHash: 'x' });
-  const ws = await createWorkspaceWithOwner(pool, { name: 'Q', userId: user!.id });
+  const ws = await createWorkspaceWithOwner(pool, { name: 'Q', userId: user!.id, actor: { actorKind: 'system' } });
   const wf = await createWorkflow(pool, { workspaceId: ws.id, name: 'Q' });
   await updateDraft(pool, { workflowId: wf.id, definition: IR, expectedRevision: 1 });
   // The hash is opaque here — @xperiment/db deliberately does not depend on @xperiment/ir.

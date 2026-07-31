@@ -74,7 +74,7 @@ export async function revokeAllSessions(db: Db, userId: string): Promise<void> {
 
 export async function createWorkspaceWithOwner(
   pool: pg.Pool,
-  args: { name: string; userId: string },
+  args: { name: string; userId: string; actor: AuditActor },
 ): Promise<{ id: string; name: string }> {
   return withTx(pool, async (client) => {
     const ws = await client.query(`INSERT INTO workspaces (id, name) VALUES (gen_random_uuid(), $1) RETURNING id, name`, [
@@ -93,6 +93,16 @@ export async function createWorkspaceWithOwner(
        VALUES ($1, 'Plan quota', 'quota', '{}'::jsonb, true, 720)`,
       [row.id],
     );
+    // Same transaction as the workspace itself: the audit row's workspace_id foreign key
+    // is satisfied because both commit together.
+    await appendAuditEvent(client, {
+      ...args.actor,
+      workspaceId: row.id,
+      action: 'workspace.create',
+      targetType: 'workspace',
+      targetId: row.id,
+      metadata: { name: row.name },
+    });
     return row;
   });
 }

@@ -72,7 +72,7 @@ beforeEach(async () => {
   );
   const user = (await createUser(pool, { email: `w-${randomBytes(4).toString('hex')}@x.test`, passwordHash: 'h' }))!;
   userId = user.id;
-  const ws = await createWorkspaceWithOwner(pool, { name: 'W', userId });
+  const ws = await createWorkspaceWithOwner(pool, { name: 'W', userId, actor: { actorKind: 'system' } });
   workspaceId = ws.id;
 });
 
@@ -212,7 +212,7 @@ describe('execution_waits repo', () => {
       fallback: 'fail',
       message: 'x',
     });
-    const other = await createWorkspaceWithOwner(pool, { name: 'Other', userId });
+    const other = await createWorkspaceWithOwner(pool, { name: 'Other', userId, actor: { actorKind: 'system' } });
     expect(await listOpenApprovals(pool, { workspaceId: other.id, limit: 10 })).toHaveLength(0);
   });
 });

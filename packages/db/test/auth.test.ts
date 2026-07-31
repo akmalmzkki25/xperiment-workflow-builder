@@ -89,7 +89,7 @@ describe('users and sessions', () => {
 describe('workspaces, memberships, invites', () => {
   test('createWorkspaceWithOwner is atomic and listed in memberships', async () => {
     const u = (await createUser(pool, { email: 'c@x.test', passwordHash: 'h' }))!;
-    const ws = await createWorkspaceWithOwner(pool, { name: 'Tim C', userId: u.id });
+    const ws = await createWorkspaceWithOwner(pool, { name: 'Tim C', userId: u.id, actor: SYSTEM_ACTOR });
     const memberships = await listMemberships(pool, u.id);
     expect(memberships).toEqual([{ workspaceId: ws.id, name: 'Tim C', role: 'owner' }]);
     expect(await getMembership(pool, ws.id, u.id)).toBe('owner');
@@ -98,7 +98,7 @@ describe('workspaces, memberships, invites', () => {
   test('invite accept adds a member once; expired/used invites return null', async () => {
     const owner = (await createUser(pool, { email: 'o@x.test', passwordHash: 'h' }))!;
     const joiner = (await createUser(pool, { email: 'j@x.test', passwordHash: 'h' }))!;
-    const ws = await createWorkspaceWithOwner(pool, { name: 'W', userId: owner.id });
+    const ws = await createWorkspaceWithOwner(pool, { name: 'W', userId: owner.id, actor: SYSTEM_ACTOR });
     const inv = generateToken('qs');
     await createInvite(pool, {
       workspaceId: ws.id,
@@ -130,7 +130,7 @@ describe('workspaces, memberships, invites', () => {
 describe('api keys and auth events', () => {
   test('api key lifecycle with last_used update and revocation', async () => {
     const u = (await createUser(pool, { email: 'k@x.test', passwordHash: 'h' }))!;
-    const ws = await createWorkspaceWithOwner(pool, { name: 'W', userId: u.id });
+    const ws = await createWorkspaceWithOwner(pool, { name: 'W', userId: u.id, actor: SYSTEM_ACTOR });
     const key = generateToken('qk');
     const row = await createApiKey(pool, { workspaceId: ws.id, name: 'ci', keyHash: key.hash });
     expect(row.lastUsedAt).toBeNull();
@@ -151,7 +151,7 @@ describe('rbac member + api key roles', () => {
 
   test('api keys carry a role, defaulting to builder', async () => {
     const u = await newUser();
-    const ws = await createWorkspaceWithOwner(pool, { name: 'K', userId: u.id });
+    const ws = await createWorkspaceWithOwner(pool, { name: 'K', userId: u.id, actor: SYSTEM_ACTOR });
     const dflt = await createApiKey(pool, { workspaceId: ws.id, name: 'd', keyHash: 'h-default' });
     expect(dflt.role).toBe('builder');
     const scoped = await createApiKey(pool, { workspaceId: ws.id, name: 'v', keyHash: 'h-viewer', role: 'viewer' });
@@ -163,7 +163,7 @@ describe('rbac member + api key roles', () => {
   test('listMembers returns each member with email and role', async () => {
     const owner = await newUser();
     const other = await newUser();
-    const ws = await createWorkspaceWithOwner(pool, { name: 'M', userId: owner.id });
+    const ws = await createWorkspaceWithOwner(pool, { name: 'M', userId: owner.id, actor: SYSTEM_ACTOR });
     await addMember(pool, { workspaceId: ws.id, userId: other.id, role: 'operator' });
     const members = await listMembers(pool, ws.id);
     expect(members).toHaveLength(2);
@@ -175,7 +175,7 @@ describe('rbac member + api key roles', () => {
     const owner = await newUser();
     const other = await newUser();
     const stranger = await newUser();
-    const ws = await createWorkspaceWithOwner(pool, { name: 'R', userId: owner.id });
+    const ws = await createWorkspaceWithOwner(pool, { name: 'R', userId: owner.id, actor: SYSTEM_ACTOR });
     await addMember(pool, { workspaceId: ws.id, userId: other.id, role: 'viewer' });
 
     expect(
@@ -207,7 +207,7 @@ describe('rbac member + api key roles', () => {
     for (let i = 0; i < 4; i++) {
       const a = await newUser();
       const b = await newUser();
-      const ws = await createWorkspaceWithOwner(pool, { name: `Race${i}`, userId: a.id });
+      const ws = await createWorkspaceWithOwner(pool, { name: `Race${i}`, userId: a.id, actor: SYSTEM_ACTOR });
       await addMember(pool, { workspaceId: ws.id, userId: b.id, role: 'owner' });
       pairs.push({ wsId: ws.id, a: a.id, b: b.id });
     }
@@ -230,7 +230,7 @@ describe('rbac member + api key roles', () => {
   test('an invalid role is rejected by the CHECK constraint', async () => {
     const owner = await newUser();
     const other = await newUser();
-    const ws = await createWorkspaceWithOwner(pool, { name: 'C', userId: owner.id });
+    const ws = await createWorkspaceWithOwner(pool, { name: 'C', userId: owner.id, actor: SYSTEM_ACTOR });
     await expect(
       pool.query(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'superuser')`, [
         ws.id,

@@ -194,3 +194,60 @@ describe('invite.create and invite.accept', () => {
     expect(await rows('invite.create')).toHaveLength(0);
   });
 });
+
+describe('workspace.create', () => {
+  test('records the new workspace against itself, attributed to its creator', async () => {
+    const creator = await createAuthedUser(app);
+    const res = await creator.inject({ method: 'POST', url: '/v1/workspaces', payload: { name: 'Second' } });
+    expect(res.statusCode).toBe(201);
+    const created = res.json<{ id: string; name: string }>();
+    const r = await pool.query<{ target_id: string; actor_user_id: string; metadata: Record<string, unknown> }>(
+      `SELECT target_id, actor_user_id, metadata FROM audit_events
+        WHERE workspace_id = $1 AND action = 'workspace.create'`,
+      [created.id],
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({
+      target_id: created.id,
+      actor_user_id: creator.userId,
+      metadata: { name: 'Second' },
+    });
+  });
+
+  test('registration records the workspace it creates, attributed to the new user', async () => {
+    // /v1/auth/register sits outside the auth plugin, so this path cannot use
+    // auditActor(req) and supplies the actor explicitly.
+    const email = `reg-${randomUUID()}@xperiment.test`;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/register',
+      payload: { email, password: 'password-123' },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ user: { id: string }; workspace: { id: string } }>();
+    const r = await pool.query<{ actor_user_id: string; actor_label: string | null; target_id: string }>(
+      `SELECT actor_user_id, actor_label, target_id FROM audit_events
+        WHERE workspace_id = $1 AND action = 'workspace.create'`,
+      [body.workspace.id],
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({
+      actor_user_id: body.user.id,
+      actor_label: email,
+      target_id: body.workspace.id,
+    });
+  });
+
+  test('an invalid name emits nothing', async () => {
+    const creator = await createAuthedUser(app);
+    const before = await pool.query<{ c: string }>(
+      `SELECT count(*) AS c FROM audit_events WHERE action = 'workspace.create'`,
+    );
+    const res = await creator.inject({ method: 'POST', url: '/v1/workspaces', payload: { name: '' } });
+    expect(res.statusCode).toBe(400);
+    const after = await pool.query<{ c: string }>(
+      `SELECT count(*) AS c FROM audit_events WHERE action = 'workspace.create'`,
+    );
+    expect(after.rows[0]!.c).toBe(before.rows[0]!.c);
+  });
+});

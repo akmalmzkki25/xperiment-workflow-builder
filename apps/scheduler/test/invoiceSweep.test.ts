@@ -20,7 +20,7 @@ afterAll(async () => {
 /** A workspace back-dated into the closed period, on `planCode`, with `executions` used. */
 async function seed(planCode: string, executions: number): Promise<string> {
   const user = await createUser(pool, { email: `sw-${randomUUID()}@xperiment.test`, passwordHash: 'x' });
-  const ws = await createWorkspaceWithOwner(pool, { name: 'Sweep', userId: user!.id });
+  const ws = await createWorkspaceWithOwner(pool, { name: 'Sweep', userId: user!.id, actor: { actorKind: 'system' } });
   await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [ws.id, period.start]);
   await pool.query(`UPDATE workspace_plans SET plan_code = $2 WHERE workspace_id = $1`, [ws.id, planCode]);
   await pool.query(

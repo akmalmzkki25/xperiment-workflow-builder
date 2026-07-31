@@ -53,6 +53,8 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
     const workspace = await createWorkspaceWithOwner(deps.pool, {
       name: `${parsed.data.email.split('@')[0]}'s workspace`,
       userId: user.id,
+      // Outside the auth plugin, so there is no authContext for auditActor(req) to read.
+      actor: { ...requestFacts(req), actorKind: 'user', actorUserId: user.id, actorLabel: user.email },
     });
     const { token, hash } = generateToken('qs');
     await createSession(deps.pool, { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
