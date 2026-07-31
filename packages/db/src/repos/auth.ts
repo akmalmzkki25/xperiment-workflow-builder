@@ -2,6 +2,7 @@ import { resolveLimits } from '@xperiment/plans';
 import type pg from 'pg';
 import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
+import { appendAuditEvent, type AuditActor } from './audit.js';
 import { getWorkspacePlan } from './entitlements.js';
 
 export type Role = 'viewer' | 'builder' | 'operator' | 'billing' | 'admin' | 'owner';
@@ -272,6 +273,12 @@ export async function listMembers(
   }));
 }
 
+/** `previousRole` is what the audit row needs: "was viewer, now admin". */
+export type UpdateMemberRoleResult =
+  | { outcome: 'ok'; previousRole: Role }
+  | { outcome: 'not_member' }
+  | { outcome: 'last_owner' };
+
 /**
  * Change a member's role. Refuses to demote the last owner.
  *
@@ -281,32 +288,47 @@ export async function listMembers(
  * an unrecoverable state, since every owner-granting route requires an owner.
  * A workspace-scoped advisory lock serializes all role changes within a
  * workspace instead, and (unlike locking the owner set) cannot deadlock.
+ *
+ * The actor is passed in rather than the caller supplying a transaction client,
+ * because `pg_advisory_xact_lock` only holds until commit: a caller who passed a
+ * pool would acquire and instantly release it, and the guard above would
+ * silently stop working. Owning the transaction is the point.
  */
 export async function updateMemberRole(
   pool: pg.Pool,
-  args: { workspaceId: string; userId: string; role: Role },
-): Promise<'ok' | 'not_member' | 'last_owner'> {
+  args: { workspaceId: string; userId: string; role: Role; actor: AuditActor },
+): Promise<UpdateMemberRoleResult> {
   return withTx(pool, async (client) => {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`workspace_role:${args.workspaceId}`]);
     const current = await client.query(
       `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE`,
       [args.workspaceId, args.userId],
     );
-    if (!current.rowCount) return 'not_member';
+    if (!current.rowCount) return { outcome: 'not_member' };
     const was = (current.rows[0] as { role: Role }).role;
     if (was === 'owner' && args.role !== 'owner') {
       const owners = await client.query(
         `SELECT count(*)::int AS c FROM workspace_members WHERE workspace_id = $1 AND role = 'owner'`,
         [args.workspaceId],
       );
-      if ((owners.rows[0] as { c: number }).c <= 1) return 'last_owner';
+      if ((owners.rows[0] as { c: number }).c <= 1) return { outcome: 'last_owner' };
     }
     await client.query(`UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2`, [
       args.workspaceId,
       args.userId,
       args.role,
     ]);
-    return 'ok';
+    // Same transaction and the same advisory lock as the change itself, so the record
+    // cannot survive a rollback nor be lost when the change commits.
+    await appendAuditEvent(client, {
+      ...args.actor,
+      workspaceId: args.workspaceId,
+      action: 'member.role_change',
+      targetType: 'user',
+      targetId: args.userId,
+      metadata: { previousRole: was, newRole: args.role },
+    });
+    return { outcome: 'ok', previousRole: was };
   });
 }
 

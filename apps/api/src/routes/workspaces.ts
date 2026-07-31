@@ -13,7 +13,7 @@ import {
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, requirePermission } from '../auth/plugin.js';
+import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { quotaBlocks } from './plan.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
@@ -118,9 +118,10 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
       workspaceId: ctx.workspaceId,
       userId,
       role: parsed.data.role,
+      actor: auditActor(req),
     });
-    if (result === 'not_member') return sendProblem(reply, 404, 'Member not found');
-    if (result === 'last_owner') {
+    if (result.outcome === 'not_member') return sendProblem(reply, 404, 'Member not found');
+    if (result.outcome === 'last_owner') {
       return sendProblem(reply, 409, 'Cannot demote the last owner', 'Promote another owner first');
     }
     return { userId, role: parsed.data.role };

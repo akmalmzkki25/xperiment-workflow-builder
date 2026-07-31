@@ -25,6 +25,9 @@ import {
 
 let pool: Pool;
 
+/** These tests drive the repo directly, with no request behind them. */
+const SYSTEM_ACTOR = { actorKind: 'system' } as const;
+
 beforeAll(async () => {
   pool = createPool();
   await runMigrations(pool);
@@ -170,16 +173,24 @@ describe('rbac member + api key roles', () => {
     const ws = await createWorkspaceWithOwner(pool, { name: 'R', userId: owner.id });
     await addMember(pool, { workspaceId: ws.id, userId: other.id, role: 'viewer' });
 
-    expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: other.id, role: 'billing' })).toBe('ok');
+    expect(
+      await updateMemberRole(pool, { workspaceId: ws.id, userId: other.id, role: 'billing', actor: SYSTEM_ACTOR }),
+    ).toMatchObject({ outcome: 'ok', previousRole: 'viewer' });
     expect((await listMembers(pool, ws.id)).find((m) => m.userId === other.id)?.role).toBe('billing');
 
     // the only owner cannot be demoted
-    expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: owner.id, role: 'viewer' })).toBe('last_owner');
+    expect(
+      await updateMemberRole(pool, { workspaceId: ws.id, userId: owner.id, role: 'viewer', actor: SYSTEM_ACTOR }),
+    ).toMatchObject({ outcome: 'last_owner' });
     // once a second owner exists, demotion is allowed
-    await updateMemberRole(pool, { workspaceId: ws.id, userId: other.id, role: 'owner' });
-    expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: owner.id, role: 'viewer' })).toBe('ok');
+    await updateMemberRole(pool, { workspaceId: ws.id, userId: other.id, role: 'owner', actor: SYSTEM_ACTOR });
+    expect(
+      await updateMemberRole(pool, { workspaceId: ws.id, userId: owner.id, role: 'viewer', actor: SYSTEM_ACTOR }),
+    ).toMatchObject({ outcome: 'ok', previousRole: 'owner' });
 
-    expect(await updateMemberRole(pool, { workspaceId: ws.id, userId: stranger.id, role: 'viewer' })).toBe('not_member');
+    expect(
+      await updateMemberRole(pool, { workspaceId: ws.id, userId: stranger.id, role: 'viewer', actor: SYSTEM_ACTOR }),
+    ).toMatchObject({ outcome: 'not_member' });
   });
 
   test('concurrent demotions of different owners cannot empty the owner set', async () => {
@@ -200,12 +211,12 @@ describe('rbac member + api key roles', () => {
     // owners would be demoted — a workspace nobody can ever grant `owner` in again.
     const results = await Promise.all(
       pairs.flatMap((p) => [
-        updateMemberRole(pool, { workspaceId: p.wsId, userId: p.a, role: 'viewer' }),
-        updateMemberRole(pool, { workspaceId: p.wsId, userId: p.b, role: 'viewer' }),
+        updateMemberRole(pool, { workspaceId: p.wsId, userId: p.a, role: 'viewer', actor: SYSTEM_ACTOR }),
+        updateMemberRole(pool, { workspaceId: p.wsId, userId: p.b, role: 'viewer', actor: SYSTEM_ACTOR }),
       ]),
     );
-    expect(results.filter((r) => r === 'ok')).toHaveLength(pairs.length);
-    expect(results.filter((r) => r === 'last_owner')).toHaveLength(pairs.length);
+    expect(results.filter((r) => r.outcome === 'ok')).toHaveLength(pairs.length);
+    expect(results.filter((r) => r.outcome === 'last_owner')).toHaveLength(pairs.length);
     for (const p of pairs) {
       expect((await listMembers(pool, p.wsId)).filter((m) => m.role === 'owner')).toHaveLength(1);
     }

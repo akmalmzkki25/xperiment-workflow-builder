@@ -1,4 +1,12 @@
-import { getActiveApiKey, getActiveSession, getMembership, hashToken, listMemberships, type Role } from '@xperiment/db';
+import {
+  getActiveApiKey,
+  getActiveSession,
+  getMembership,
+  hashToken,
+  listMemberships,
+  type AuditActor,
+  type Role,
+} from '@xperiment/db';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { sendProblem } from '../problem.js';
@@ -90,14 +98,7 @@ export function authOf(req: FastifyRequest): AuthContext {
  * accepts so it spreads directly. Kept here so no route re-derives it and gets the
  * user-versus-api-key distinction subtly wrong.
  */
-export function auditActor(req: FastifyRequest): {
-  actorKind: 'user' | 'api_key';
-  actorUserId: string | null;
-  actorApiKeyId: string | null;
-  requestId: string;
-  ip: string;
-  userAgent: string | null;
-} {
+export function auditActor(req: FastifyRequest): AuditActor {
   const ctx = authOf(req);
   return {
     actorKind: ctx.apiKeyId ? 'api_key' : 'user',

@@ -11,21 +11,29 @@ export type ActorKind = 'user' | 'api_key' | 'system' | 'anonymous';
  */
 export type AuditMetadata = Record<string, string | number | boolean | null>;
 
-export interface AuditEventInput {
-  workspaceId?: string | null;
+/**
+ * Who did it, and from where. Split out of AuditEventInput so a repository function can
+ * accept the actor without also accepting the action — and so apps/api's auditActor(req)
+ * has one authoritative shape to return rather than a structurally-similar literal.
+ */
+export interface AuditActor {
   actorKind: ActorKind;
   actorUserId?: string | null;
   actorApiKeyId?: string | null;
   /** Email for an anonymous attempt, or a retained label once the user row is gone. */
   actorLabel?: string | null;
+  requestId?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+}
+
+export interface AuditEventInput extends AuditActor {
+  workspaceId?: string | null;
   action: string;
   targetType?: string | null;
   targetId?: string | null;
   outcome?: 'success' | 'failure';
   metadata?: AuditMetadata;
-  requestId?: string | null;
-  ip?: string | null;
-  userAgent?: string | null;
 }
 
 export interface AuditEventRow {
