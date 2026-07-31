@@ -251,3 +251,55 @@ describe('workspace.create', () => {
     expect(after.rows[0]!.c).toBe(before.rows[0]!.c);
   });
 });
+
+describe('api_key.create and api_key.revoke', () => {
+  test('creating a key records its name and role, and never the key itself', async () => {
+    const res = await owner.inject({ method: 'POST', url: '/v1/api-keys', payload: { name: 'CI', role: 'builder' } });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ id: string; key: string }>();
+    const found = await rows('api_key.create');
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      target_type: 'api_key',
+      target_id: body.id,
+      actor_kind: 'user',
+      metadata: { name: 'CI', role: 'builder' },
+    });
+    // The key is shown once and must never be recoverable from the log.
+    expect(JSON.stringify(found[0])).not.toContain(body.key);
+  });
+
+  test('a key created without an explicit role records the default it actually got', async () => {
+    const res = await owner.inject({ method: 'POST', url: '/v1/api-keys', payload: { name: 'Default' } });
+    expect(res.statusCode).toBe(201);
+    // Recorded from the stored row, not from the request, so the audit matches reality.
+    expect((await rows('api_key.create'))[0]!.metadata).toMatchObject({ name: 'Default', role: 'builder' });
+  });
+
+  test('revoking a key is audited, and a second revoke is a 404 that emits nothing', async () => {
+    const created = await owner.inject({ method: 'POST', url: '/v1/api-keys', payload: { name: 'Temp' } });
+    const id = created.json<{ id: string }>().id;
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    expect((await owner.inject({ method: 'DELETE', url: `/v1/api-keys/${id}` })).statusCode).toBe(204);
+    expect((await owner.inject({ method: 'DELETE', url: `/v1/api-keys/${id}` })).statusCode).toBe(404);
+    const found = await rows('api_key.revoke');
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ target_type: 'api_key', target_id: id });
+  });
+
+  test('a refused owner-role key emits nothing', async () => {
+    const admin = await addMemberWithRole(app, pool, owner.workspaceId, 'admin');
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    const res = await admin.inject({ method: 'POST', url: '/v1/api-keys', payload: { name: 'X', role: 'owner' } });
+    expect(res.statusCode).toBe(403);
+    expect(await rows('api_key.create')).toHaveLength(0);
+  });
+
+  test('a viewer cannot mint a key and emits nothing', async () => {
+    const viewer = await addMemberWithRole(app, pool, owner.workspaceId, 'viewer');
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    const res = await viewer.inject({ method: 'POST', url: '/v1/api-keys', payload: { name: 'Sneaky' } });
+    expect(res.statusCode).toBe(403);
+    expect(await rows('api_key.create')).toHaveLength(0);
+  });
+});

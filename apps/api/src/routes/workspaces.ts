@@ -107,11 +107,25 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
       return sendProblem(reply, 403, 'Forbidden', 'Only an owner can grant the owner role');
     }
     const { token, hash } = generateToken('qk');
-    const row = await createApiKey(deps.pool, {
-      workspaceId: ctx.workspaceId,
-      name: parsed.data.name,
-      keyHash: hash,
-      ...(parsed.data.role ? { role: parsed.data.role } : {}),
+    const row = await withTx(deps.pool, async (client) => {
+      const created = await createApiKey(client, {
+        workspaceId: ctx.workspaceId,
+        name: parsed.data.name,
+        keyHash: hash,
+        ...(parsed.data.role ? { role: parsed.data.role } : {}),
+      });
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'api_key.create',
+        targetType: 'api_key',
+        targetId: created.id,
+        // From the stored row, not the request, so the record matches the role the key
+        // actually got — the column defaults to builder when none was asked for. Never
+        // the token or its hash.
+        metadata: { name: created.name, role: created.role },
+      });
+      return created;
     });
     return reply.status(201).send({ id: row.id, name: row.name, role: row.role, key: token }); // shown once
   });
@@ -155,7 +169,20 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
     const ctx = authOf(req);
     if (!requirePermission(reply, ctx, 'member:manage')) return;
     const { id } = req.params as { id: string };
-    const revoked = await revokeApiKey(deps.pool, id, ctx.workspaceId);
+    const revoked = await withTx(deps.pool, async (client) => {
+      // revokeApiKey's `WHERE revoked_at IS NULL` is already a compare-and-set, so a
+      // concurrent double revoke emits exactly one row.
+      const ok = await revokeApiKey(client, id, ctx.workspaceId);
+      if (!ok) return false;
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'api_key.revoke',
+        targetType: 'api_key',
+        targetId: id,
+      });
+      return true;
+    });
     if (!revoked) return sendProblem(reply, 404, 'Api key not found');
     return reply.status(204).send();
   });
