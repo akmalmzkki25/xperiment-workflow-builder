@@ -37,7 +37,18 @@ export function requirePermission(reply: FastifyReply, ctx: AuthContext, permiss
   return false;
 }
 
-const EXEMPT = new Set(['/v1/healthz', '/v1/openapi.json', '/v1/auth/register', '/v1/auth/login']);
+const EXEMPT = new Set([
+  '/v1/healthz',
+  '/v1/openapi.json',
+  '/v1/auth/register',
+  '/v1/auth/login',
+  // AUTH-002 recovery. Someone who has forgotten their password has no session to
+  // present, so these must be reachable unauthenticated or the flow is dead — the same
+  // trap the payments webhook fell into in 3O.
+  '/v1/auth/verify-email',
+  '/v1/auth/forgot-password',
+  '/v1/auth/reset-password',
+]);
 
 /**
  * Parameterised public paths. A payment provider's callback carries no bearer token —

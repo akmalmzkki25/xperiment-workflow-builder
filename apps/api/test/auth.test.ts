@@ -88,9 +88,14 @@ describe('auth flows', () => {
       `SELECT action, actor_kind, actor_user_id, metadata FROM audit_events WHERE actor_label = $1 ORDER BY id`,
       [email],
     );
-    // Registering creates the personal workspace before the register event is written, so
-    // the full trail for a new account is three rows in this order.
-    expect(rows.rows.map((r) => r.action)).toEqual(['workspace.create', 'auth.register', 'auth.login_succeeded']);
+    // The full trail for a new account: the personal workspace is created before the
+    // register event is written, and the verification mail is requested after it.
+    expect(rows.rows.map((r) => r.action)).toEqual([
+      'workspace.create',
+      'auth.register',
+      'auth.email_verify_requested',
+      'auth.login_succeeded',
+    ]);
     for (const r of rows.rows) {
       expect(r.actor_kind).toBe('user');
       expect(r.actor_user_id).toBe(userId);
