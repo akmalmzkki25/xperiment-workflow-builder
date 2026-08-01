@@ -409,6 +409,15 @@ export class ApiClient {
     return this.request('GET', '/v1/workspaces/members');
   }
 
+  listAudit(params: { limit?: number; before?: string; action?: string } = {}): Promise<AuditPage> {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set('limit', String(params.limit));
+    if (params.before) q.set('before', params.before);
+    if (params.action) q.set('action', params.action);
+    const qs = q.toString();
+    return this.request('GET', `/v1/audit${qs ? `?${qs}` : ''}`);
+  }
+
   updateMemberRole(userId: string, role: string): Promise<{ userId: string; role: string }> {
     return this.request('PUT', `/v1/workspaces/members/${userId}`, { body: { role } });
   }
@@ -466,6 +475,26 @@ export interface WorkspaceMember {
   email: string;
   role: string;
   createdAt: string;
+}
+
+export interface AuditEvent {
+  /** BIGSERIAL: arrives as a string, and doubles as the page cursor. */
+  id: string;
+  actorKind: 'user' | 'api_key' | 'system' | 'anonymous';
+  actorEmail: string | null;
+  actorApiKeyName: string | null;
+  actorLabel: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  outcome: 'success' | 'failure';
+  metadata: Record<string, string | number | boolean | null>;
+  createdAt: string;
+}
+
+export interface AuditPage {
+  items: AuditEvent[];
+  nextBefore: string | null;
 }
 
 export interface ApprovalItem {

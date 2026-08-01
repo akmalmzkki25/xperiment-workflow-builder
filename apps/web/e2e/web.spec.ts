@@ -228,3 +228,16 @@ test('a human approval suspends a run until approved from the panel', async ({ p
     )
     .toBe('SUCCEEDED');
 });
+
+test('an admin reads the audit log and filters it', async ({ page }) => {
+  await loginWithToken(page);
+  await page.getByTestId('nav-audit').click();
+  await expect(page.getByTestId('audit-page')).toBeVisible();
+  // Everything this suite already did — registering, creating a connection, activating a
+  // trigger — emitted audit rows, so the log is never empty here.
+  await expect(page.locator('table.q-table tbody tr').first()).toBeVisible();
+  // Registering this workspace emitted exactly one workspace.create.
+  await page.getByTestId('audit-action-filter').selectOption('workspace.create');
+  await expect(page.locator('table.q-table tbody tr')).toHaveCount(1);
+  await page.screenshot({ path: `${ARTIFACTS}/08-audit-log.png` });
+});
