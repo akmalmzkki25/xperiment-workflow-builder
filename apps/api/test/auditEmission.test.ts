@@ -26,7 +26,7 @@ afterAll(async () => {
   await pool.end();
 });
 beforeEach(async () => {
-  await pool.query(`TRUNCATE audit_events CASCADE`);
+  await pool.query(`TRUNCATE audit_events, invoices CASCADE`);
 });
 
 interface AuditRow {
@@ -371,5 +371,74 @@ describe('plan.change', () => {
     const res = await me.inject({ method: 'PUT', url: '/v1/plan', payload: { planCode: 'platinum' } });
     expect(res.statusCode).toBe(400);
     expect(await planRows(me.workspaceId)).toHaveLength(0);
+  });
+});
+
+describe('invoice.pay and invoice.mark_paid', () => {
+  // invoices carries UNIQUE (workspace_id, period_start), so each seed needs its own month.
+  let period = 0;
+
+  async function seedIssuedInvoice(): Promise<string> {
+    period += 1;
+    const month = String((period % 12) + 1).padStart(2, '0');
+    const next = String(((period + 1) % 12) + 1).padStart(2, '0');
+    const r = await pool.query<{ id: string }>(
+      `INSERT INTO invoices (workspace_id, period_start, period_end, plan_code, currency,
+         subtotal_minor, tax_rate_bps, tax_minor, total_minor, status)
+       VALUES ($1, $2, $3, 'builder', 'IDR', 149000, 1100, 16390, 165390, 'issued')
+       RETURNING id`,
+      [owner.workspaceId, `2026-${month}-01`, `2026-${next}-01`],
+    );
+    return r.rows[0]!.id;
+  }
+
+  test('marking an invoice paid is audited with its amount', async () => {
+    const id = await seedIssuedInvoice();
+    const res = await owner.inject({ method: 'POST', url: `/v1/invoices/${id}/mark-paid` });
+    expect(res.statusCode).toBe(200);
+    const found = await rows('invoice.mark_paid');
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      target_type: 'invoice',
+      target_id: id,
+      actor_kind: 'user',
+      metadata: { totalMinor: 165390, currency: 'IDR' },
+    });
+  });
+
+  test('a replayed mark-paid is a 409 that emits nothing more', async () => {
+    const id = await seedIssuedInvoice();
+    await owner.inject({ method: 'POST', url: `/v1/invoices/${id}/mark-paid` });
+    const again = await owner.inject({ method: 'POST', url: `/v1/invoices/${id}/mark-paid` });
+    expect(again.statusCode).toBe(409);
+    // The CAS settles nothing on replay, so exactly one row survives.
+    expect(await rows('invoice.mark_paid')).toHaveLength(1);
+  });
+
+  test('paying an invoice is audited with the provider', async () => {
+    const id = await seedIssuedInvoice();
+    const res = await owner.inject({ method: 'POST', url: `/v1/invoices/${id}/pay` });
+    expect(res.statusCode).toBe(200);
+    const found = await rows('invoice.pay');
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      target_id: id,
+      metadata: { provider: 'manual', currency: 'IDR', totalMinor: 165390 },
+    });
+  });
+
+  test('an unknown invoice emits nothing', async () => {
+    const res = await owner.inject({ method: 'POST', url: `/v1/invoices/${randomUUID()}/mark-paid` });
+    expect(res.statusCode).toBe(404);
+    expect(await rows('invoice.mark_paid')).toHaveLength(0);
+  });
+
+  test('a member without billing:manage cannot settle and emits nothing', async () => {
+    const id = await seedIssuedInvoice();
+    const viewer = await addMemberWithRole(app, pool, owner.workspaceId, 'viewer');
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    const res = await viewer.inject({ method: 'POST', url: `/v1/invoices/${id}/mark-paid` });
+    expect(res.statusCode).toBe(403);
+    expect(await rows('invoice.mark_paid')).toHaveLength(0);
   });
 });

@@ -1,8 +1,8 @@
-import { getInvoice, listInvoices, markInvoicePaid, setInvoiceProvider } from '@xperiment/db';
+import { appendAuditEvent, getInvoice, listInvoices, markInvoicePaid, setInvoiceProvider, withTx } from '@xperiment/db';
 import { providerFor } from '@xperiment/payments';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, requirePermission } from '../auth/plugin.js';
+import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -47,11 +47,28 @@ export function registerInvoiceRoutes(app: FastifyInstance, deps: ResolvedServer
       totalMinor: found.invoice.totalMinor,
       currency: found.invoice.currency,
     });
-    await setInvoiceProvider(deps.pool, {
-      id,
-      workspaceId: ctx.workspaceId,
-      provider: deps.paymentProvider.key,
-      providerRef: charge.reference,
+    await withTx(deps.pool, async (client) => {
+      await setInvoiceProvider(client, {
+        id,
+        workspaceId: ctx.workspaceId,
+        provider: deps.paymentProvider.key,
+        providerRef: charge.reference,
+      });
+      // Audits the local record, not the charge: createCharge already happened above, so a
+      // provider success followed by a failed write leaves no row. Restructuring that
+      // ordering is out of scope here.
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'invoice.pay',
+        targetType: 'invoice',
+        targetId: id,
+        metadata: {
+          totalMinor: found.invoice.totalMinor,
+          currency: found.invoice.currency,
+          provider: deps.paymentProvider.key,
+        },
+      });
     });
     return { provider: deps.paymentProvider.key, ...charge };
   });
@@ -63,11 +80,25 @@ export function registerInvoiceRoutes(app: FastifyInstance, deps: ResolvedServer
     if (!UUID_RE.test(id)) return sendProblem(reply, 404, 'Invoice not found');
     const found = await getInvoice(deps.pool, id, ctx.workspaceId);
     if (!found) return sendProblem(reply, 404, 'Invoice not found');
-    const settled = await markInvoicePaid(deps.pool, {
-      id,
-      workspaceId: ctx.workspaceId,
-      provider: found.invoice.provider ?? deps.paymentProvider.key,
-      providerRef: found.invoice.providerRef ?? 'manual-settlement',
+    const settled = await withTx(deps.pool, async (client) => {
+      const ok = await markInvoicePaid(client, {
+        id,
+        workspaceId: ctx.workspaceId,
+        provider: found.invoice.provider ?? deps.paymentProvider.key,
+        providerRef: found.invoice.providerRef ?? 'manual-settlement',
+      });
+      if (!ok) return false;
+      // Manual settlement moves an invoice to paid with no provider record behind it, so
+      // this row is the only answer to "who marked it paid".
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'invoice.mark_paid',
+        targetType: 'invoice',
+        targetId: id,
+        metadata: { totalMinor: found.invoice.totalMinor, currency: found.invoice.currency },
+      });
+      return true;
     });
     // CAS: a replay settles nothing rather than paying twice.
     if (!settled) return sendProblem(reply, 409, 'Invoice already settled', `Status is ${found.invoice.status}`);
