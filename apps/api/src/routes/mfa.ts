@@ -2,7 +2,9 @@ import {
   appendAuditEvent,
   claimTotpStep,
   confirmMfa,
+  consumeRecoveryCode,
   countLiveRecoveryCodes,
+  deleteMfa,
   generateToken,
   generateTotpSecret,
   getMfa,
@@ -41,6 +43,22 @@ export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps
       return null;
     }
     return deps.keyProvider.unwrap(row.secretEnc);
+  }
+
+  /**
+   * Proves possession of the second factor with either a TOTP code or a recovery code.
+   * Returns which kind matched, or null. Both paths are single-use: the TOTP step is
+   * claimed against the replay floor, the recovery code is consumed by compare-and-set.
+   */
+  async function proveCode(userId: string, code: string, reply: FastifyReply): Promise<'totp' | 'recovery' | null> {
+    const row = await getMfa(deps.pool, userId);
+    if (!row?.confirmedAt) return null;
+    const secret = await openSecret(row, reply);
+    if (!secret) return null;
+    const step = verifyTotpCode({ secret, code, after: Number(row.lastUsedStep ?? 0) || null });
+    if (step !== null && (await claimTotpStep(deps.pool, userId, step))) return 'totp';
+    if (await consumeRecoveryCode(deps.pool, userId, hashToken(code))) return 'recovery';
+    return null;
   }
 
   app.post('/v1/auth/mfa/setup', async (req, reply) => {
@@ -82,5 +100,43 @@ export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps
     });
     // The only time these leave the server. There is no endpoint that shows them again.
     return { recoveryCodes: codes, remaining: await countLiveRecoveryCodes(deps.pool, ctx.userId) };
+  });
+
+  app.post('/v1/auth/mfa/disable', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only', 'API keys have no second factor');
+    const parsed = codeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid code');
+    const kind = await proveCode(ctx.userId, parsed.data.code, reply);
+    if (reply.sent) return reply;
+    if (!kind) return sendProblem(reply, 400, 'Invalid code');
+    await deleteMfa(deps.pool, ctx.userId);
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      action: 'auth.mfa_disabled',
+      targetType: 'user',
+      targetId: ctx.userId,
+      metadata: { proof: kind },
+    });
+    return { mfaEnabled: false };
+  });
+
+  app.post('/v1/auth/mfa/recovery-codes', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only', 'API keys have no second factor');
+    const parsed = codeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid code');
+    const kind = await proveCode(ctx.userId, parsed.data.code, reply);
+    if (reply.sent) return reply;
+    if (!kind) return sendProblem(reply, 400, 'Invalid code');
+    const { codes, hashes } = mintRecoveryCodes();
+    await replaceRecoveryCodes(deps.pool, ctx.userId, hashes);
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      action: 'auth.mfa_recovery_regenerated',
+      targetType: 'user',
+      targetId: ctx.userId,
+    });
+    return { recoveryCodes: codes, remaining: codes.length };
   });
 }

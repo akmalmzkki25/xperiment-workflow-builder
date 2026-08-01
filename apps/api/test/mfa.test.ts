@@ -166,3 +166,108 @@ describe('mfa confirm', () => {
     }
   });
 });
+
+/** Registers, enrols and returns everything the later tests need. */
+async function enrolled(): Promise<{ email: string; token: string; secretBase32: string; recoveryCodes: string[] }> {
+  const { email, token } = await newAccount();
+  const { secretBase32 } = await setup(token);
+  const res = await app.inject({
+    method: 'POST',
+    url: '/v1/auth/mfa/confirm',
+    headers: auth(token),
+    payload: { code: codeFor(secretBase32) },
+  });
+  expect(res.statusCode).toBe(200);
+  return { email, token, secretBase32, recoveryCodes: res.json<{ recoveryCodes: string[] }>().recoveryCodes };
+}
+
+describe('mfa disable', () => {
+  test('a session alone cannot switch the factor off', async () => {
+    // Otherwise a stolen session removes the very control that was meant to contain it.
+    const { token } = await enrolled();
+    const res = await app.inject({ method: 'POST', url: '/v1/auth/mfa/disable', headers: auth(token), payload: {} });
+    expect(res.statusCode).toBe(400);
+    const me = await app.inject({ method: 'GET', url: '/v1/auth/me', headers: auth(token) });
+    expect(me.json<{ mfaEnabled: boolean }>().mfaEnabled).toBe(true);
+  });
+
+  test('a live totp code switches it off and audits that', async () => {
+    const { token, secretBase32 } = await enrolled();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/disable',
+      headers: auth(token),
+      // One step ahead: confirm already spent the current step, and the replay floor holds.
+      payload: { code: codeFor(secretBase32, 1) },
+    });
+    expect(res.statusCode).toBe(200);
+    const me = await app.inject({ method: 'GET', url: '/v1/auth/me', headers: auth(token) });
+    expect(me.json<{ mfaEnabled: boolean }>().mfaEnabled).toBe(false);
+    const rows = await pool.query<{ c: string }>(
+      `SELECT count(*) AS c FROM audit_events WHERE action = 'auth.mfa_disabled'`,
+    );
+    expect(rows.rows[0]!.c).toBe('1');
+  });
+
+  test('a recovery code also switches it off', async () => {
+    const { token, recoveryCodes } = await enrolled();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/disable',
+      headers: auth(token),
+      payload: { code: recoveryCodes[0]! },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+});
+
+describe('mfa recovery-codes', () => {
+  test('regenerating needs a live code and invalidates the old set', async () => {
+    const { token, secretBase32, recoveryCodes } = await enrolled();
+    const bare = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/recovery-codes',
+      headers: auth(token),
+      payload: {},
+    });
+    expect(bare.statusCode).toBe(400);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/recovery-codes',
+      headers: auth(token),
+      payload: { code: codeFor(secretBase32, 1) },
+    });
+    expect(res.statusCode).toBe(200);
+    const fresh = res.json<{ recoveryCodes: string[] }>().recoveryCodes;
+    expect(fresh).toHaveLength(10);
+    expect(fresh).not.toContain(recoveryCodes[0]!);
+
+    // An old code must not still open the door.
+    const stale = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/disable',
+      headers: auth(token),
+      payload: { code: recoveryCodes[0]! },
+    });
+    expect(stale.statusCode).toBe(400);
+  });
+
+  test('a spent recovery code cannot be spent twice', async () => {
+    const { token, recoveryCodes } = await enrolled();
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/recovery-codes',
+      headers: auth(token),
+      payload: { code: recoveryCodes[0]! },
+    });
+    expect(first.statusCode).toBe(200);
+    const again = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/recovery-codes',
+      headers: auth(token),
+      payload: { code: recoveryCodes[0]! },
+    });
+    expect(again.statusCode).toBe(400);
+  });
+});
