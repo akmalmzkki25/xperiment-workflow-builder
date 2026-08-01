@@ -17,6 +17,15 @@ export * from './repos/audit.js';
 export * from './repos/authTokens.js';
 export { hashPassword, verifyPassword, generateToken, hashToken } from './authCrypto.js';
 export {
+  base32Decode,
+  base32Encode,
+  generateTotpSecret,
+  otpauthUri,
+  totpCode,
+  verifyTotpCode,
+  TOTP_STEP_SECONDS,
+} from './totp.js';
+export {
   createKeyProviderFromEnv,
   DEFAULT_LOCAL_KEK_MASTER,
   gcpKmsKeyProvider,
