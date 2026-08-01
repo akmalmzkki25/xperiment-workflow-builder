@@ -15,6 +15,7 @@ import { providerFor, type PaymentProvider } from '@xperiment/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { AiConfig } from './routes/deps.js';
+import { createMailSenderFromEnv, type MailSender } from './mail/sender.js';
 import { registerAuthPlugin } from './auth/plugin.js';
 import { registerRateLimit } from './rateLimit/plugin.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -59,6 +60,9 @@ export interface ServerDeps {
   rateLimitPerMinute?: number;
   paymentProvider?: PaymentProvider;
   paymentWebhookSecret?: string | null;
+  /** Overridable so a test can supply memoryMailSender and read the tokens it mails. */
+  mailSender?: MailSender;
+  appUrl?: string;
 }
 
 /** A typo must fail at startup, not silently disable payment on every request. */
@@ -108,6 +112,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     paymentProvider: resolvePaymentProvider(deps.paymentProvider),
     paymentWebhookSecret: deps.paymentWebhookSecret ?? process.env['PAYMENT_WEBHOOK_SECRET'] ?? null,
     gatewayUrl: deps.gatewayUrl ?? process.env['GATEWAY_URL'] ?? 'http://localhost:3003',
+    mailSender: deps.mailSender ?? createMailSenderFromEnv(process.env, undefined, (m) => app.log.warn(m)),
+    appUrl: deps.appUrl ?? process.env['APP_URL'] ?? 'http://localhost:3005',
     credentialsVault:
       deps.credentialsVault ??
       createSecretVault({

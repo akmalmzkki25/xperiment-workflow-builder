@@ -15,6 +15,10 @@ export interface ResolvedServerDeps {
   /** Null disables the webhook route entirely — it 401s rather than verifying against ''. */
   paymentWebhookSecret: string | null;
   gatewayUrl: string;
+  /** Platform mail. Never a tenant's SMTP credentials — see the AUTH-002 design. */
+  mailSender: import('../mail/sender.js').MailSender;
+  /** Base URL the emailed links point at. */
+  appUrl: string;
   /** Envelope encryption for connection payloads. */
   credentialsVault: import('@xperiment/db').SecretVault;
   /** Envelope encryption for trigger, callback and alert webhook secrets. */
