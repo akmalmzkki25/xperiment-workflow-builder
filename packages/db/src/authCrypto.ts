@@ -17,7 +17,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return hash.length === expected.length && timingSafeEqual(hash, expected);
 }
 
-export function generateToken(prefix: 'qs' | 'qk' | 'qv' | 'qr'): { token: string; hash: string } {
+export function generateToken(prefix: 'qs' | 'qk' | 'qv' | 'qr' | 'qm'): { token: string; hash: string } {
   const token = `${prefix}_${randomBytes(32).toString('base64url')}`;
   return { token, hash: hashToken(token) };
 }

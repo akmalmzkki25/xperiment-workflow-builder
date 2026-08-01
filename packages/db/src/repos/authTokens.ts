@@ -1,9 +1,10 @@
 import { type Db } from '../pool.js';
 
-export type AuthTokenPurpose = 'email_verify' | 'password_reset';
+export type AuthTokenPurpose = 'email_verify' | 'password_reset' | 'mfa_challenge';
 
 export const EMAIL_VERIFY_TTL_MS = 86_400_000; // 24 hours
 export const PASSWORD_RESET_TTL_MS = 3_600_000; // 1 hour
+export const MFA_CHALLENGE_TTL_MS = 300_000; // 5 minutes
 
 export async function createAuthToken(
   db: Db,
@@ -35,6 +36,28 @@ export async function consumeAuthToken(
     `UPDATE auth_tokens SET consumed_at = now()
       WHERE token_hash = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()
       RETURNING user_id`,
+    [tokenHash, purpose],
+  );
+  if (!r.rowCount) return null;
+  return { userId: (r.rows[0] as { user_id: string }).user_id };
+}
+
+/**
+ * Reads a live token without claiming it. Needed by the MFA challenge, where the code is
+ * checked before the challenge is spent: consuming first would mean one mistyped digit
+ * costs the user their challenge and sends them back through the password.
+ *
+ * Returns null for unknown, expired, consumed and wrong-purpose alike, exactly as
+ * consumeAuthToken does — the caller must not tell them apart.
+ */
+export async function peekAuthToken(
+  db: Db,
+  tokenHash: string,
+  purpose: AuthTokenPurpose,
+): Promise<{ userId: string } | null> {
+  const r = await db.query(
+    `SELECT user_id FROM auth_tokens
+      WHERE token_hash = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now()`,
     [tokenHash, purpose],
   );
   if (!r.rowCount) return null;
