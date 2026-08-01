@@ -155,6 +155,7 @@ export interface AlertEvent {
 
 export interface MeResponse {
   user: { id: string };
+  emailVerified: boolean;
   currentWorkspaceId: string;
   workspaces: { id: string; name: string; role: string }[];
 }
@@ -232,6 +233,22 @@ export class ApiClient {
 
   logout(): Promise<void> {
     return this.request('POST', '/v1/auth/logout');
+  }
+
+  forgotPassword(email: string): Promise<{ sent: boolean }> {
+    return this.request('POST', '/v1/auth/forgot-password', { body: { email } });
+  }
+
+  resetPassword(token: string, password: string): Promise<{ reset: boolean }> {
+    return this.request('POST', '/v1/auth/reset-password', { body: { token, password } });
+  }
+
+  verifyEmail(token: string): Promise<{ verified: boolean }> {
+    return this.request('POST', '/v1/auth/verify-email', { body: { token } });
+  }
+
+  resendVerification(): Promise<{ verified: boolean }> {
+    return this.request('POST', '/v1/auth/resend-verification');
   }
 
   listConnectors(): Promise<{ items: ConnectorItem[] }> {

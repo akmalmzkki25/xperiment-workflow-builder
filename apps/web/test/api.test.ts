@@ -188,6 +188,27 @@ describe('endpoint helpers', () => {
     ]);
   });
 
+  test('the recovery endpoints carry the right verbs, paths and bodies', async () => {
+    responder = () => json(200, { sent: true, reset: true, verified: true });
+    const client = makeClient();
+    await client.forgotPassword('a@b.co');
+    await client.resetPassword('qr_tok', 'new-password-1');
+    await client.verifyEmail('qv_tok');
+    await client.resendVerification();
+    expect(calls.map((c) => `${c.init.method} ${c.url.replace('http://api.test', '')}`)).toEqual([
+      'POST /v1/auth/forgot-password',
+      'POST /v1/auth/reset-password',
+      'POST /v1/auth/verify-email',
+      'POST /v1/auth/resend-verification',
+    ]);
+    expect(calls[0]!.init.body).toBe(JSON.stringify({ email: 'a@b.co' }));
+    expect(calls[1]!.init.body).toBe(JSON.stringify({ token: 'qr_tok', password: 'new-password-1' }));
+    expect(calls[2]!.init.body).toBe(JSON.stringify({ token: 'qv_tok' }));
+    // Resend is identified by the session alone; a body would be a second, forgeable answer
+    // to "whose address?".
+    expect(calls[3]!.init.body).toBeUndefined();
+  });
+
   test('template client builds the category query and the clone name body', async () => {
     responder = () => json(200, { items: [] });
     const client = makeClient();

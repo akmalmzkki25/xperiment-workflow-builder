@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IncidentBanner } from '../../components/shell/IncidentBanner';
 import { QuotaBanner } from '../../components/shell/QuotaBanner';
 import { Sidebar } from '../../components/shell/Sidebar';
+import { VerifyBanner } from '../../components/shell/VerifyBanner';
 import { WorkspaceSwitcher } from '../../components/shell/WorkspaceSwitcher';
 import { getBrowserClient } from '../../lib/api';
 import { clearToken, getToken } from '../../lib/auth';
@@ -46,6 +47,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </button>
         </header>
         <div className="q-content">
+          <VerifyBanner />
           <IncidentBanner />
           <QuotaBanner />
           {children}

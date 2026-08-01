@@ -66,6 +66,13 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             {mode === 'register' ? 'Create account' : 'Sign in'}
           </button>
         </form>
+        {mode === 'login' ? (
+          <p style={{ color: 'var(--text-secondary)' }}>
+            <Link href="/forgot-password" data-testid="forgot-link">
+              Forgot your password?
+            </Link>
+          </p>
+        ) : null}
         <p style={{ color: 'var(--text-secondary)' }}>
           {mode === 'register' ? (
             <>
