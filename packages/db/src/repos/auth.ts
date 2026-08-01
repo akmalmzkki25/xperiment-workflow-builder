@@ -11,15 +11,19 @@ export interface UserRow {
   id: string;
   email: string;
   passwordHash: string;
+  /** Account lifecycle (active/suspended). Distinct from verification — see 0013. */
   status: string;
+  emailVerifiedAt: string | null;
 }
 
 function mapUser(r: Record<string, unknown>): UserRow {
+  const v = r['email_verified_at'];
   return {
     id: r['id'] as string,
     email: r['email'] as string,
     passwordHash: r['password_hash'] as string,
     status: r['status'] as string,
+    emailVerifiedAt: v instanceof Date ? v.toISOString() : ((v as string | null) ?? null),
   };
 }
 
@@ -39,6 +43,20 @@ export async function createUser(db: Db, args: { email: string; passwordHash: st
 export async function getUserByEmail(db: Db, email: string): Promise<UserRow | null> {
   const r = await db.query(`SELECT * FROM users WHERE email = $1`, [email]);
   return r.rowCount ? mapUser(r.rows[0] as Record<string, unknown>) : null;
+}
+
+export async function getUserById(db: Db, id: string): Promise<UserRow | null> {
+  const r = await db.query(`SELECT * FROM users WHERE id = $1`, [id]);
+  return r.rowCount ? mapUser(r.rows[0] as Record<string, unknown>) : null;
+}
+
+/** Idempotent: re-verifying an already-verified address keeps the original timestamp. */
+export async function markEmailVerified(db: Db, userId: string): Promise<void> {
+  await db.query(`UPDATE users SET email_verified_at = now() WHERE id = $1 AND email_verified_at IS NULL`, [userId]);
+}
+
+export async function updatePassword(db: Db, userId: string, passwordHash: string): Promise<void> {
+  await db.query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [userId, passwordHash]);
 }
 
 export async function createSession(
