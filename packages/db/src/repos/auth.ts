@@ -128,26 +128,43 @@ export async function createWorkspaceWithOwner(
 export async function listMemberships(
   db: Db,
   userId: string,
-): Promise<{ workspaceId: string; name: string; role: Role }[]> {
+): Promise<{ workspaceId: string; name: string; role: Role; requireMfa: boolean }[]> {
   const r = await db.query(
-    `SELECT m.workspace_id, w.name, m.role FROM workspace_members m
+    `SELECT m.workspace_id, w.name, m.role, w.require_mfa FROM workspace_members m
      JOIN workspaces w ON w.id = m.workspace_id
      WHERE m.user_id = $1 ORDER BY m.created_at`,
     [userId],
   );
-  return (r.rows as { workspace_id: string; name: string; role: Role }[]).map((row) => ({
+  return (r.rows as { workspace_id: string; name: string; role: Role; require_mfa: boolean }[]).map((row) => ({
     workspaceId: row.workspace_id,
     name: row.name,
     role: row.role,
+    requireMfa: row.require_mfa,
   }));
 }
 
-export async function getMembership(db: Db, workspaceId: string, userId: string): Promise<Role | null> {
-  const r = await db.query(`SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, [
-    workspaceId,
-    userId,
-  ]);
-  return r.rowCount ? ((r.rows[0] as { role: Role }).role) : null;
+/**
+ * Role plus the workspace's MFA policy in one round trip. The plugin needs both on every
+ * authenticated request, and a second query per request to fetch a boolean would be waste.
+ */
+export async function getMembership(
+  db: Db,
+  workspaceId: string,
+  userId: string,
+): Promise<{ role: Role; requireMfa: boolean } | null> {
+  const r = await db.query(
+    `SELECT m.role, w.require_mfa FROM workspace_members m
+     JOIN workspaces w ON w.id = m.workspace_id
+     WHERE m.workspace_id = $1 AND m.user_id = $2`,
+    [workspaceId, userId],
+  );
+  if (!r.rowCount) return null;
+  const row = r.rows[0] as { role: Role; require_mfa: boolean };
+  return { role: row.role, requireMfa: row.require_mfa };
+}
+
+export async function setWorkspaceRequireMfa(db: Db, workspaceId: string, enabled: boolean): Promise<void> {
+  await db.query(`UPDATE workspaces SET require_mfa = $2 WHERE id = $1`, [workspaceId, enabled]);
 }
 
 export async function addMember(db: Db, args: { workspaceId: string; userId: string; role: Role }): Promise<void> {

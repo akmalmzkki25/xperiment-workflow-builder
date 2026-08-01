@@ -9,6 +9,7 @@ import {
   EMAIL_VERIFY_TTL_MS,
   generateToken,
   getMfa,
+  hasConfirmedMfa,
   getUserById,
   getUserByEmail,
   hashPassword,
@@ -308,15 +309,22 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
   app.get('/v1/auth/me', async (req, reply) => {
     const ctx = authOf(req);
     if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only', 'API keys have no user profile');
-    const [memberships, user] = await Promise.all([
+    const [memberships, user, mfaEnabled] = await Promise.all([
       listMemberships(deps.pool, ctx.userId),
       getUserById(deps.pool, ctx.userId),
+      hasConfirmedMfa(deps.pool, ctx.userId),
     ]);
     return {
       user: { id: ctx.userId },
       emailVerified: user?.emailVerifiedAt != null,
+      mfaEnabled,
       currentWorkspaceId: ctx.workspaceId,
-      workspaces: memberships.map((m) => ({ id: m.workspaceId, name: m.name, role: m.role })),
+      workspaces: memberships.map((m) => ({
+        id: m.workspaceId,
+        name: m.name,
+        role: m.role,
+        requireMfa: m.requireMfa,
+      })),
     };
   });
 }

@@ -5,11 +5,13 @@ import {
   createInvite,
   createWorkspaceWithOwner,
   generateToken,
+  hasConfirmedMfa,
   hashToken,
   listApiKeys,
   listMembers,
   listMemberships,
   revokeApiKey,
+  setWorkspaceRequireMfa,
   updateMemberRole,
   withTx,
 } from '@xperiment/db';
@@ -185,5 +187,27 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
     });
     if (!revoked) return sendProblem(reply, 404, 'Api key not found');
     return reply.status(204).send();
+  });
+
+  app.put('/v1/workspaces/mfa-policy', async (req, reply) => {
+    const ctx = authOf(req);
+    if (ctx.role !== 'owner') return sendProblem(reply, 403, 'Forbidden', 'Only an owner may set the MFA policy');
+    const parsed = z.object({ requireMfa: z.boolean() }).strict().safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
+    // Switching it on without being enrolled locks the owner out of their own workspace in
+    // this very request. Switching it off is always allowed.
+    if (parsed.data.requireMfa && (!ctx.userId || !(await hasConfirmedMfa(deps.pool, ctx.userId)))) {
+      return sendProblem(reply, 409, 'Enrol first', 'Enable your own second factor before requiring it of others');
+    }
+    await setWorkspaceRequireMfa(deps.pool, ctx.workspaceId, parsed.data.requireMfa);
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      workspaceId: ctx.workspaceId,
+      action: 'workspace.mfa_policy_change',
+      targetType: 'workspace',
+      targetId: ctx.workspaceId,
+      metadata: { enabled: parsed.data.requireMfa },
+    });
+    return { requireMfa: parsed.data.requireMfa };
   });
 }

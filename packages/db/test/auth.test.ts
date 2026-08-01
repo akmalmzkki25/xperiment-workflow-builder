@@ -91,8 +91,9 @@ describe('workspaces, memberships, invites', () => {
     const u = (await createUser(pool, { email: 'c@x.test', passwordHash: 'h' }))!;
     const ws = await createWorkspaceWithOwner(pool, { name: 'Tim C', userId: u.id, actor: SYSTEM_ACTOR });
     const memberships = await listMemberships(pool, u.id);
-    expect(memberships).toEqual([{ workspaceId: ws.id, name: 'Tim C', role: 'owner' }]);
-    expect(await getMembership(pool, ws.id, u.id)).toBe('owner');
+    // A new workspace does not require MFA until its owner asks for it.
+    expect(memberships).toEqual([{ workspaceId: ws.id, name: 'Tim C', role: 'owner', requireMfa: false }]);
+    expect((await getMembership(pool, ws.id, u.id))?.role).toBe('owner');
   });
 
   test('invite accept adds a member once; expired/used invites return null', async () => {
@@ -112,7 +113,7 @@ describe('workspaces, memberships, invites', () => {
       role: 'builder',
       alreadyMember: false,
     });
-    expect(await getMembership(pool, ws.id, joiner.id)).toBe('builder');
+    expect((await getMembership(pool, ws.id, joiner.id))?.role).toBe('builder');
     expect(await acceptInvite(pool, inv.hash, joiner.id, SYSTEM_ACTOR)).toEqual({ outcome: 'invalid' }); // used
     const stale = generateToken('qs');
     await createInvite(pool, {
@@ -123,7 +124,7 @@ describe('workspaces, memberships, invites', () => {
     });
     expect(await acceptInvite(pool, stale.hash, joiner.id, SYSTEM_ACTOR)).toEqual({ outcome: 'invalid' }); // expired
     await addMember(pool, { workspaceId: ws.id, userId: joiner.id, role: 'admin' });
-    expect(await getMembership(pool, ws.id, joiner.id)).toBe('admin'); // upsert role
+    expect((await getMembership(pool, ws.id, joiner.id))?.role).toBe('admin'); // upsert role
   });
 });
 

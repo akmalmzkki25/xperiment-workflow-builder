@@ -2,6 +2,7 @@ import {
   getActiveApiKey,
   getActiveSession,
   getMembership,
+  hasConfirmedMfa,
   hashToken,
   listMemberships,
   type AuditActor,
@@ -60,6 +61,27 @@ const EXEMPT = new Set([
  */
 const EXEMPT_PATTERNS = [/^\/v1\/payments\/[^/]+\/webhook$/];
 
+/**
+ * Routes that stay reachable while a workspace's MFA policy is unmet. This is a SEPARATE
+ * list from EXEMPT: EXEMPT decides who needs a session at all, this decides which
+ * authenticated routes survive an unmet policy. Without it the policy makes the workspace
+ * permanently unusable — the dead-route trap from 3O and AUTH-002.
+ */
+const MFA_FIX_PATHS = new Set(['/v1/auth/me', '/v1/auth/logout']);
+const MFA_FIX_PREFIX = '/v1/auth/mfa/';
+const PRIVILEGED: ReadonlySet<Role> = new Set<Role>(['owner', 'admin']);
+
+async function mfaPolicyBlocks(
+  pool: pg.Pool,
+  path: string,
+  ctx: AuthContext,
+  requireMfa: boolean,
+): Promise<boolean> {
+  if (!requireMfa || !ctx.userId || !PRIVILEGED.has(ctx.role)) return false;
+  if (MFA_FIX_PATHS.has(path) || path.startsWith(MFA_FIX_PREFIX)) return false;
+  return !(await hasConfirmedMfa(pool, ctx.userId));
+}
+
 export function registerAuthPlugin(app: FastifyInstance, deps: { pool: pg.Pool }): void {
   app.decorateRequest('authContext', null);
 
@@ -78,15 +100,33 @@ export function registerAuthPlugin(app: FastifyInstance, deps: { pool: pg.Pool }
       if (!session) return sendProblem(reply, 401, 'Unauthorized', 'Invalid or expired session');
       const requestedWorkspace = req.headers['x-xperiment-workspace'] as string | undefined;
       if (requestedWorkspace) {
-        const role = await getMembership(deps.pool, requestedWorkspace, session.userId);
-        if (!role) return sendProblem(reply, 403, 'Forbidden', 'Not a member of that workspace');
-        req.authContext = { userId: session.userId, apiKeyId: null, workspaceId: requestedWorkspace, role };
+        const membership = await getMembership(deps.pool, requestedWorkspace, session.userId);
+        if (!membership) return sendProblem(reply, 403, 'Forbidden', 'Not a member of that workspace');
+        const explicit: AuthContext = {
+          userId: session.userId,
+          apiKeyId: null,
+          workspaceId: requestedWorkspace,
+          role: membership.role,
+        };
+        if (await mfaPolicyBlocks(deps.pool, path, explicit, membership.requireMfa)) {
+          return sendProblem(reply, 403, 'MFA required', 'This workspace requires a second factor for your role');
+        }
+        req.authContext = explicit;
         return;
       }
       const memberships = await listMemberships(deps.pool, session.userId);
       const first = memberships[0];
       if (!first) return sendProblem(reply, 403, 'Forbidden', 'No workspace membership');
-      req.authContext = { userId: session.userId, apiKeyId: null, workspaceId: first.workspaceId, role: first.role };
+      const ctx: AuthContext = {
+        userId: session.userId,
+        apiKeyId: null,
+        workspaceId: first.workspaceId,
+        role: first.role,
+      };
+      if (await mfaPolicyBlocks(deps.pool, path, ctx, first.requireMfa)) {
+        return sendProblem(reply, 403, 'MFA required', 'This workspace requires a second factor for your role');
+      }
+      req.authContext = ctx;
       return;
     }
 
