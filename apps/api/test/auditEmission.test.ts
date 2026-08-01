@@ -303,3 +303,73 @@ describe('api_key.create and api_key.revoke', () => {
     expect(await rows('api_key.create')).toHaveLength(0);
   });
 });
+
+describe('plan.change', () => {
+  /** A fresh workspace: `owner` is pinned to business and carries many members. */
+  async function freshOwner(): Promise<AuthedUser> {
+    const u = await createAuthedUser(app);
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    return u;
+  }
+
+  async function planRows(workspaceId: string): Promise<{ target_id: string; metadata: Record<string, unknown> }[]> {
+    const r = await pool.query<{ target_id: string; metadata: Record<string, unknown> }>(
+      `SELECT target_id, metadata FROM audit_events
+        WHERE workspace_id = $1 AND action = 'plan.change' ORDER BY id`,
+      [workspaceId],
+    );
+    return r.rows;
+  }
+
+  test('records the previous and new plan', async () => {
+    const me = await freshOwner();
+    const res = await me.inject({ method: 'PUT', url: '/v1/plan', payload: { planCode: 'builder' } });
+    expect(res.statusCode).toBe(200);
+    const found = await planRows(me.workspaceId);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      target_id: me.workspaceId,
+      metadata: { previousPlan: 'free', newPlan: 'builder' },
+    });
+  });
+
+  test('an overage-only change records the flag and repeats the plan', async () => {
+    const me = await freshOwner();
+    await me.inject({ method: 'PUT', url: '/v1/plan', payload: { planCode: 'builder' } });
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    await me.inject({ method: 'PUT', url: '/v1/plan', payload: { allowOverage: true } });
+    expect((await planRows(me.workspaceId))[0]!.metadata).toMatchObject({
+      previousPlan: 'builder',
+      newPlan: 'builder',
+      allowOverage: true,
+    });
+  });
+
+  test('a refused downgrade emits nothing', async () => {
+    const me = await freshOwner();
+    await me.inject({ method: 'PUT', url: '/v1/plan', payload: { planCode: 'team' } });
+    // free allows 2 members; seat three so the downgrade must be refused.
+    await addMemberWithRole(app, pool, me.workspaceId, 'viewer');
+    await addMemberWithRole(app, pool, me.workspaceId, 'viewer');
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    const res = await me.inject({ method: 'PUT', url: '/v1/plan', payload: { planCode: 'free' } });
+    expect(res.statusCode).toBe(409);
+    expect(await planRows(me.workspaceId)).toHaveLength(0);
+  });
+
+  test('a member without billing:manage cannot change the plan and emits nothing', async () => {
+    const me = await freshOwner();
+    const viewer = await addMemberWithRole(app, pool, me.workspaceId, 'viewer');
+    await pool.query(`TRUNCATE audit_events CASCADE`);
+    const res = await viewer.inject({ method: 'PUT', url: '/v1/plan', payload: { planCode: 'builder' } });
+    expect(res.statusCode).toBe(403);
+    expect(await planRows(me.workspaceId)).toHaveLength(0);
+  });
+
+  test('an invalid plan code emits nothing', async () => {
+    const me = await freshOwner();
+    const res = await me.inject({ method: 'PUT', url: '/v1/plan', payload: { planCode: 'platinum' } });
+    expect(res.statusCode).toBe(400);
+    expect(await planRows(me.workspaceId)).toHaveLength(0);
+  });
+});

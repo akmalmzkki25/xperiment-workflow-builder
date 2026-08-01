@@ -1,4 +1,4 @@
-import { getQuotaUsage, getWorkspacePlan, setWorkspacePlan } from '@xperiment/db';
+import { appendAuditEvent, getQuotaUsage, getWorkspacePlan, setWorkspacePlan, withTx } from '@xperiment/db';
 import {
   evaluateQuota,
   isBlocked,
@@ -14,7 +14,7 @@ import {
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
-import { authOf, requirePermission } from '../auth/plugin.js';
+import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -101,10 +101,23 @@ export function registerPlanRoutes(app: FastifyInstance, deps: ResolvedServerDep
         }
       }
     }
-    await setWorkspacePlan(deps.pool, {
-      workspaceId: ctx.workspaceId,
-      ...(parsed.data.planCode ? { planCode: parsed.data.planCode } : {}),
-      ...(parsed.data.allowOverage !== undefined ? { allowOverage: parsed.data.allowOverage } : {}),
+    await withTx(deps.pool, async (client) => {
+      // Read inside the transaction: setWorkspacePlan does not return the previous code,
+      // and reading it outside would race a concurrent change.
+      const before = await getWorkspacePlan(client, ctx.workspaceId);
+      const after = await setWorkspacePlan(client, {
+        workspaceId: ctx.workspaceId,
+        ...(parsed.data.planCode ? { planCode: parsed.data.planCode } : {}),
+        ...(parsed.data.allowOverage !== undefined ? { allowOverage: parsed.data.allowOverage } : {}),
+      });
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'plan.change',
+        targetType: 'workspace',
+        targetId: ctx.workspaceId,
+        metadata: { previousPlan: before.planCode, newPlan: after.planCode, allowOverage: after.allowOverage },
+      });
     });
     return quotaSnapshot(deps.pool, ctx.workspaceId);
   });
