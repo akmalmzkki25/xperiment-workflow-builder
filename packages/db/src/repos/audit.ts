@@ -44,6 +44,13 @@ export interface AuditEventRow {
   actorUserId: string | null;
   actorApiKeyId: string | null;
   actorLabel: string | null;
+  /**
+   * Resolved on read rather than denormalised on write — no per-request lookup, and no
+   * need to widen AuthContext with an email. Null once the user row is gone, which is
+   * what actorLabel exists to cover.
+   */
+  actorEmail: string | null;
+  actorApiKeyName: string | null;
   action: string;
   targetType: string | null;
   targetId: string | null;
@@ -64,6 +71,8 @@ function mapEvent(r: Record<string, unknown>): AuditEventRow {
     actorUserId: (r['actor_user_id'] as string | null) ?? null,
     actorApiKeyId: (r['actor_api_key_id'] as string | null) ?? null,
     actorLabel: (r['actor_label'] as string | null) ?? null,
+    actorEmail: (r['actor_email'] as string | null) ?? null,
+    actorApiKeyName: (r['actor_api_key_name'] as string | null) ?? null,
     action: r['action'] as string,
     targetType: (r['target_type'] as string | null) ?? null,
     targetId: (r['target_id'] as string | null) ?? null,
@@ -127,14 +136,19 @@ export async function listAuditEvents(
 ): Promise<AuditEventRow[]> {
   const limit = Math.min(Math.max(1, Math.trunc(args.limit)), AUDIT_PAGE_MAX);
   const r = await db.query(
-    `SELECT * FROM audit_events
-     WHERE workspace_id = $1
-       AND ($2::bigint IS NULL OR id < $2::bigint)
-       AND ($3::text IS NULL OR action = $3)
-       AND ($4::text IS NULL OR target_type = $4)
-       AND ($5::text IS NULL OR target_id = $5)
-     ORDER BY id DESC
-     LIMIT $6`,
+    `SELECT a.*, u.email AS actor_email, k.name AS actor_api_key_name
+       FROM audit_events a
+       LEFT JOIN users u ON u.id = a.actor_user_id
+       -- Keyed on id AND workspace: a cross-workspace id must not surface another
+       -- tenant's key name.
+       LEFT JOIN api_keys k ON k.id = a.actor_api_key_id AND k.workspace_id = a.workspace_id
+      WHERE a.workspace_id = $1
+        AND ($2::bigint IS NULL OR a.id < $2::bigint)
+        AND ($3::text IS NULL OR a.action = $3)
+        AND ($4::text IS NULL OR a.target_type = $4)
+        AND ($5::text IS NULL OR a.target_id = $5)
+      ORDER BY a.id DESC
+      LIMIT $6`,
     [args.workspaceId, args.before ?? null, args.action ?? null, args.targetType ?? null, args.targetId ?? null, limit],
   );
   return (r.rows as Record<string, unknown>[]).map(mapEvent);

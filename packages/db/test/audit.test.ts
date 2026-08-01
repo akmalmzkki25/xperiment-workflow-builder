@@ -167,4 +167,65 @@ describe('listAuditEvents', () => {
     const rows = await listAuditEvents(pool, { workspaceId: ws, limit: 100000 });
     expect(rows).toHaveLength(3); // clamped to AUDIT_PAGE_MAX, not rejected
   });
+
+  test('resolves a user actor to an email and an api-key actor to a key name', async () => {
+    const userId = randomUUID();
+    await pool.query(`INSERT INTO users (id, email, password_hash) VALUES ($1,$2,'x')`, [
+      userId,
+      `who-${userId.slice(0, 8)}@example.com`,
+    ]);
+    const keyId = randomUUID();
+    await pool.query(`INSERT INTO api_keys (id, workspace_id, name, key_hash, role) VALUES ($1,$2,'CI',$3,'builder')`, [
+      keyId,
+      ws,
+      `hash-${keyId}`,
+    ]);
+    await appendAuditEvent(pool, { workspaceId: ws, actorKind: 'user', actorUserId: userId, action: 'a.b' });
+    await appendAuditEvent(pool, { workspaceId: ws, actorKind: 'api_key', actorApiKeyId: keyId, action: 'a.b' });
+    const found = await listAuditEvents(pool, { workspaceId: ws, limit: 10 });
+    const byKind = new Map(found.map((r) => [r.actorKind, r]));
+    expect(byKind.get('user')!.actorEmail).toBe(`who-${userId.slice(0, 8)}@example.com`);
+    expect(byKind.get('user')!.actorApiKeyName).toBeNull();
+    expect(byKind.get('api_key')!.actorApiKeyName).toBe('CI');
+    expect(byKind.get('api_key')!.actorEmail).toBeNull();
+  });
+
+  test('a deleted user leaves actorEmail null and actorLabel standing', async () => {
+    const userId = randomUUID();
+    await pool.query(`INSERT INTO users (id, email, password_hash) VALUES ($1,$2,'x')`, [
+      userId,
+      `gone-${userId.slice(0, 8)}@example.com`,
+    ]);
+    await appendAuditEvent(pool, {
+      workspaceId: ws,
+      actorKind: 'user',
+      actorUserId: userId,
+      actorLabel: 'gone@example.com',
+      action: 'a.b',
+    });
+    await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
+    const found = await listAuditEvents(pool, { workspaceId: ws, limit: 10 });
+    expect(found[0]!.actorEmail).toBeNull();
+    expect(found[0]!.actorLabel).toBe('gone@example.com');
+  });
+
+  test('an api key from another workspace is never named', async () => {
+    // The join is keyed on id AND workspace_id, so a cross-workspace id cannot leak a name.
+    const keyId = randomUUID();
+    await pool.query(
+      `INSERT INTO api_keys (id, workspace_id, name, key_hash, role) VALUES ($1,$2,'Foreign',$3,'builder')`,
+      [keyId, other, `hash-${keyId}`],
+    );
+    await appendAuditEvent(pool, { workspaceId: ws, actorKind: 'api_key', actorApiKeyId: keyId, action: 'a.b' });
+    const found = await listAuditEvents(pool, { workspaceId: ws, limit: 10 });
+    expect(found[0]!.actorApiKeyName).toBeNull();
+  });
+
+  test('a system actor resolves to neither, and the row still returns', async () => {
+    await appendAuditEvent(pool, { workspaceId: ws, actorKind: 'system', action: 'credential.read_use' });
+    const found = await listAuditEvents(pool, { workspaceId: ws, limit: 10 });
+    expect(found).toHaveLength(1);
+    expect(found[0]!.actorEmail).toBeNull();
+    expect(found[0]!.actorApiKeyName).toBeNull();
+  });
 });
