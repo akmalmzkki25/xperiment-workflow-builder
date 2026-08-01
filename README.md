@@ -463,14 +463,38 @@ a mixed state both read paths handle. **Keep `TRIGGER_SECRET_KEY` and
 `CREDENTIALS_SECRET_KEY` configured until it reports `remaining=0` on all four columns** —
 it exits non-zero while any row is left.
 
+### Account recovery (AUTH-002)
+
+Registration mails a verification link and records `auth.email_verify_requested`;
+`GET /v1/auth/me` reports `emailVerified`. **Verification currently gates nothing** — an
+unconfirmed address sees a banner and keeps full access. Treat it as a signal, not a
+control.
+
+`POST /v1/auth/forgot-password` answers `200` for every syntactically valid address,
+whether or not an account exists, so it cannot be used to enumerate members. Every token
+failure — unknown, expired, already used, or presented to the wrong endpoint — returns the
+same `400 Invalid or expired token`, since distinguishing them would say which of a stolen
+batch is still live. Tokens are stored as hashes and consumed with a compare-and-set, so
+concurrent callers cannot both claim one.
+
+**A completed reset revokes every session** for that user and burns their other outstanding
+reset links: a stolen session must not survive the reset that was meant to end it.
+
+`MAIL_TRANSPORT=log` writes the message — including the reset link — to the server log and
+sends nothing. It is the development default and **must never run in production.**
+
 ### Audit trail
 
 `audit_events` records credential lifecycle (`credential.create`, `.delete`, `.test`),
 credential use by a workflow node (`credential.read_use`, one row per node), signing
-secret disclosure (`trigger_secret.reveal`), the backfill (`secret.rekey_batch`) and
+secret disclosure (`trigger_secret.reveal`), the backfill (`secret.rekey_batch`),
 authentication (`auth.register`, `.login_failed`, `.login_succeeded`, `.logout`,
-`.logout_all`). Events describing a mutation commit inside that mutation's transaction.
-Metadata is a fixed set of named scalars, never a request body or provider response.
+`.logout_all`), account recovery (`auth.email_verify_requested`, `.email_verified`,
+`.password_reset_requested`, `.password_reset_completed`) and privileged workspace changes
+(`workspace.create`, `member.role_change`, `invite.create`, `invite.accept`,
+`api_key.create`, `api_key.revoke`, `plan.change`, `invoice.pay`, `invoice.mark_paid`).
+Events describing a mutation commit inside that mutation's transaction. Metadata is a fixed
+set of named scalars, never a request body, provider response, or token.
 
 Read it with `GET /v1/audit`, which requires the `audit:read` permission — **admin and
 owner only**, since seeing every member's credential use is itself a privilege. Rows with

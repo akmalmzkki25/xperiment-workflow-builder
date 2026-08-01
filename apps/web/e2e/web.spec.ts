@@ -241,3 +241,19 @@ test('an admin reads the audit log and filters it', async ({ page }) => {
   await expect(page.locator('table.q-table tbody tr')).toHaveCount(1);
   await page.screenshot({ path: `${ARTIFACTS}/08-audit-log.png` });
 });
+
+test('the recovery pages render and refuse a link with no usable token', async ({ page }) => {
+  await page.goto('/forgot-password');
+  await expect(page.getByTestId('forgot-password-page')).toBeVisible();
+  await page.getByTestId('forgot-email').fill(`nobody-${Date.now()}@xperiment.test`);
+  await page.getByTestId('forgot-submit').click();
+  // An address with no account gets the same neutral answer a real one does.
+  await expect(page.getByTestId('forgot-sent')).toBeVisible();
+
+  await page.goto('/reset-password');
+  await expect(page.getByTestId('reset-no-token')).toBeVisible();
+
+  await page.goto('/verify-email?token=qv_definitely-not-real');
+  await expect(page.getByTestId('verify-failed')).toBeVisible();
+  await page.screenshot({ path: `${ARTIFACTS}/09-recovery.png` });
+});
