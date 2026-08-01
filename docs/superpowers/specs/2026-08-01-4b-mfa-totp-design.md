@@ -120,8 +120,9 @@ plugin's `EXEMPT` set, because a caller who has not finished logging in has no s
 present — and is rate-limited on the challenge. It reads the challenge without consuming it, verifies the
 code, and only then consumes it via the CAS before creating the session. A wrong code
 therefore does **not** burn the challenge — one mistyped digit must not force the password
-back through — but it counts against the limiter, and the fifth failure destroys the
-challenge.
+back through — but it counts against the limiter, and once the limiter refuses further
+attempts the challenge is destroyed rather than left sitting there for the next minute's
+worth of guesses.
 
 Success emits `auth.login_succeeded`, so existing login auditing keeps its meaning, plus
 `auth.mfa_verified` or `auth.mfa_recovery_used`. A recovery code is consumed by the same
@@ -213,7 +214,7 @@ grows a second step in place when a login answers `mfaRequired`, and a nav entry
   `last_used_step` guard and prove the replay succeeds.
 - **Window.** The previous step's code is accepted; two steps back is refused.
 - **Login.** An enrolled user gets no token; challenge plus code yields one; a wrong code
-  leaves the challenge usable; the fifth wrong code destroys it; an expired challenge gives
+  leaves the challenge usable; exhausting the limiter destroys it; an expired challenge gives
   the same generic `400` as an unknown one.
 - **Recovery.** Single use, and a spent code is dead. Regenerating invalidates the old set.
 - **Policy.** An owner without MFA cannot switch it on. A privileged member without MFA
