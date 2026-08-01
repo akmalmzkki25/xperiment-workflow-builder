@@ -2,8 +2,10 @@ import {
   appendAuditEvent,
   claimTotpStep,
   confirmMfa,
+  consumeAuthToken,
   consumeRecoveryCode,
   countLiveRecoveryCodes,
+  createSession,
   deleteMfa,
   generateToken,
   generateTotpSecret,
@@ -11,6 +13,7 @@ import {
   getUserById,
   hashToken,
   otpauthUri,
+  peekAuthToken,
   replaceRecoveryCodes,
   upsertPendingMfa,
   verifyTotpCode,
@@ -19,10 +22,13 @@ import {
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { auditActor, authOf } from '../auth/plugin.js';
+import { LoginLimiter } from '../auth/rateLimit.js';
 import { sendProblem } from '../problem.js';
+import { requestFacts } from './auth.js';
 import type { ResolvedServerDeps } from './deps.js';
 
 const ISSUER = 'Xperiment';
+const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
 const RECOVERY_CODE_COUNT = 10;
 const codeSchema = z.object({ code: z.string().min(6).max(64) }).strict();
 
@@ -33,6 +39,10 @@ function mintRecoveryCodes(): { codes: string[]; hashes: string[] } {
 }
 
 export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
+  // Keyed on the challenge, not the account: an attacker who does not hold the challenge
+  // cannot use this to lock a victim out of their own second step.
+  const verifyLimiter = new LoginLimiter();
+
   /**
    * Unwraps the stored secret. A row wrapped by a different root key cannot be opened, so
    * say so plainly rather than letting every correct code look wrong.
@@ -138,5 +148,61 @@ export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps
       targetId: ctx.userId,
     });
     return { recoveryCodes: codes, remaining: codes.length };
+  });
+
+  app.post('/v1/auth/mfa/verify', async (req, reply) => {
+    const parsed = z
+      .object({ challenge: z.string().min(1).max(200), code: z.string().min(6).max(64) })
+      .strict()
+      .safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid or expired token');
+    const challengeHash = hashToken(parsed.data.challenge);
+    if (!verifyLimiter.check(`mfa:${challengeHash}`)) {
+      // Out of attempts: destroy the challenge rather than leave it sitting there for the
+      // next minute's worth of guesses.
+      await consumeAuthToken(deps.pool, challengeHash, 'mfa_challenge');
+      return sendProblem(reply, 429, 'Too many attempts', 'Sign in again');
+    }
+    // Peek, not consume: a wrong code must not cost the user their challenge.
+    const peeked = await peekAuthToken(deps.pool, challengeHash, 'mfa_challenge');
+    if (!peeked) return sendProblem(reply, 400, 'Invalid or expired token');
+    const kind = await proveCode(peeked.userId, parsed.data.code, reply);
+    if (reply.sent) return reply;
+    if (!kind) {
+      await appendAuditEvent(deps.pool, {
+        ...requestFacts(req),
+        actorKind: 'user',
+        actorUserId: peeked.userId,
+        action: 'auth.mfa_failed',
+        targetType: 'user',
+        targetId: peeked.userId,
+        outcome: 'failure',
+      });
+      return sendProblem(reply, 400, 'Invalid code');
+    }
+    // Only now is the challenge spent, and the CAS decides a race between two winners.
+    const claimed = await consumeAuthToken(deps.pool, challengeHash, 'mfa_challenge');
+    if (!claimed) return sendProblem(reply, 400, 'Invalid or expired token');
+    verifyLimiter.reset(`mfa:${challengeHash}`);
+    const { token, hash } = generateToken('qs');
+    await createSession(deps.pool, {
+      userId: peeked.userId,
+      tokenHash: hash,
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+    });
+    const facts = { ...requestFacts(req), actorKind: 'user' as const, actorUserId: peeked.userId };
+    await appendAuditEvent(deps.pool, {
+      ...facts,
+      action: kind === 'recovery' ? 'auth.mfa_recovery_used' : 'auth.mfa_verified',
+      targetType: 'user',
+      targetId: peeked.userId,
+    });
+    await appendAuditEvent(deps.pool, {
+      ...facts,
+      action: 'auth.login_succeeded',
+      targetType: 'user',
+      targetId: peeked.userId,
+    });
+    return { token, recoveryCodesRemaining: await countLiveRecoveryCodes(deps.pool, peeked.userId) };
   });
 }

@@ -46,6 +46,9 @@ const EXEMPT = new Set([
   // present, so these must be reachable unauthenticated or the flow is dead — the same
   // trap the payments webhook fell into in 3O.
   '/v1/auth/verify-email',
+  // A caller partway through login holds a challenge, not a session, so this must be
+  // reachable unauthenticated or the second step is a dead route.
+  '/v1/auth/mfa/verify',
   '/v1/auth/forgot-password',
   '/v1/auth/reset-password',
 ]);

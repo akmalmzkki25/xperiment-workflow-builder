@@ -8,9 +8,11 @@ import {
   createWorkspaceWithOwner,
   EMAIL_VERIFY_TTL_MS,
   generateToken,
+  getMfa,
   getUserById,
   getUserByEmail,
   hashPassword,
+  MFA_CHALLENGE_TTL_MS,
   hashToken,
   listMemberships,
   markEmailVerified,
@@ -37,7 +39,7 @@ const credentialsSchema = z.object({ email: z.string().email(), password: z.stri
  * and `/login` are in EXEMPT, so there is no authContext and auditActor cannot be used;
  * the actor fields are supplied explicitly at those call sites instead.
  */
-function requestFacts(req: { id: string; ip: string; headers: Record<string, unknown> }): {
+export function requestFacts(req: { id: string; ip: string; headers: Record<string, unknown> }): {
   requestId: string;
   ip: string;
   userAgent: string | null;
@@ -137,6 +139,27 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
       return sendProblem(reply, 401, 'Invalid credentials');
     }
     limiter.reset(limiterKey);
+    const mfa = await getMfa(deps.pool, user.id);
+    if (mfa?.confirmedAt) {
+      // No session yet: a password alone must not produce anything that authenticates.
+      const challenge = generateToken('qm');
+      await createAuthToken(deps.pool, {
+        userId: user.id,
+        purpose: 'mfa_challenge',
+        tokenHash: challenge.hash,
+        expiresAt: new Date(Date.now() + MFA_CHALLENGE_TTL_MS),
+      });
+      await appendAuditEvent(deps.pool, {
+        ...requestFacts(req),
+        actorKind: 'user',
+        actorUserId: user.id,
+        actorLabel: user.email,
+        action: 'auth.mfa_challenged',
+        targetType: 'user',
+        targetId: user.id,
+      });
+      return { mfaRequired: true, challenge: challenge.token };
+    }
     const { token, hash } = generateToken('qs');
     await createSession(deps.pool, { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
     await appendAuditEvent(deps.pool, {
