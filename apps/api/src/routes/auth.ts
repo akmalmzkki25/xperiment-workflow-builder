@@ -1,6 +1,7 @@
 import {
   appendAuditEvent,
   consumeAuthToken,
+  consumeOtherTokens,
   createAuthToken,
   createSession,
   createUser,
@@ -13,15 +14,18 @@ import {
   hashToken,
   listMemberships,
   markEmailVerified,
+  PASSWORD_RESET_TTL_MS,
   revokeAllSessions,
   revokeSession,
+  updatePassword,
   verifyPassword,
+  withTx,
 } from '@xperiment/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { LoginLimiter } from '../auth/rateLimit.js';
 import { auditActor, authOf } from '../auth/plugin.js';
-import { verifyEmailMessage } from '../mail/messages.js';
+import { passwordResetMessage, verifyEmailMessage } from '../mail/messages.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -176,6 +180,73 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
       targetId: ctx.userId,
     });
     return reply.status(204).send();
+  });
+
+  app.post('/v1/auth/forgot-password', async (req, reply) => {
+    const parsed = z.object({ email: z.string().email() }).strict().safeParse(req.body ?? {});
+    // Even a malformed body gets the neutral answer, so probing tells the caller nothing.
+    if (!parsed.success) return reply.status(200).send({ sent: true });
+    if (!limiter.check(`forgot:${parsed.data.email}:${req.ip}`)) {
+      return sendProblem(reply, 429, 'Too many attempts', 'Try again in a minute');
+    }
+    const user = await getUserByEmail(deps.pool, parsed.data.email);
+    if (user) {
+      const { token, hash } = generateToken('qr');
+      await createAuthToken(deps.pool, {
+        userId: user.id,
+        purpose: 'password_reset',
+        tokenHash: hash,
+        expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+      });
+      await appendAuditEvent(deps.pool, {
+        ...requestFacts(req),
+        actorKind: 'user',
+        actorUserId: user.id,
+        actorLabel: user.email,
+        action: 'auth.password_reset_requested',
+        targetType: 'user',
+        targetId: user.id,
+      });
+      try {
+        await deps.mailSender.send(passwordResetMessage(user.email, deps.appUrl, token));
+      } catch (e) {
+        // Still 200: a send failure must neither leak existence nor 500.
+        req.log.warn({ err: (e as Error).message }, 'password reset email could not be sent');
+      }
+    }
+    // Identical response whether or not the address exists.
+    return reply.status(200).send({ sent: true });
+  });
+
+  app.post('/v1/auth/reset-password', async (req, reply) => {
+    const parsed = z
+      .object({ token: z.string().min(1).max(200), password: z.string().min(8) })
+      .strict()
+      .safeParse(req.body ?? {});
+    // Validated before the token is spent, so a too-short password does not burn the
+    // user's only link.
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
+    const passwordHash = await hashPassword(parsed.data.password);
+    const userId = await withTx(deps.pool, async (client) => {
+      const claimed = await consumeAuthToken(client, hashToken(parsed.data.token), 'password_reset');
+      if (!claimed) return null;
+      await updatePassword(client, claimed.userId, passwordHash);
+      // A stolen session must not survive the reset.
+      await revokeAllSessions(client, claimed.userId);
+      // Any other live reset link is now stale.
+      await consumeOtherTokens(client, claimed.userId, 'password_reset');
+      await appendAuditEvent(client, {
+        ...requestFacts(req),
+        actorKind: 'user',
+        actorUserId: claimed.userId,
+        action: 'auth.password_reset_completed',
+        targetType: 'user',
+        targetId: claimed.userId,
+      });
+      return claimed.userId;
+    });
+    if (!userId) return sendProblem(reply, 400, 'Invalid or expired token');
+    return { reset: true };
   });
 
   app.post('/v1/auth/verify-email', async (req, reply) => {
