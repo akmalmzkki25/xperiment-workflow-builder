@@ -19,6 +19,11 @@ export interface ResolvedServerDeps {
   mailSender: import('../mail/sender.js').MailSender;
   /** Base URL the emailed links point at. */
   appUrl: string;
+  /**
+   * Root key. MFA secrets are account-level, so they are wrapped directly by this rather
+   * than by a workspace-scoped SecretVault — see the 4B design.
+   */
+  keyProvider: import('@xperiment/db').KeyProvider;
   /** Envelope encryption for connection payloads. */
   credentialsVault: import('@xperiment/db').SecretVault;
   /** Envelope encryption for trigger, callback and alert webhook secrets. */

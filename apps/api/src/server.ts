@@ -19,6 +19,7 @@ import { createMailSenderFromEnv, type MailSender } from './mail/sender.js';
 import { registerAuthPlugin } from './auth/plugin.js';
 import { registerRateLimit } from './rateLimit/plugin.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerMfaRoutes } from './routes/mfa.js';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAlertRoutes } from './routes/alerts.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
@@ -101,14 +102,16 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   });
   // One keyring for both vaults, so the split by legacy key family does not double
   // KMS traffic: one unwrap per workspace per cache window for the whole process.
+  const keyProvider = deps.keyProvider ?? localKeyProvider(process.env['KEK_MASTER_KEY'] ?? DEFAULT_LOCAL_KEK_MASTER);
   const keyring = createWorkspaceKeyring({
     pool: deps.pool,
-    provider: deps.keyProvider ?? localKeyProvider(process.env['KEK_MASTER_KEY'] ?? DEFAULT_LOCAL_KEK_MASTER),
+    provider: keyProvider,
     ...(process.env['KEK_CACHE_TTL_MS'] ? { ttlMs: Number(process.env['KEK_CACHE_TTL_MS']) } : {}),
   });
   const resolvedDeps = {
     pool: deps.pool,
     registry: deps.registry,
+    keyProvider,
     paymentProvider: resolvePaymentProvider(deps.paymentProvider),
     paymentWebhookSecret: deps.paymentWebhookSecret ?? process.env['PAYMENT_WEBHOOK_SECRET'] ?? null,
     gatewayUrl: deps.gatewayUrl ?? process.env['GATEWAY_URL'] ?? 'http://localhost:3003',
@@ -139,6 +142,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerHealthRoutes(app);
   registerOpenapiRoutes(app);
   registerAuthRoutes(app, resolvedDeps);
+  registerMfaRoutes(app, resolvedDeps);
   registerWorkspaceRoutes(app, resolvedDeps);
   registerWorkflowRoutes(app, resolvedDeps);
   registerExecutionRoutes(app, resolvedDeps);
