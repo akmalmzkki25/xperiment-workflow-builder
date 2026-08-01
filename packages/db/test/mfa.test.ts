@@ -168,7 +168,9 @@ describe('mfa_challenge tokens', () => {
       userId,
       purpose: 'mfa_challenge',
       tokenHash: hash,
-      expiresAt: new Date(Date.now() - 1),
+      // A full minute in the past, not a millisecond: `expires_at > now()` is evaluated by
+      // Postgres, so a 1ms margin makes this test a hostage to clock skew between the two.
+      expiresAt: new Date(Date.now() - 60_000),
     });
     expect(await peekAuthToken(pool, hash, 'mfa_challenge')).toBeNull();
   });
