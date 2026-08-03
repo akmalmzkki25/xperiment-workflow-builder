@@ -156,9 +156,16 @@ export interface AlertEvent {
 export interface MeResponse {
   user: { id: string };
   emailVerified: boolean;
+  mfaEnabled: boolean;
   currentWorkspaceId: string;
-  workspaces: { id: string; name: string; role: string }[];
+  workspaces: { id: string; name: string; role: string; requireMfa: boolean }[];
 }
+
+/**
+ * A password alone stops being enough once a second factor is confirmed: the server
+ * answers with a challenge to trade for a session, not with the session itself.
+ */
+export type LoginResult = { token: string; mfaRequired?: undefined } | { mfaRequired: true; challenge: string };
 
 export class ApiError extends Error {
   constructor(
@@ -223,8 +230,32 @@ export class ApiClient {
     return this.request('POST', '/v1/auth/register', { body: { email, password } });
   }
 
-  login(email: string, password: string): Promise<{ token: string }> {
+  login(email: string, password: string): Promise<LoginResult> {
     return this.request('POST', '/v1/auth/login', { body: { email, password } });
+  }
+
+  mfaSetup(): Promise<{ secretBase32: string; otpauthUri: string }> {
+    return this.request('POST', '/v1/auth/mfa/setup');
+  }
+
+  mfaConfirm(code: string): Promise<{ recoveryCodes: string[]; remaining: number }> {
+    return this.request('POST', '/v1/auth/mfa/confirm', { body: { code } });
+  }
+
+  mfaDisable(code: string): Promise<{ mfaEnabled: boolean }> {
+    return this.request('POST', '/v1/auth/mfa/disable', { body: { code } });
+  }
+
+  mfaRecoveryCodes(code: string): Promise<{ recoveryCodes: string[]; remaining: number }> {
+    return this.request('POST', '/v1/auth/mfa/recovery-codes', { body: { code } });
+  }
+
+  mfaVerify(challenge: string, code: string): Promise<{ token: string; recoveryCodesRemaining: number }> {
+    return this.request('POST', '/v1/auth/mfa/verify', { body: { challenge, code } });
+  }
+
+  setMfaPolicy(requireMfa: boolean): Promise<{ requireMfa: boolean }> {
+    return this.request('PUT', '/v1/workspaces/mfa-policy', { body: { requireMfa } });
   }
 
   me(): Promise<MeResponse> {

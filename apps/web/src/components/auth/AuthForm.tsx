@@ -13,6 +13,9 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Set only once a password has bought a challenge; nothing is stored until the code lands.
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState('');
 
   const submit = async () => {
     setBusy(true);
@@ -22,9 +25,17 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
       // Drop any prior session's stored workspace so this account doesn't send a
       // stale X-Xperiment-Workspace it isn't a member of (→ 403 on every request).
       clearToken();
-      const { token } =
+      const result =
         mode === 'register' ? await client.register(email, password) : await client.login(email, password);
-      setToken(token);
+      // Discriminate on `challenge`: it exists on exactly one arm, so this narrows cleanly
+      // where a truthiness check on the optional `mfaRequired` does not.
+      if ('challenge' in result) {
+        // The password bought a challenge, not a session. Nothing is stored yet.
+        setChallenge(result.challenge);
+        setBusy(false);
+        return;
+      }
+      setToken(result.token);
       router.replace('/workflows');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Something went wrong — is the API running?');
@@ -48,23 +59,59 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             void submit();
           }}
         >
-          <TextField label="Email" type="email" value={email} onChange={setEmail} testId="auth-email" />
-          <TextField
-            label="Password"
-            type="password"
-            value={password}
-            onChange={setPassword}
-            hint={mode === 'register' ? 'At least 8 characters' : undefined}
-            testId="auth-password"
-          />
+          {challenge ? (
+            <TextField
+              label="Code from your authenticator app"
+              value={code}
+              onChange={setCode}
+              testId="mfa-login-code"
+            />
+          ) : (
+            <>
+              <TextField label="Email" type="email" value={email} onChange={setEmail} testId="auth-email" />
+              <TextField
+                label="Password"
+                type="password"
+                value={password}
+                onChange={setPassword}
+                hint={mode === 'register' ? 'At least 8 characters' : undefined}
+                testId="auth-password"
+              />
+            </>
+          )}
           {error ? (
             <div className="q-banner" data-testid="auth-error">
               {error}
             </div>
           ) : null}
-          <button className="q-btn" type="submit" disabled={busy || !email || !password} data-testid="auth-submit">
-            {mode === 'register' ? 'Create account' : 'Sign in'}
-          </button>
+          {challenge ? (
+            <button
+              className="q-btn"
+              type="button"
+              disabled={busy || code.length < 6}
+              data-testid="mfa-login-submit"
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                void getBrowserClient()
+                  .mfaVerify(challenge, code)
+                  .then(({ token }) => {
+                    setToken(token);
+                    router.replace('/workflows');
+                  })
+                  .catch((e: unknown) => {
+                    setError(e instanceof ApiError ? e.message : 'Could not verify the code');
+                    setBusy(false);
+                  });
+              }}
+            >
+              Continue
+            </button>
+          ) : (
+            <button className="q-btn" type="submit" disabled={busy || !email || !password} data-testid="auth-submit">
+              {mode === 'register' ? 'Create account' : 'Sign in'}
+            </button>
+          )}
         </form>
         {mode === 'login' ? (
           <p style={{ color: 'var(--text-secondary)' }}>

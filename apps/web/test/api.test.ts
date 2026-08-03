@@ -209,6 +209,29 @@ describe('endpoint helpers', () => {
     expect(calls[3]!.init.body).toBeUndefined();
   });
 
+  test('the mfa endpoints carry the right verbs, paths and bodies', async () => {
+    responder = () => json(200, { secretBase32: 'AAAA', otpauthUri: 'otpauth://x', recoveryCodes: [], token: 't' });
+    const client = makeClient();
+    await client.mfaSetup();
+    await client.mfaConfirm('123456');
+    await client.mfaDisable('123456');
+    await client.mfaRecoveryCodes('123456');
+    await client.mfaVerify('qm_c', '123456');
+    await client.setMfaPolicy(true);
+    expect(calls.map((c) => `${c.init.method} ${c.url.replace('http://api.test', '')}`)).toEqual([
+      'POST /v1/auth/mfa/setup',
+      'POST /v1/auth/mfa/confirm',
+      'POST /v1/auth/mfa/disable',
+      'POST /v1/auth/mfa/recovery-codes',
+      'POST /v1/auth/mfa/verify',
+      'PUT /v1/workspaces/mfa-policy',
+    ]);
+    expect(calls[0]!.init.body).toBeUndefined();
+    expect(calls[1]!.init.body).toBe(JSON.stringify({ code: '123456' }));
+    expect(calls[4]!.init.body).toBe(JSON.stringify({ challenge: 'qm_c', code: '123456' }));
+    expect(calls[5]!.init.body).toBe(JSON.stringify({ requireMfa: true }));
+  });
+
   test('template client builds the category query and the clone name body', async () => {
     responder = () => json(200, { items: [] });
     const client = makeClient();
