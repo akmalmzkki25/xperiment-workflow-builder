@@ -257,3 +257,47 @@ test('the recovery pages render and refuse a link with no usable token', async (
   await expect(page.getByTestId('verify-failed')).toBeVisible();
   await page.screenshot({ path: `${ARTIFACTS}/09-recovery.png` });
 });
+
+test('a user turns on two-factor and is challenged at the next sign in', async ({ page }) => {
+  await loginWithToken(page);
+  await page.getByTestId('nav-security').click();
+  await expect(page.getByTestId('security-page')).toBeVisible();
+  await page.getByTestId('mfa-start').click();
+  // The QR is drawn in the browser; the key beside it is what this test enrols with.
+  await expect(page.getByTestId('mfa-qr')).toBeVisible();
+  const key = (await page.getByTestId('mfa-key').innerText()).replace(/\s/g, '');
+
+  const code = await page.evaluate(async (base32: string) => {
+    // Recomputed in the page rather than imported: e2e runs against the built app.
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = 0;
+    let value = 0;
+    const bytes: number[] = [];
+    for (const ch of base32) {
+      value = (value << 5) | alphabet.indexOf(ch);
+      bits += 5;
+      if (bits >= 8) {
+        bytes.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+    const secret = new Uint8Array(bytes);
+    const counter = Math.floor(Date.now() / 1000 / 30);
+    const msg = new ArrayBuffer(8);
+    new DataView(msg).setBigUint64(0, BigInt(counter));
+    const hmacKey = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+    const mac = new Uint8Array(await crypto.subtle.sign('HMAC', hmacKey, msg));
+    const offset = mac[mac.length - 1]! & 0x0f;
+    const bin =
+      ((mac[offset]! & 0x7f) << 24) |
+      ((mac[offset + 1]! & 0xff) << 16) |
+      ((mac[offset + 2]! & 0xff) << 8) |
+      mac[offset + 3]!;
+    return String(bin % 1000000).padStart(6, '0');
+  }, key);
+
+  await page.getByTestId('mfa-code').fill(code);
+  await page.getByTestId('mfa-confirm').click();
+  await expect(page.getByTestId('mfa-recovery')).toBeVisible();
+  await page.screenshot({ path: `${ARTIFACTS}/10-mfa.png` });
+});

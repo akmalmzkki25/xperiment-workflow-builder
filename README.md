@@ -483,6 +483,36 @@ reset links: a stolen session must not survive the reset that was meant to end i
 `MAIL_TRANSPORT=log` writes the message — including the reset link — to the server log and
 sends nothing. It is the development default and **must never run in production.**
 
+### Two-factor authentication (AUTH-004)
+
+Any user may enable a TOTP second factor from `/security`. The secret is wrapped by the
+deployment **root key** rather than a workspace KEK, because MFA is account-level: filing it
+under one workspace would mean destroying that workspace's key locks the user out of every
+other workspace they belong to. Under `KMS_PROVIDER=gcp-kms` that means **one KMS decrypt per
+MFA login** — human login rates, not request rates.
+
+Login becomes two steps once a factor is confirmed: the password answers with a five-minute
+challenge instead of a session, and `POST /v1/auth/mfa/verify` trades that challenge plus a
+code for the session. A wrong code does not burn the challenge; running out of attempts
+does. **A password reset does not bypass the second factor.**
+
+Codes are single use: the verification window is ±1 step, so a code is live for 90 seconds,
+and `user_mfa.last_used_step` is the floor that stops that window from doubling as a replay
+window.
+
+Ten single-use recovery codes are issued at enrolment and shown **once**. They are the only
+way back in without the authenticator — an owner cannot reset a member's factor.
+
+An owner may require the factor of every owner and admin in a workspace
+(`PUT /v1/workspaces/mfa-policy`). Turning it on requires the owner to be enrolled already.
+While the policy is unmet, a privileged member gets `403 MFA required` on everything except
+`/v1/auth/me`, `/v1/auth/mfa/*` and `/v1/auth/logout`, so the account can always be fixed.
+
+**The policy does not cover API keys.** A key is not a human and cannot present a code, so
+enforcing it against keys would break every running automation the moment the switch is
+flipped. A key carrying the admin role keeps full access under the policy; revoking the key
+is the control that applies.
+
 ### Audit trail
 
 `audit_events` records credential lifecycle (`credential.create`, `.delete`, `.test`),
@@ -490,9 +520,12 @@ credential use by a workflow node (`credential.read_use`, one row per node), sig
 secret disclosure (`trigger_secret.reveal`), the backfill (`secret.rekey_batch`),
 authentication (`auth.register`, `.login_failed`, `.login_succeeded`, `.logout`,
 `.logout_all`), account recovery (`auth.email_verify_requested`, `.email_verified`,
-`.password_reset_requested`, `.password_reset_completed`) and privileged workspace changes
+`.password_reset_requested`, `.password_reset_completed`), the second factor
+(`auth.mfa_enabled`, `.mfa_disabled`, `.mfa_challenged`, `.mfa_verified`, `.mfa_failed`,
+`.mfa_recovery_used`, `.mfa_recovery_regenerated`) and privileged workspace changes
 (`workspace.create`, `member.role_change`, `invite.create`, `invite.accept`,
-`api_key.create`, `api_key.revoke`, `plan.change`, `invoice.pay`, `invoice.mark_paid`).
+`api_key.create`, `api_key.revoke`, `plan.change`, `invoice.pay`, `invoice.mark_paid`,
+`workspace.mfa_policy_change`).
 Events describing a mutation commit inside that mutation's transaction. Metadata is a fixed
 set of named scalars, never a request body, provider response, or token.
 
