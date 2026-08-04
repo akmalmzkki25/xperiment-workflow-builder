@@ -61,6 +61,26 @@ export function branchIr(): WorkflowIR {
   };
 }
 
+/** t → a → b, with a → h on the error port. `a` is the node the tests fail. */
+export function errorPathIr(): WorkflowIR {
+  return {
+    schemaVersion: '0.1',
+    workflow: { id: 'wf_err', name: 'Error path' },
+    entrypoints: ['t'],
+    nodes: [
+      { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+      { id: 'a', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} } },
+      { id: 'b', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} } },
+      { id: 'h', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} } },
+    ],
+    edges: [
+      { id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'a', port: 'input' } },
+      { id: 'e2', from: { nodeId: 'a', port: 'main' }, to: { nodeId: 'b', port: 'input' } },
+      { id: 'e3', from: { nodeId: 'a', port: 'error' }, to: { nodeId: 'h', port: 'input' } },
+    ],
+  };
+}
+
 export async function seedExecution(
   pool: Pool,
   ir: WorkflowIR,

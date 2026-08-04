@@ -10,7 +10,7 @@ import {
   latestNodeStates,
   localKeyProvider,
   runMigrations,
-  succeededOutputs,
+  nodeOutputs,
 } from '@xperiment/db';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -84,7 +84,7 @@ describe('runNodeTask', () => {
 
     const states = await latestNodeStates(pool, executionId);
     expect(states.find((n) => n.nodeId === 't')?.status).toBe('SUCCEEDED');
-    const outputs = await succeededOutputs(pool, executionId);
+    const outputs = await nodeOutputs(pool, executionId);
     expect(outputs['t']).toEqual({ name: 'Budi' });
     const outbox = await fetchUnpublished(pool, 10);
     expect(outbox[0]!.eventType).toBe('node.completed');
@@ -103,7 +103,7 @@ describe('runNodeTask', () => {
     await runNodeTask(deps, { executionId, nodeId: 't', attempt: 1 });
     await queueNode(pool, executionId, 'greet');
     await runNodeTask(deps, { executionId, nodeId: 'greet', attempt: 1 });
-    const outputs = await succeededOutputs(pool, executionId);
+    const outputs = await nodeOutputs(pool, executionId);
     expect(outputs['greet']).toEqual({ msg: 'Halo Budi' });
   });
 

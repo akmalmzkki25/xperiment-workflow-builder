@@ -300,15 +300,22 @@ export async function latestNodeStates(
   }));
 }
 
-export async function succeededOutputs(db: Db, executionId: string): Promise<Record<string, unknown>> {
+/**
+ * Every node's value as an expression sees it. A node that failed contributes `{ error: … }`
+ * rather than nothing: a branch wired to an `error` port exists precisely to read the failure,
+ * and with no entry here it would have nothing to read.
+ */
+export async function nodeOutputs(db: Db, executionId: string): Promise<Record<string, unknown>> {
   const r = await db.query(
-    `SELECT DISTINCT ON (node_id) node_id, status, output_json
+    `SELECT DISTINCT ON (node_id) node_id, status, output_json, error_json
      FROM execution_nodes WHERE execution_id = $1 ORDER BY node_id, attempt DESC`,
     [executionId],
   );
   const out: Record<string, unknown> = {};
   for (const row of r.rows as Record<string, unknown>[]) {
-    if (row['status'] === 'SUCCEEDED') out[row['node_id'] as string] = row['output_json'];
+    const id = row['node_id'] as string;
+    if (row['status'] === 'SUCCEEDED') out[id] = row['output_json'];
+    else if (row['status'] === 'FAILED') out[id] = { error: row['error_json'] };
   }
   return out;
 }

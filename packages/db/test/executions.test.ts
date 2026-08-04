@@ -13,7 +13,7 @@ import {
   latestNodeStates,
   listExecutions,
   PayloadTooLargeError,
-  succeededOutputs,
+  nodeOutputs,
 } from '../src/repos/executions.js';
 import { fetchUnpublished, markPublished } from '../src/repos/outbox.js';
 import { executionOf } from './execHelpers.js';
@@ -118,7 +118,7 @@ describe('CAS updates', () => {
     expect(
       await casNode(pool, { executionId: execution.id, nodeId: 't', attempt: 1, from: ['RUNNING'], to: 'SUCCEEDED' }),
     ).toBe(false);
-    const outputs = await succeededOutputs(pool, execution.id);
+    const outputs = await nodeOutputs(pool, execution.id);
     expect(outputs['t']).toEqual({ ok: true });
   });
 

@@ -10,7 +10,7 @@ import {
   getVersion,
   insertOutbox,
   openWait,
-  succeededOutputs,
+  nodeOutputs,
   withTx,
   type SecretVault,
 } from '@xperiment/db';
@@ -155,7 +155,7 @@ export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): P
       return;
     }
     const triggerBody = await getTriggerPayload(deps.pool, executionId);
-    const outputs = await succeededOutputs(deps.pool, executionId);
+    const outputs = await nodeOutputs(deps.pool, executionId);
     const ctx = buildContext(executionId, triggerBody, outputs);
     resolvedParams = resolveTemplate(node.parameters, ctx);
     const result = await executeNode(deps, {

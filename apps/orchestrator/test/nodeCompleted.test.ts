@@ -4,6 +4,7 @@ import {
   fetchUnpublished,
   getExecutionDetail,
   latestNodeStates,
+  nodeOutputs,
   openWait,
   runMigrations,
   waitsForExecution,
@@ -14,7 +15,7 @@ import type { OrchestratorDeps } from '../src/deps.js';
 import { handleExecutionRequested } from '../src/handlers/executionRequested.js';
 import { handleNodeCompleted } from '../src/handlers/nodeCompleted.js';
 import { handleWatchdog } from '../src/handlers/watchdog.js';
-import { branchIr, linearIr, seedExecution, truncateAll } from './helpers.js';
+import { branchIr, errorPathIr, linearIr, seedExecution, truncateAll } from './helpers.js';
 
 let pool: Pool;
 let deps: OrchestratorDeps;
@@ -245,5 +246,83 @@ describe('handleNodeCompleted FAILED', () => {
     const waits = await waitsForExecution(pool, executionId);
     expect(waits.every((w) => w.status !== 'open')).toBe(true);
     expect((await latestNodeStates(pool, executionId)).find((n) => n.nodeId === 'greet')?.status).toBe('SKIPPED');
+  });
+});
+
+describe('handleNodeCompleted error path', () => {
+  /** Drives a node from PENDING to FAILED, the way the worker's recordFailure does. */
+  async function failNode(executionId: string, nodeId: string) {
+    await casNode(pool, { executionId, nodeId, attempt: 1, from: ['PENDING'], to: 'READY' });
+    await casNode(pool, { executionId, nodeId, attempt: 1, from: ['READY', 'QUEUED'], to: 'QUEUED' });
+    await casNode(pool, { executionId, nodeId, attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    await casNode(pool, {
+      executionId,
+      nodeId,
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'FAILED',
+      patch: { errorJson: { code: 'http_error', message: 'HTTP 500', retryable: false }, completedAt: true },
+    });
+    await handleNodeCompleted(deps, { executionId, nodeId, attempt: 1, status: 'FAILED' });
+  }
+
+  test('a failed node with an error edge continues the run down that branch', async () => {
+    const { executionId } = await seedExecution(pool, errorPathIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await failNode(executionId, 'a');
+
+    const states = await latestNodeStates(pool, executionId);
+    const byId = Object.fromEntries(states.map((s) => [s.nodeId, s.status]));
+    expect(byId['h']).toBe('QUEUED');
+    expect(byId['b']).toBe('SKIPPED');
+    const detail = await getExecutionDetail(pool, executionId);
+    expect(detail?.execution.status).toBe('RUNNING'); // the run is not over
+  });
+
+  test('the run reaches SUCCEEDED once the error branch finishes', async () => {
+    const { executionId } = await seedExecution(pool, errorPathIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await failNode(executionId, 'a');
+    await succeedNode(executionId, 'h');
+    const detail = await getExecutionDetail(pool, executionId);
+    expect(detail?.execution.status).toBe('SUCCEEDED');
+  });
+
+  test("policy 'continue' carries the run on down main with the error as output", async () => {
+    const ir = errorPathIr();
+    // Drop the error edge; the policy alone must keep the run alive.
+    ir.edges = ir.edges.filter((e) => e.id !== 'e3');
+    ir.nodes = ir.nodes.map((n) => (n.id === 'a' ? { ...n, settings: { onError: 'continue' as const } } : n));
+    const { executionId } = await seedExecution(pool, ir);
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await failNode(executionId, 'a');
+
+    const states = await latestNodeStates(pool, executionId);
+    expect(states.find((s) => s.nodeId === 'b')?.status).toBe('QUEUED');
+    const detail = await getExecutionDetail(pool, executionId);
+    expect(detail?.execution.status).toBe('RUNNING');
+  });
+
+  test('a handled failure is still recorded FAILED on the node', async () => {
+    // The database records what happened; the scheduler decides what it means.
+    const { executionId } = await seedExecution(pool, errorPathIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await failNode(executionId, 'a');
+    const states = await latestNodeStates(pool, executionId);
+    expect(states.find((s) => s.nodeId === 'a')?.status).toBe('FAILED');
+  });
+
+  test('the handler branch can read the failure as an expression value', async () => {
+    const { executionId } = await seedExecution(pool, errorPathIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await failNode(executionId, 'a');
+    const outputs = await nodeOutputs(pool, executionId);
+    // Without this the branch that exists to handle the failure has nothing to read.
+    expect(outputs['a']).toEqual({ error: { code: 'http_error', message: 'HTTP 500', retryable: false } });
   });
 });

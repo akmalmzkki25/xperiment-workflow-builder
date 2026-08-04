@@ -12,7 +12,7 @@ import {
   latestNodeStates,
   localKeyProvider,
   runMigrations,
-  succeededOutputs,
+  nodeOutputs,
   type SecretVault,
 } from '@xperiment/db';
 import type { WorkflowIR } from '@xperiment/ir';
@@ -105,7 +105,7 @@ describe('worker connection resolution: envelope encryption, audit and tenant sc
       encVersion: sealed.encVersion,
     });
     const executionId = await runThrough(pgIr(conn.id));
-    expect((await succeededOutputs(pool, executionId))['q']).toEqual({ rows: [{ answer: 42 }], rowCount: 1 });
+    expect((await nodeOutputs(pool, executionId))['q']).toEqual({ rows: [{ answer: 42 }], rowCount: 1 });
     const rows = await readUseRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.actor_kind).toBe('system');
@@ -175,7 +175,7 @@ describe('worker connection resolution', () => {
       encryptedPayload: encryptSecret(JSON.stringify({ connectionString: DB_URL }), credentialsKey),
     });
     const executionId = await runThrough(pgIr(conn.id));
-    const outputs = await succeededOutputs(pool, executionId);
+    const outputs = await nodeOutputs(pool, executionId);
     expect(outputs['q']).toEqual({ rows: [{ answer: 42 }], rowCount: 1 });
     const input = await pool.query(
       `SELECT input_json::text AS t FROM execution_nodes WHERE execution_id = $1 AND node_id = 'q'`,

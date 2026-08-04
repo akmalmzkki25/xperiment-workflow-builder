@@ -53,39 +53,10 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
     return;
   }
 
-  if (payload.status === 'FAILED') {
-    await withTx(deps.pool, async (client) => {
-      const states = await latestNodeStates(client, executionId);
-      for (const s of states) {
-        if (s.status === 'PENDING') {
-          await casNode(client, {
-            executionId,
-            nodeId: s.nodeId,
-            attempt: s.attempt,
-            from: ['PENDING'],
-            to: 'SKIPPED',
-          });
-          await appendEvent(client, { executionId, eventType: 'node.skipped', nodeId: s.nodeId });
-        }
-      }
-      const failed = await casExecution(client, {
-        executionId,
-        from: ['RUNNING'],
-        to: 'FAILED',
-        completedAt: true,
-        errorSummary: `Node '${nodeId}' failed`,
-      });
-      if (failed) {
-        await closeOpenWaits(client, executionId); // don't leave a sibling's wait dangling
-        await appendEvent(client, { executionId, eventType: 'execution.failed', nodeId });
-        await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
-        await recordExecutionUsage(client, buildExecutionUsage(ctx.execution, states, 'FAILED'));
-      }
-    });
-    return;
-  }
-
-  // SUCCEEDED
+  // A failure is no longer special-cased. It flows into the same readiness pass as a success
+  // and only ends the execution when readiness says the failure was unhandled — an error edge
+  // or an `onError: 'continue'` policy keeps the run alive. Readiness also propagates the
+  // skips that this handler used to write by hand.
   await withTx(deps.pool, async (client) => {
     const states = await latestNodeStates(client, executionId);
     const outcomes: NodeOutcome[] = states.map((s) => ({
@@ -133,7 +104,9 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
         from: ['RUNNING'],
         to: 'FAILED',
         completedAt: true,
-        errorSummary: 'A node failed',
+        // Name the node when this completion is the failing one; a fan-in may finalize on a
+        // failure reported earlier.
+        errorSummary: payload.status === 'FAILED' ? `Node '${nodeId}' failed` : 'A node failed',
       });
       if (done) {
         await closeOpenWaits(client, executionId);
