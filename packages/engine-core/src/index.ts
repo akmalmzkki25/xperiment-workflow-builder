@@ -15,7 +15,7 @@ export {
   computeBackoffMs,
   type ResolvedRetryPolicy,
 } from './retry.js';
-export { computeReadiness, type NodeOutcome, type ReadinessResult } from './readiness.js';
+export { computeReadiness, errorRouting, type NodeOutcome, type ReadinessResult } from './readiness.js';
 export { buildContext } from './context.js';
 export { nextFireAt } from './cron.js';
 export { approvalFallbackOutcome, type ApprovalFallback, type FallbackOutcome } from './waits.js';

@@ -118,3 +118,87 @@ describe('computeReadiness', () => {
     expect(r.ready).toEqual([]);
   });
 });
+
+describe('error path', () => {
+  // t → a → b, plus a → h on the error port
+  const routed = ir(
+    [{ id: 't' }, { id: 'a' }, { id: 'b' }, { id: 'h' }],
+    [
+      ['t', 'a'],
+      ['a', 'b'],
+      ['a', 'h', 'error'],
+    ],
+  );
+  const plain = ir([{ id: 't' }, { id: 'a' }, { id: 'b' }], [['t', 'a'], ['a', 'b']]);
+
+  test('a failure with an error edge routes there and the run survives', () => {
+    const r = computeReadiness(routed, [o('t', 'SUCCEEDED'), o('a', 'FAILED')]);
+    expect(r.ready).toEqual(['h']);
+    expect(r.skipped).toEqual(['b']);
+    expect(r.terminal).toBeNull();
+  });
+
+  test('a failure with no error edge still ends the run', () => {
+    // Nothing changed for the default policy — every existing workflow keeps its meaning.
+    const r = computeReadiness(plain, [o('t', 'SUCCEEDED'), o('a', 'FAILED')]);
+    expect(r.ready).toEqual([]);
+    expect(r.terminal).toBe('FAILED');
+  });
+
+  test("policy 'continue' on the node carries on down main", () => {
+    const withPolicy: WorkflowIR = {
+      ...plain,
+      nodes: plain.nodes.map((n) => (n.id === 'a' ? { ...n, settings: { onError: 'continue' as const } } : n)),
+    };
+    const r = computeReadiness(withPolicy, [o('t', 'SUCCEEDED'), o('a', 'FAILED')]);
+    expect(r.ready).toEqual(['b']);
+    expect(r.terminal).toBeNull();
+  });
+
+  test('the workflow-wide default applies when the node says nothing', () => {
+    const withDefault: WorkflowIR = { ...plain, metadata: { onError: 'continue' } };
+    expect(computeReadiness(withDefault, [o('t', 'SUCCEEDED'), o('a', 'FAILED')]).ready).toEqual(['b']);
+  });
+
+  test('the node setting beats the workflow default', () => {
+    const mixed: WorkflowIR = {
+      ...plain,
+      metadata: { onError: 'continue' },
+      nodes: plain.nodes.map((n) => (n.id === 'a' ? { ...n, settings: { onError: 'fail' as const } } : n)),
+    };
+    expect(computeReadiness(mixed, [o('t', 'SUCCEEDED'), o('a', 'FAILED')]).terminal).toBe('FAILED');
+  });
+
+  test('an error edge wins over a fail policy', () => {
+    // The edge is the author's explicit instruction; the policy is only the fallback.
+    const explicit: WorkflowIR = {
+      ...routed,
+      nodes: routed.nodes.map((n) => (n.id === 'a' ? { ...n, settings: { onError: 'fail' as const } } : n)),
+    };
+    const r = computeReadiness(explicit, [o('t', 'SUCCEEDED'), o('a', 'FAILED')]);
+    expect(r.ready).toEqual(['h']);
+    expect(r.terminal).toBeNull();
+  });
+
+  test('the run completes once the error branch finishes', () => {
+    const r = computeReadiness(routed, [o('t', 'SUCCEEDED'), o('a', 'FAILED'), o('h', 'SUCCEEDED')]);
+    expect(r.terminal).toBe('SUCCEEDED');
+  });
+
+  test('a downstream node still waits for an undecided sibling', () => {
+    const fan = ir(
+      [{ id: 't' }, { id: 'a' }, { id: 'c' }, { id: 'j' }],
+      [
+        ['t', 'a'],
+        ['t', 'c'],
+        ['a', 'j'],
+        ['c', 'j'],
+      ],
+    );
+    const withPolicy: WorkflowIR = { ...fan, metadata: { onError: 'continue' } };
+    const r = computeReadiness(withPolicy, [o('t', 'SUCCEEDED'), o('a', 'FAILED')]);
+    // `a` was handled, but `j` must still wait for `c`, which has not run.
+    expect(r.ready).toEqual(['c']);
+    expect(r.terminal).toBeNull();
+  });
+});

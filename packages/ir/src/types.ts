@@ -9,9 +9,13 @@ export interface RetryPolicy {
   retryOn?: (number | 'timeout')[];
 }
 
+export type ErrorPolicy = 'fail' | 'continue';
+
 export interface NodeSettings {
   timeoutMs?: number;
   retry?: RetryPolicy;
+  /** Falls back to the workflow-wide setting, which itself defaults to 'fail'. */
+  onError?: ErrorPolicy;
 }
 
 export interface IRNode {
@@ -38,5 +42,10 @@ export interface WorkflowIR {
   entrypoints: string[];
   nodes: IRNode[];
   edges: IREdge[];
-  metadata?: { executionTimeoutMs?: number; layout?: Record<string, { x: number; y: number }> };
+  metadata?: {
+    executionTimeoutMs?: number;
+    /** Default error policy for every node that does not set its own. */
+    onError?: ErrorPolicy;
+    layout?: Record<string, { x: number; y: number }>;
+  };
 }

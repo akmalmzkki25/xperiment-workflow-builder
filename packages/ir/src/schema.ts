@@ -23,6 +23,9 @@ export const irNodeSchema = z
       .object({
         timeoutMs: z.number().int().min(1).max(300000).optional(),
         retry: retryPolicySchema.optional(),
+        // What happens when this node fails and no `error` edge leaves it. Falls back to the
+        // workflow-wide setting, which itself defaults to 'fail' — today's behaviour.
+        onError: z.enum(['fail', 'continue']).optional(),
       })
       .strict()
       .optional(),
@@ -49,6 +52,8 @@ export const workflowIrSchema = z
     metadata: z
       .object({
         executionTimeoutMs: z.number().int().min(1000).max(86400000).optional(),
+        /** Default error policy for every node that does not set its own. */
+        onError: z.enum(['fail', 'continue']).optional(),
         layout: z
           .record(z.string(), z.object({ x: z.number(), y: z.number() }).strict())
           .optional(),

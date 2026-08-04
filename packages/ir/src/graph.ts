@@ -22,7 +22,9 @@ export function validateGraph(ir: WorkflowIR, registry: RegistryLike): Validatio
     if (to && e.to.port !== 'input') g('invalid_input_port', `Edge '${e.id}' target port must be 'input'`, to.id);
     if (from) {
       const info = registry.get(from.type);
-      if (info && !info.outputPorts.includes(e.from.port)) {
+      // `error` is offered implicitly by every node. Making seventeen connectors declare it
+      // would be churn carrying no information.
+      if (info && e.from.port !== 'error' && !info.outputPorts.includes(e.from.port)) {
         g('unknown_output_port', `Edge '${e.id}' uses port '${e.from.port}' not offered by '${from.type}'`, from.id);
       }
     }
