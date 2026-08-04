@@ -8,6 +8,7 @@ const fakeRegistry: RegistryLike = {
       'manual.trigger': { kind: 'trigger', ports: ['main'] },
       'core.transform': { kind: 'logic', ports: ['main'] },
       'core.if': { kind: 'logic', ports: ['true', 'false'] },
+      'core.loop': { kind: 'logic', ports: ['item', 'done'] },
     };
     const info = table[type];
     if (!info) return undefined;
@@ -18,7 +19,9 @@ const fakeRegistry: RegistryLike = {
           ? z.object({ fields: z.record(z.string(), z.unknown()) }).strict()
           : type === 'core.if'
             ? z.object({ condition: z.unknown() }).strict()
-            : z.object({}).strict(),
+            : type === 'core.loop'
+              ? z.object({ items: z.unknown() }).strict()
+              : z.object({}).strict(),
       defaultEffectClass: 'pure' as const,
       outputPorts: info.ports,
     };
@@ -26,6 +29,7 @@ const fakeRegistry: RegistryLike = {
 };
 
 interface TestNode {
+  scope?: { loopId: string };
   id: string;
   kind: string;
   type: string;
@@ -159,5 +163,108 @@ describe('validateWorkflow', () => {
     expect(f?.nodeId).toBe('branch');
     expect(f?.path).toBe('condition');
     expect(typeof f?.position).toBe('number');
+  });
+});
+
+describe('loop scopes', () => {
+  /** t → lp, lp --item--> b (scoped), lp --done--> after */
+  function loopIr(): TestIr {
+    return {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_lp', name: 'Loop' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+        { id: 'lp', kind: 'logic', type: 'core.loop', operationVersion: '0.1.0', parameters: { items: [] } },
+        {
+          id: 'b',
+          kind: 'logic',
+          type: 'core.transform',
+          operationVersion: '0.1.0',
+          parameters: { fields: {} },
+          scope: { loopId: 'lp' },
+        },
+        { id: 'after', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} } },
+      ],
+      edges: [
+        { id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'lp', port: 'input' } },
+        { id: 'e2', from: { nodeId: 'lp', port: 'item' }, to: { nodeId: 'b', port: 'input' } },
+        { id: 'e3', from: { nodeId: 'lp', port: 'done' }, to: { nodeId: 'after', port: 'input' } },
+      ],
+    };
+  }
+
+  const codes = (ir: TestIr) => validate(ir).findings.map((f) => f.code);
+
+  test('a one-node body is valid', () => {
+    // The single body node is both the scope's entry and its exit.
+    expect(codes(loopIr())).toEqual([]);
+  });
+
+  test('a two-node body chain is valid', () => {
+    const ir = loopIr();
+    ir.nodes.push({
+      id: 'b2',
+      kind: 'logic',
+      type: 'core.transform',
+      operationVersion: '0.1.0',
+      parameters: { fields: {} },
+      scope: { loopId: 'lp' },
+    });
+    ir.edges.push({ id: 'e4', from: { nodeId: 'b', port: 'main' }, to: { nodeId: 'b2', port: 'input' } });
+    expect(codes(ir)).toEqual([]);
+  });
+
+  test('a scoped node may not be the entrypoint', () => {
+    const ir = loopIr();
+    ir.entrypoints = ['b'];
+    expect(codes(ir)).toContain('scoped_node_as_entrypoint');
+  });
+
+  test('scope must name a core.loop node', () => {
+    const ir = loopIr();
+    ir.nodes = ir.nodes.map((n) => (n.id === 'b' ? { ...n, scope: { loopId: 'after' } } : n));
+    expect(codes(ir)).toContain('unknown_loop_scope');
+  });
+
+  test('a loop with no body is rejected', () => {
+    const ir = loopIr();
+    ir.nodes = ir.nodes.filter((n) => n.id !== 'b');
+    ir.edges = ir.edges.filter((e) => e.to.nodeId !== 'b');
+    expect(codes(ir)).toContain('empty_loop_body');
+  });
+
+  test('an edge may not leave a loop body', () => {
+    // An error branch inside a loop must stay inside it; expansion cannot clone a node that
+    // lives outside the scope.
+    const ir = loopIr();
+    ir.edges.push({ id: 'e4', from: { nodeId: 'b', port: 'main' }, to: { nodeId: 'after', port: 'input' } });
+    expect(codes(ir)).toContain('cross_scope_edge');
+  });
+
+  test('an edge may not enter a loop body except the loop own item edge', () => {
+    const ir = loopIr();
+    ir.edges.push({ id: 'e4', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'b', port: 'input' } });
+    expect(codes(ir)).toContain('cross_scope_edge');
+  });
+
+  test('a loop node may not itself be scoped', () => {
+    const ir = loopIr();
+    ir.nodes = ir.nodes.map((n) => (n.id === 'lp' ? { ...n, scope: { loopId: 'lp' } } : n));
+    expect(codes(ir)).toContain('nested_loop_unsupported');
+  });
+
+  test('a body with two entries is rejected', () => {
+    const ir = loopIr();
+    ir.nodes.push({
+      id: 'b2',
+      kind: 'logic',
+      type: 'core.transform',
+      operationVersion: '0.1.0',
+      parameters: { fields: {} },
+      scope: { loopId: 'lp' },
+    });
+    ir.edges.push({ id: 'e4', from: { nodeId: 'lp', port: 'item' }, to: { nodeId: 'b2', port: 'input' } });
+    expect(codes(ir)).toContain('loop_body_not_single_entry');
   });
 });

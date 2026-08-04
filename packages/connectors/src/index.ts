@@ -13,6 +13,7 @@ export { coreIf } from './core/if.js';
 export { coreDelay } from './core/delay.js';
 export { coreWaitForEvent } from './core/waitForEvent.js';
 export { coreApproval } from './core/approval.js';
+export { coreLoop, DEFAULT_CONCURRENCY, DEFAULT_MAX_ITERATIONS } from './core/loop.js';
 export { assertUrlAllowed, isForbiddenIp, type SsrfOptions } from './http/ssrf.js';
 export { createHttpRequest } from './http/request.js';
 export { webhookTrigger } from './webhook/trigger.js';

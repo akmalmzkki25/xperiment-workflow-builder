@@ -1,6 +1,7 @@
 import { coreApproval } from './core/approval.js';
 import { coreDelay } from './core/delay.js';
 import { coreIf } from './core/if.js';
+import { coreLoop } from './core/loop.js';
 import { coreTransform } from './core/transform.js';
 import { coreWaitForEvent } from './core/waitForEvent.js';
 import { createHttpRequest } from './http/request.js';
@@ -36,6 +37,7 @@ export function createDefaultRegistry(cfg: RegistryConfig = {}): ConnectorRegist
     coreDelay,
     coreWaitForEvent,
     coreApproval,
+    coreLoop,
     createHttpRequest({ allowPrivateIps: cfg.allowPrivateIps ?? false }),
     postgresQuery,
     telegramSendMessage,

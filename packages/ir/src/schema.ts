@@ -31,6 +31,8 @@ export const irNodeSchema = z
       .optional(),
     effectClass: z.enum(['pure', 'read', 'write']).optional(),
     connectionRef: z.string().uuid().optional(),
+    /** Set on a node that lives inside a loop body. */
+    scope: z.object({ loopId: z.string() }).strict().optional(),
   })
   .strict();
 

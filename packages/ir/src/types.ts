@@ -28,6 +28,8 @@ export interface IRNode {
   effectClass?: EffectClass;
   /** Reference to a stored connection (credentials never live in the IR). */
   connectionRef?: string;
+  /** Set on a node that lives inside a loop body. */
+  scope?: { loopId: string };
 }
 
 export interface IREdge {

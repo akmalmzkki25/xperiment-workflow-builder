@@ -80,5 +80,56 @@ export function validateGraph(ir: WorkflowIR, registry: RegistryLike): Validatio
     }
   }
 
+  // ---- loop scopes ----
+  const loopIds = new Set(ir.nodes.filter((n) => n.type === 'core.loop').map((n) => n.id));
+  const scopeOf = new Map(ir.nodes.filter((n) => n.scope).map((n) => [n.id, n.scope!.loopId]));
+
+  for (const n of ir.nodes) {
+    if (!n.scope) continue;
+    if (!loopIds.has(n.scope.loopId)) {
+      g('unknown_loop_scope', `Node '${n.id}' is scoped to '${n.scope.loopId}', which is not a core.loop`, n.id);
+    }
+    if (loopIds.has(n.id)) {
+      g('nested_loop_unsupported', `Loop '${n.id}' may not itself sit inside a loop body`, n.id);
+    }
+    if (ir.entrypoints.includes(n.id)) {
+      g('scoped_node_as_entrypoint', `Node '${n.id}' is inside a loop body and cannot be an entrypoint`, n.id);
+    }
+  }
+
+  for (const loopId of loopIds) {
+    const body = ir.nodes.filter((n) => n.scope?.loopId === loopId);
+    if (body.length === 0) {
+      g('empty_loop_body', `Loop '${loopId}' has no nodes in its body; its 'item' port leads nowhere`, loopId);
+      continue;
+    }
+    // Entry and exit are measured against edges *within* the scope, so a one-node body is
+    // legal: that node is both.
+    const entries = body.filter(
+      (n) => !ir.edges.some((e) => e.to.nodeId === n.id && scopeOf.get(e.from.nodeId) === loopId),
+    );
+    const exits = body.filter(
+      (n) => !ir.edges.some((e) => e.from.nodeId === n.id && scopeOf.get(e.to.nodeId) === loopId),
+    );
+    if (entries.length !== 1 || exits.length !== 1) {
+      g(
+        'loop_body_not_single_entry',
+        `Loop '${loopId}' body must have exactly one entry and one exit, found ${entries.length} and ${exits.length}`,
+        loopId,
+      );
+    }
+  }
+
+  for (const e of ir.edges) {
+    const fromScope = scopeOf.get(e.from.nodeId);
+    const toScope = scopeOf.get(e.to.nodeId);
+    if (fromScope === toScope) continue; // both outside, or both in the same body
+    // The only legal crossing is a loop's own `item` edge into its body. Expansion clones
+    // nodes within a scope, so any other crossing would dangle against a node that has no
+    // per-iteration copy.
+    const isItemEdge = toScope !== undefined && e.from.nodeId === toScope && e.from.port === 'item';
+    if (!isItemEdge) g('cross_scope_edge', `Edge '${e.id}' crosses a loop boundary`, e.to.nodeId);
+  }
+
   return findings;
 }
