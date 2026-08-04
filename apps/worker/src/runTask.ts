@@ -16,6 +16,7 @@ import {
 } from '@xperiment/db';
 import {
   buildContext,
+  parseInstanceId,
   computeBackoffMs,
   normalizedError,
   resolveRetryPolicy,
@@ -115,7 +116,11 @@ export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): P
     return;
   }
   const ir = workflowIrSchema.parse(version.definition) as WorkflowIR;
-  const node = ir.nodes.find((n) => n.id === nodeId);
+  // A loop instance is a copy of an authored node: `b1#3` carries `b1`'s type, parameters,
+  // timeout and retry policy. Only the IR lookup resolves the authored id; everywhere else
+  // nodeId is a database key and must stay the instance id.
+  const instance = parseInstanceId(nodeId);
+  const node = ir.nodes.find((n) => n.id === (instance?.nodeId ?? nodeId));
   if (!node) {
     deps.log('run_task.unknown_node', { executionId, nodeId });
     return;
@@ -156,7 +161,14 @@ export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): P
     }
     const triggerBody = await getTriggerPayload(deps.pool, executionId);
     const outputs = await nodeOutputs(deps.pool, executionId);
-    const ctx = buildContext(executionId, triggerBody, outputs);
+    // The item this iteration is for. It comes from the loop node's own recorded output, so
+    // no second read and no duplication beyond what the loop already stored.
+    let loopFrame: { index: number; item: unknown } | undefined;
+    if (instance && node.scope) {
+      const items = (outputs[node.scope.loopId] as { items?: unknown } | undefined)?.items;
+      if (Array.isArray(items)) loopFrame = { index: instance.iteration, item: items[instance.iteration] };
+    }
+    const ctx = buildContext(executionId, triggerBody, outputs, loopFrame);
     resolvedParams = resolveTemplate(node.parameters, ctx);
     const result = await executeNode(deps, {
       node,

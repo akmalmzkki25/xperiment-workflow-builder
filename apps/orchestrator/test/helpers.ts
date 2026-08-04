@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createExecutionWithTrigger, createVersion, createWorkflow, DEFAULT_WORKSPACE_ID } from '@xperiment/db';
-import type { WorkflowIR } from '@xperiment/ir';
+import { runnableNodeIds, type WorkflowIR } from '@xperiment/ir';
 import type { Pool } from 'pg';
 
 export type { WorkflowIR } from '@xperiment/ir';
@@ -81,6 +81,35 @@ export function errorPathIr(): WorkflowIR {
   };
 }
 
+/** t → lp, lp --item--> b1 → b2 (scoped to lp), lp --done--> after */
+export function loopIr(opts: { concurrency?: number } = {}): WorkflowIR {
+  const scope = { loopId: 'lp' };
+  return {
+    schemaVersion: '0.1',
+    workflow: { id: 'wf_loop', name: 'Loop' },
+    entrypoints: ['t'],
+    nodes: [
+      { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+      {
+        id: 'lp',
+        kind: 'logic',
+        type: 'core.loop',
+        operationVersion: '0.1.0',
+        parameters: { items: [], ...(opts.concurrency ? { concurrency: opts.concurrency } : {}) },
+      },
+      { id: 'b1', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} }, scope },
+      { id: 'b2', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} }, scope },
+      { id: 'after', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} } },
+    ],
+    edges: [
+      { id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'lp', port: 'input' } },
+      { id: 'e2', from: { nodeId: 'lp', port: 'item' }, to: { nodeId: 'b1', port: 'input' } },
+      { id: 'e3', from: { nodeId: 'b1', port: 'main' }, to: { nodeId: 'b2', port: 'input' } },
+      { id: 'e4', from: { nodeId: 'lp', port: 'done' }, to: { nodeId: 'after', port: 'input' } },
+    ],
+  };
+}
+
 export async function seedExecution(
   pool: Pool,
   ir: WorkflowIR,
@@ -93,7 +122,7 @@ export async function seedExecution(
     versionId: version.id,
     idempotencyKey: `seed-${randomUUID()}`,
     payload,
-    nodeIds: ir.nodes.map((n) => n.id),
+    nodeIds: runnableNodeIds(ir),
     executionTimeoutMs: 900000,
   });
   if (result.outcome === 'quota_exceeded') throw new Error('seedExecution hit a quota refusal');

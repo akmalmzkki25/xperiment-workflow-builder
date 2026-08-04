@@ -1,4 +1,4 @@
-import { getExecutionDetail, getVersion, type ExecutionRow, type RecordExecutionUsageArgs } from '@xperiment/db';
+import { getExecutionDetail, getVersion, nodeOutputs, type ExecutionRow, type RecordExecutionUsageArgs } from '@xperiment/db';
 import { workflowIrSchema, type WorkflowIR } from '@xperiment/ir';
 import type pg from 'pg';
 
@@ -19,6 +19,27 @@ export async function loadExecutionContext(
 }
 
 export const TERMINAL_EXECUTION_STATUSES = ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED'];
+
+/**
+ * How many items each loop resolved to, read from the loop node's own recorded output. A loop
+ * that has not succeeded yet is absent from the result, which leaves it unexpanded — and that
+ * is what stops a body node from being scheduled before the loop that owns it.
+ */
+export async function loadIterationCounts(
+  db: pg.Pool | pg.PoolClient,
+  executionId: string,
+  ir: WorkflowIR,
+): Promise<Record<string, number>> {
+  const loopIds = ir.nodes.filter((n) => n.type === 'core.loop').map((n) => n.id);
+  if (loopIds.length === 0) return {};
+  const outputs = await nodeOutputs(db, executionId);
+  const counts: Record<string, number> = {};
+  for (const id of loopIds) {
+    const count = (outputs[id] as { count?: unknown } | undefined)?.count;
+    if (typeof count === 'number') counts[id] = count;
+  }
+  return counts;
+}
 
 /**
  * Build the usage-ledger args for a finalized execution. `nodeCount` counts nodes

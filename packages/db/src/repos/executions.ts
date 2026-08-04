@@ -283,6 +283,27 @@ export async function insertNodeAttempt(
   );
 }
 
+/**
+ * Materialises a node row that the execution never seeded — a loop instance, or the synthetic
+ * join. Idempotent, because two concurrent completions can both decide the same instance is
+ * ready; without ON CONFLICT one of them would abort its whole transaction on a 23505.
+ *
+ * Returns true only for the caller that actually inserted, so a once-per-loop side effect can
+ * hang off it.
+ */
+export async function ensureNodeAttempt(
+  db: Db,
+  args: { executionId: string; nodeId: string; attempt: number; status: string },
+): Promise<boolean> {
+  const r = await db.query(
+    `INSERT INTO execution_nodes (workspace_id, execution_id, node_id, status, attempt)
+     SELECT e.workspace_id, e.id, $2, $3, $4 FROM executions e WHERE e.id = $1
+     ON CONFLICT (execution_id, node_id, attempt) DO NOTHING`,
+    [args.executionId, args.nodeId, args.status, args.attempt],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
 export async function latestNodeStates(
   db: Db,
   executionId: string,

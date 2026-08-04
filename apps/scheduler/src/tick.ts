@@ -1,6 +1,6 @@
 import { createExecutionWithTrigger, dueScheduleTriggers, getVersion, getWorkflow, withTx } from '@xperiment/db';
 import { nextFireAt } from '@xperiment/engine-core';
-import { workflowIrSchema } from '@xperiment/ir';
+import { runnableNodeIds, workflowIrSchema } from '@xperiment/ir';
 import type pg from 'pg';
 
 const DEFAULT_GRACE_MS = 60000;
@@ -49,7 +49,7 @@ export async function runSchedulerTick(deps: SchedulerDeps): Promise<{ fired: nu
         versionId: version.id,
         idempotencyKey: `sched:${trigger.id}:${scheduledFor.toISOString()}`,
         payload: { firedAt: now.toISOString(), scheduledFor: scheduledFor.toISOString() },
-        nodeIds: ir.nodes.map((n) => n.id),
+        nodeIds: runnableNodeIds(ir),
         executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
       });
       if (result.outcome === 'quota_exceeded') {

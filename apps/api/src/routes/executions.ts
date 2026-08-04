@@ -17,7 +17,7 @@ import {
   withTx,
 } from '@xperiment/db';
 import type { QuotaRefusal } from '@xperiment/db';
-import { workflowIrSchema } from '@xperiment/ir';
+import { runnableNodeIds, workflowIrSchema } from '@xperiment/ir';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { authOf, requirePermission } from '../auth/plugin.js';
@@ -62,7 +62,7 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       versionId: version.id,
       idempotencyKey,
       payload: req.body ?? null,
-      nodeIds: ir.nodes.map((n) => n.id),
+      nodeIds: runnableNodeIds(ir),
       executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
     });
     if (result.outcome === 'quota_exceeded') {
@@ -175,7 +175,7 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       versionId: version.id,
       idempotencyKey,
       payload,
-      nodeIds: ir.nodes.map((n) => n.id),
+      nodeIds: runnableNodeIds(ir),
       executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
     });
     if (result.outcome === 'quota_exceeded') {

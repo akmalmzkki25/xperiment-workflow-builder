@@ -4,15 +4,22 @@ import {
   casNode,
   closeOpenWaits,
   enqueueCompletionCallback,
+  ensureNodeAttempt,
   insertNodeAttempt,
   insertOutbox,
   latestNodeStates,
   recordExecutionUsage,
   withTx,
 } from '@xperiment/db';
-import { computeReadiness, type NodeOutcome, type NodeStatus } from '@xperiment/engine-core';
+import { computeReadiness, expandLoops, instanceId, joinId, type NodeOutcome, type NodeStatus } from '@xperiment/engine-core';
 import type { NodeCompletedPayload } from '@xperiment/queue';
-import { buildExecutionUsage, loadExecutionContext, TERMINAL_EXECUTION_STATUSES, type OrchestratorDeps } from '../deps.js';
+import {
+  buildExecutionUsage,
+  loadExecutionContext,
+  loadIterationCounts,
+  TERMINAL_EXECUTION_STATUSES,
+  type OrchestratorDeps,
+} from '../deps.js';
 
 export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeCompletedPayload): Promise<void> {
   const ctx = await loadExecutionContext(deps.pool, payload.executionId);
@@ -59,12 +66,52 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
   // skips that this handler used to write by hand.
   await withTx(deps.pool, async (client) => {
     const states = await latestNodeStates(client, executionId);
+    const counts = await loadIterationCounts(client, executionId, ctx.ir);
+    // Loops are rewritten out of the graph here; the scheduler below never learns they exist.
+    const graph = expandLoops(ctx.ir, counts);
     const outcomes: NodeOutcome[] = states.map((s) => ({
       nodeId: s.nodeId,
       status: s.status as NodeStatus,
       outputPort: s.outputPort,
     }));
-    const readiness = computeReadiness(ctx.ir, outcomes);
+
+    // A join has no inbound edges, so readiness will never schedule it. Seed it the moment
+    // every instance of its loop is decided; the readiness pass below then sees it succeeded
+    // and lets the loop's `done` edges fire.
+    for (const [loopId, count] of Object.entries(counts)) {
+      if (count === 0) continue; // an empty loop fires `done` from the loop node itself
+      const jid = joinId(loopId);
+      if (outcomes.some((o) => o.nodeId === jid)) continue;
+      const body = ctx.ir.nodes.filter((n) => n.scope?.loopId === loopId).map((n) => n.id);
+      const wanted = body.flatMap((b) => Array.from({ length: count }, (_, i) => instanceId(b, i)));
+      const decided = wanted.every((id) => {
+        const o = outcomes.find((x) => x.nodeId === id);
+        return o !== undefined && ['SUCCEEDED', 'SKIPPED', 'FAILED'].includes(o.status);
+      });
+      if (!decided) continue;
+      const seeded = await ensureNodeAttempt(client, {
+        executionId,
+        nodeId: jid,
+        attempt: 1,
+        status: 'SUCCEEDED',
+      });
+      if (seeded) {
+        await appendEvent(client, { executionId, eventType: 'loop.completed', nodeId: loopId, payload: { count } });
+      }
+      outcomes.push({ nodeId: jid, status: 'SUCCEEDED', outputPort: 'main' });
+    }
+
+    const readiness = computeReadiness(graph, outcomes);
+
+    // Loop instances have no row: the execution seeded only the authored nodes, because a
+    // body node never runs under its authored id. Materialise the ones the scheduler just
+    // decided on, so the CAS below has something to claim.
+    const known = new Set(outcomes.map((o) => o.nodeId));
+    for (const id of [...readiness.ready, ...readiness.skipped]) {
+      if (!known.has(id)) {
+        await ensureNodeAttempt(client, { executionId, nodeId: id, attempt: 1, status: 'PENDING' });
+      }
+    }
 
     for (const skippedId of readiness.skipped) {
       const ok = await casNode(client, {

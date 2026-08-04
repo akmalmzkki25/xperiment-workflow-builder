@@ -6,9 +6,11 @@ export interface ExpressionContext {
   trigger: { body: unknown };
   nodes: Record<string, { output: unknown }>;
   execution: { id: string };
+  /** Present only while a loop body node is running. */
+  loop?: { index: number; item: unknown };
 }
 
-const ROOTS = new Set(['trigger', 'nodes', 'execution']);
+const ROOTS = new Set(['trigger', 'nodes', 'execution', 'loop']);
 
 export function evaluate(ast: Ast, ctx: ExpressionContext): unknown {
   switch (ast.type) {

@@ -133,3 +133,12 @@ export function validateGraph(ir: WorkflowIR, registry: RegistryLike): Validatio
 
   return findings;
 }
+
+/**
+ * The nodes an execution should seed as PENDING. A loop body node never runs under its
+ * authored id — the orchestrator materialises one instance per iteration instead — so seeding
+ * it would leave a row in the timeline claiming a node that is never going to execute.
+ */
+export function runnableNodeIds(ir: WorkflowIR): string[] {
+  return ir.nodes.filter((n) => n.scope === undefined).map((n) => n.id);
+}

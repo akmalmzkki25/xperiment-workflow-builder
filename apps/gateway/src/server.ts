@@ -9,7 +9,7 @@ import {
   withTx,
   type SecretVault,
 } from '@xperiment/db';
-import { workflowIrSchema } from '@xperiment/ir';
+import { runnableNodeIds, workflowIrSchema } from '@xperiment/ir';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { extractDedupKey, sanitizeHeaders, verifyHmac, verifyToken } from './verify.js';
@@ -90,7 +90,7 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
           headers: sanitizeHeaders(req.headers as Record<string, unknown>),
           query: req.query ?? {},
         },
-        nodeIds: ir.nodes.map((n) => n.id),
+        nodeIds: runnableNodeIds(ir),
         executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
       });
       if (result.outcome === 'quota_exceeded') {

@@ -15,7 +15,7 @@ import type { OrchestratorDeps } from '../src/deps.js';
 import { handleExecutionRequested } from '../src/handlers/executionRequested.js';
 import { handleNodeCompleted } from '../src/handlers/nodeCompleted.js';
 import { handleWatchdog } from '../src/handlers/watchdog.js';
-import { branchIr, errorPathIr, linearIr, seedExecution, truncateAll } from './helpers.js';
+import { branchIr, errorPathIr, linearIr, loopIr, seedExecution, truncateAll } from './helpers.js';
 
 let pool: Pool;
 let deps: OrchestratorDeps;
@@ -324,5 +324,111 @@ describe('handleNodeCompleted error path', () => {
     const outputs = await nodeOutputs(pool, executionId);
     // Without this the branch that exists to handle the failure has nothing to read.
     expect(outputs['a']).toEqual({ error: { code: 'http_error', message: 'HTTP 500', retryable: false } });
+  });
+});
+
+describe('handleNodeCompleted loops', () => {
+  /** Succeeds the loop node itself, carrying the resolved items in its output. */
+  async function succeedLoop(executionId: string, items: unknown[]) {
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['PENDING'], to: 'READY' });
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['READY', 'QUEUED'], to: 'QUEUED' });
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    const outputPort = items.length === 0 ? 'done' : 'item';
+    await casNode(pool, {
+      executionId,
+      nodeId: 'lp',
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'SUCCEEDED',
+      patch: { outputJson: { items, count: items.length }, outputPort, completedAt: true },
+    });
+    await handleNodeCompleted(deps, { executionId, nodeId: 'lp', attempt: 1, status: 'SUCCEEDED', outputPort });
+  }
+
+  /** Drives an already-inserted instance row through to SUCCEEDED. */
+  async function succeedInstance(executionId: string, nodeId: string) {
+    await casNode(pool, { executionId, nodeId, attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    await casNode(pool, {
+      executionId,
+      nodeId,
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'SUCCEEDED',
+      patch: { outputJson: {}, outputPort: 'main', completedAt: true },
+    });
+    await handleNodeCompleted(deps, { executionId, nodeId, attempt: 1, status: 'SUCCEEDED', outputPort: 'main' });
+  }
+
+  test('the authored body nodes are never seeded as runnable', async () => {
+    // Only instances run. A PENDING row under the authored id would sit in the timeline
+    // forever, claiming a node that is never going to execute.
+    const { executionId } = await seedExecution(pool, loopIr());
+    const states = await latestNodeStates(pool, executionId);
+    expect(states.map((s) => s.nodeId).sort()).toEqual(['after', 'lp', 't']);
+  });
+
+  test('a succeeded loop queues one instance of the body entry per item', async () => {
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoop(executionId, ['x', 'y']);
+
+    const states = await latestNodeStates(pool, executionId);
+    const queued = states.filter((s) => s.status === 'QUEUED').map((s) => s.nodeId).sort();
+    expect(queued).toEqual(['b1#0', 'b1#1']);
+  });
+
+  test('the join is seeded once every iteration is decided, and the run continues', async () => {
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoop(executionId, ['x']);
+    await succeedInstance(executionId, 'b1#0');
+    await succeedInstance(executionId, 'b2#0');
+
+    const states = await latestNodeStates(pool, executionId);
+    const byId = Object.fromEntries(states.map((s) => [s.nodeId, s.status]));
+    expect(byId['lp$join']).toBe('SUCCEEDED');
+    expect(byId['after']).toBe('QUEUED');
+  });
+
+  test('the join waits while one iteration is still running', async () => {
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoop(executionId, ['x', 'y']);
+    await succeedInstance(executionId, 'b1#0');
+    await succeedInstance(executionId, 'b2#0');
+
+    const states = await latestNodeStates(pool, executionId);
+    const byId = Object.fromEntries(states.map((s) => [s.nodeId, s.status]));
+    expect(byId['lp$join']).toBeUndefined();
+    // `after` was seeded with the execution, so it exists — it just must not have moved.
+    expect(byId['after']).toBe('PENDING');
+  });
+
+  test('an empty loop skips the body entirely and fires done', async () => {
+    // core.loop selects the done port for an empty list, so no join is ever created.
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoop(executionId, []);
+
+    const states = await latestNodeStates(pool, executionId);
+    const byId = Object.fromEntries(states.map((s) => [s.nodeId, s.status]));
+    expect(byId['after']).toBe('QUEUED');
+    expect(states.some((s) => s.nodeId.startsWith('b1#'))).toBe(false);
+    expect(byId['lp$join']).toBeUndefined();
+  });
+
+  test('a whole loop run reaches SUCCEEDED', async () => {
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoop(executionId, ['x', 'y']);
+    for (const id of ['b1#0', 'b2#0', 'b1#1', 'b2#1']) await succeedInstance(executionId, id);
+    await succeedNode(executionId, 'after');
+    const detail = await getExecutionDetail(pool, executionId);
+    expect(detail?.execution.status).toBe('SUCCEEDED');
   });
 });
