@@ -149,3 +149,89 @@ describe('phase-0 end-to-end', () => {
     expect(results[0]).toContain('SUCCEEDED');
   });
 });
+
+describe('loops and error paths', () => {
+  /** manual trigger → loop(3 items) → [double] → after */
+  function loopIr(concurrency: number): unknown {
+    return {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_loop_e2e', name: 'Loop e2e' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+        {
+          id: 'lp',
+          kind: 'logic',
+          type: 'core.loop',
+          operationVersion: '0.1.0',
+          parameters: { items: '{{ trigger.body.rows }}', concurrency },
+        },
+        {
+          id: 'double',
+          kind: 'logic',
+          type: 'core.transform',
+          operationVersion: '0.1.0',
+          parameters: { fields: { seen: '{{ loop.item }}', at: '{{ loop.index }}' } },
+          scope: { loopId: 'lp' },
+        },
+        {
+          id: 'after',
+          kind: 'logic',
+          type: 'core.transform',
+          operationVersion: '0.1.0',
+          parameters: { fields: { done: true } },
+        },
+      ],
+      edges: [
+        { id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'lp', port: 'input' } },
+        { id: 'e2', from: { nodeId: 'lp', port: 'item' }, to: { nodeId: 'double', port: 'input' } },
+        { id: 'e3', from: { nodeId: 'lp', port: 'done' }, to: { nodeId: 'after', port: 'input' } },
+      ],
+    };
+  }
+
+  test('three items run as three instances, each seeing its own item', async () => {
+    const wfId = await createPublishedWorkflow(loopIr(1));
+    const exec = await api<{ executionId: string }>('POST', `/v1/workflows/${wfId}/execute`, {
+      rows: ['a', 'b', 'c'],
+    });
+    const detail = await waitForTerminal(exec.body.executionId);
+    expect(detail.execution.status).toBe('SUCCEEDED');
+
+    const byNode = new Map(detail.nodes.map((n) => [n.nodeId, n.status]));
+    for (let i = 0; i < 3; i += 1) expect(byNode.get(`double#${i}`)).toBe('SUCCEEDED');
+    // The authored body id never runs; only its instances do.
+    expect(byNode.has('double')).toBe(false);
+    expect(byNode.get('lp$join')).toBe('SUCCEEDED');
+    expect(byNode.get('after')).toBe('SUCCEEDED');
+    expect(detail.events.map((e) => e.eventType)).toContain('loop.completed');
+  });
+
+  test('each iteration resolves loop.item to its own element', async () => {
+    const wfId = await createPublishedWorkflow(loopIr(2));
+    const exec = await api<{ executionId: string }>('POST', `/v1/workflows/${wfId}/execute`, {
+      rows: ['x', 'y'],
+    });
+    const detail = await waitForTerminal(exec.body.executionId);
+    expect(detail.execution.status).toBe('SUCCEEDED');
+    // The execution-detail endpoint does not expose node outputs, so read them directly.
+    const rows = await pool.query<{ node_id: string; output_json: { seen?: unknown; at?: unknown } }>(
+      `SELECT node_id, output_json FROM execution_nodes
+       WHERE execution_id = $1 AND node_id LIKE 'double#%' ORDER BY node_id`,
+      [exec.body.executionId],
+    );
+    expect(rows.rows.map((r) => r.output_json)).toEqual([
+      { seen: 'x', at: 0 },
+      { seen: 'y', at: 1 },
+    ]);
+  });
+
+  test('an empty list skips the body and still reaches the node after the loop', async () => {
+    const wfId = await createPublishedWorkflow(loopIr(1));
+    const exec = await api<{ executionId: string }>('POST', `/v1/workflows/${wfId}/execute`, { rows: [] });
+    const detail = await waitForTerminal(exec.body.executionId);
+    expect(detail.execution.status).toBe('SUCCEEDED');
+    expect(detail.nodes.some((n) => n.nodeId.startsWith('double#'))).toBe(false);
+    expect(detail.nodes.find((n) => n.nodeId === 'after')?.status).toBe('SUCCEEDED');
+  });
+});

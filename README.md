@@ -405,6 +405,39 @@ A suspended node becomes `WAITING`; timers and expiries are swept by the schedul
 Nothing auto-approves: an execution with an open wait is skipped by the global
 watchdog and bounded only by its own expiry.
 
+## Loops & error paths (LOGIC-002, LOGIC-004)
+
+`core.loop` takes an array and runs the nodes scoped to it once per item. The body stays in
+the top-level node list carrying `scope: { loopId }`; at run time the orchestrator rewrites the
+graph, cloning each body node per iteration as `b1#0`, `b1#1`, … and adding a synthetic
+`lp$join` that the loop's `done` edges leave from. **The scheduler itself knows nothing about
+loops** — `computeReadiness` runs unchanged over the derived graph. Because the IR id pattern
+forbids `#` and `$`, these ids can never collide with an authored one, and no migration was
+needed.
+
+Each instance keeps its own status, retry, timeout and timeline row, and can suspend — so
+`core.delay` and `core.approval` work **inside** a loop body. A body node never runs under its
+authored id, so executions seed only the unscoped nodes (`runnableNodeIds`).
+
+`maxIterations` (default 100, max 1000) caps the list; exceeding it **fails the loop node**
+rather than truncating silently. `concurrency` (default 1, max 10) bounds how many iterations
+are in flight; the limit is applied at dispatch, not in the scheduler, and a second node of an
+iteration already under way does not spend a fresh slot.
+
+`done` carries `{ count }` and **not** the iteration outputs. Aggregating them would run into
+`PAYLOAD_CAP_BYTES` at the last step, after all the work; collecting results across iterations
+belongs with EXE-009 object storage and is not built. The loop node's own output *does* hold
+the resolved items, so each iteration's context can expose `loop.item` and `loop.index` — which
+means the practical ceiling on a loop is the payload cap, not `maxIterations`. Inside a body,
+an expression naming a sibling node resolves to that iteration's copy.
+
+An **error path** is configured per node with `settings.onError` and workflow-wide with
+`metadata.onError`, both `fail` (the default, and the behaviour every existing workflow keeps)
+or `continue`. An explicit edge on a node's `error` port wins over either. A node that fails is
+still recorded **FAILED** — the database records what happened, the scheduler decides what it
+means — and a handled failure contributes `{ error: … }` so the branch handling it can read the
+failure. Inside a loop body an error edge must stay inside that body.
+
 ## AI Builder (Phase 1E)
 
 Describe a workflow in plain language and get a validated draft on the canvas.
