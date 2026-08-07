@@ -330,3 +330,72 @@
   border-radius: 6px;
   padding: var(--space-1) var(--space-2);
 }
+
+/* Loop container — a frame body nodes sit inside, not another box in the chain. */
+.q-loop {
+  position: relative;
+  min-width: 320px;
+  min-height: 200px;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: color-mix(in oklab, var(--surface-raised) 70%, transparent);
+  border: 1.5px dashed var(--border-default);
+  border-radius: var(--radius-node);
+}
+
+.q-loop--selected {
+  border-color: var(--color-jade);
+  border-style: solid;
+}
+
+.q-loop__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.q-loop__glyph {
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+.q-loop__title {
+  font-weight: 600;
+}
+
+.q-loop__meta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.q-loop__hint {
+  margin: var(--space-3) 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.q-loop__port-label {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.q-loop__port-label--item {
+  top: 64px;
+  left: -30px;
+}
+
+.q-loop__port-label--done {
+  top: 20px;
+  right: -34px;
+}
+
+/* The implicit error port, drawn apart from the catalog's ports and in the failure colour. */
+.q-node__port-label--error {
+  right: auto;
+  left: 72%;
+  bottom: -16px;
+  color: var(--color-coral);
+}

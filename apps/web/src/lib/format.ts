@@ -29,3 +29,22 @@ export function fmtTime(iso: string | null): string {
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleString();
 }
+
+/**
+ * How an execution row's node id reads to a person. The engine encodes loop iterations into
+ * the id (`b1#3`) and adds a synthetic join (`lp$join`); neither is something an author wrote,
+ * so neither should be shown raw.
+ *
+ * The iteration is reported 1-based: the id counts from zero, people do not.
+ */
+export function nodeLabel(nodeId: string): { text: string; iteration: number | null } {
+  if (nodeId.endsWith('$join')) {
+    return { text: `${nodeId.slice(0, -'$join'.length)} — all iterations done`, iteration: null };
+  }
+  const at = nodeId.lastIndexOf('#');
+  if (at > 0) {
+    const suffix = nodeId.slice(at + 1);
+    if (/^\d+$/.test(suffix)) return { text: nodeId.slice(0, at), iteration: Number(suffix) + 1 };
+  }
+  return { text: nodeId, iteration: null };
+}

@@ -12,14 +12,22 @@ export interface IRNodeData {
   settings?: Record<string, unknown>;
   effectClass?: string;
   connectionRef?: string;
+  /** Set on a node that lives inside a loop body. */
+  scope?: { loopId: string };
 }
 
 export interface EditorNode {
   id: string;
-  type: 'xperiment';
+  /** A loop draws as a container its body nodes sit inside. */
+  type: 'xperiment' | 'xperimentLoop';
   position: { x: number; y: number };
   data: { ir: IRNodeData };
+  /** React Flow parenting — the canvas form of `ir.scope.loopId`. */
+  parentNode?: string | undefined;
+  extent?: 'parent' | undefined;
 }
+
+export const LOOP_TYPE = 'core.loop';
 
 export interface EditorEdge {
   id: string;
@@ -82,7 +90,15 @@ export function definitionToCanvas(definition: unknown): { nodes: EditorNode[]; 
     .filter((ir): ir is IRNodeData => ir !== null)
     .map((ir, index): EditorNode => {
       const position = layout[ir.id] ?? { x: FALLBACK_X_START + index * FALLBACK_X_STEP, y: FALLBACK_Y };
-      return { id: ir.id, type: 'xperiment', position: { x: position.x, y: position.y }, data: { ir } };
+      return {
+        id: ir.id,
+        type: ir.type === LOOP_TYPE ? 'xperimentLoop' : 'xperiment',
+        position: { x: position.x, y: position.y },
+        data: { ir },
+        // A body node's stored position is already relative to its container, so the layout
+        // round-trips without a coordinate conversion in either direction.
+        ...(ir.scope ? { parentNode: ir.scope.loopId, extent: 'parent' as const } : {}),
+      };
     });
   const rawEdges = Array.isArray(def.edges) ? def.edges : [];
   const edges = rawEdges
@@ -129,8 +145,15 @@ export function canvasToDefinition(args: {
   return {
     schemaVersion: '0.1',
     workflow: { id: args.workflowId, name: args.name },
-    entrypoints: args.nodes.filter((n) => n.data.ir.kind === 'trigger').map((n) => n.id),
-    nodes: args.nodes.map((n) => ({ ...n.data.ir, id: n.id })),
+    // A node inside a loop body cannot be an entrypoint — validation rejects it, so the
+    // editor must never produce one.
+    entrypoints: args.nodes.filter((n) => n.data.ir.kind === 'trigger' && !n.parentNode).map((n) => n.id),
+    nodes: args.nodes.map((n) => {
+      // The canvas owns scope: whatever container the node is sitting in now wins. Spreading
+      // `ir` alone would carry a stale scope out of the container with the node.
+      const { scope: _dropped, ...rest } = n.data.ir;
+      return { ...rest, id: n.id, ...(n.parentNode ? { scope: { loopId: n.parentNode } } : {}) };
+    }),
     edges: args.edges.map((e) => ({
       id: e.id,
       from: { nodeId: e.source, port: e.sourceHandle },

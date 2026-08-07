@@ -12,9 +12,10 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import type { IRNodeData } from '../../lib/irCanvas';
+import { XperimentLoopNode } from './XperimentLoopNode';
 import { XperimentNode } from './XperimentNode';
 
-const nodeTypes = { xperiment: XperimentNode };
+const nodeTypes = { xperiment: XperimentNode, xperimentLoop: XperimentLoopNode };
 
 interface CanvasProps {
   nodes: Node<{ ir: IRNodeData }>[];

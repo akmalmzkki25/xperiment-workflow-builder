@@ -78,6 +78,21 @@ export function XperimentNode({ data, selected }: NodeProps<{ ir: IRNodeData }>)
           </span>
         );
       })}
+      {/* `error` is offered implicitly by every node, so it is not in the catalog's ports.
+          Drawn apart and in the failure colour, an error route stays legible on the canvas
+          instead of hiding in a settings panel. */}
+      {ir.kind !== 'trigger' ? (
+        <span>
+          <Handle
+            type="source"
+            id="error"
+            position={Position.Bottom}
+            style={{ left: '78%', background: 'var(--color-coral)' }}
+            data-testid={`error-handle-${ir.id}`}
+          />
+          <span className="q-node__port-label q-node__port-label--error">error</span>
+        </span>
+      ) : null}
     </div>
   );
 }

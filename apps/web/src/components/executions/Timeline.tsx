@@ -1,5 +1,5 @@
 import type { ExecutionDetail, ExecutionNodeRow } from '../../lib/api';
-import { fmtDuration, fmtTime } from '../../lib/format';
+import { fmtDuration, fmtTime, nodeLabel } from '../../lib/format';
 import { StatusChip } from '../ui/StatusChip';
 
 function groupByNode(nodes: ExecutionNodeRow[]): Map<string, ExecutionNodeRow[]> {
@@ -28,7 +28,14 @@ export function Timeline({ detail }: { detail: ExecutionDetail }) {
           data-testid={`timeline-node-${nodeId}`}
           style={{ gap: 'var(--space-2)' }}
         >
-          <strong className="mono">{nodeId}</strong>
+          <strong className="mono">
+            {nodeLabel(nodeId).text}
+            {nodeLabel(nodeId).iteration !== null ? (
+              <span className="q-field__hint" style={{ marginLeft: 'var(--space-2)' }}>
+                iteration {nodeLabel(nodeId).iteration}
+              </span>
+            ) : null}
+          </strong>
           {attempts.map((attempt) => {
             const error = errorMessage(attempt.errorJson);
             return (
