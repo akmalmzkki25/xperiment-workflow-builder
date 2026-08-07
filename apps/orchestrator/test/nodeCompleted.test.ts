@@ -368,7 +368,8 @@ describe('handleNodeCompleted loops', () => {
   });
 
   test('a succeeded loop queues one instance of the body entry per item', async () => {
-    const { executionId } = await seedExecution(pool, loopIr());
+    // Concurrency 2 so both iterations may start; the default of 1 is covered separately.
+    const { executionId } = await seedExecution(pool, loopIr({ concurrency: 2 }));
     await handleExecutionRequested(deps, { executionId });
     await succeedNode(executionId, 't');
     await succeedLoop(executionId, ['x', 'y']);
@@ -430,5 +431,99 @@ describe('handleNodeCompleted loops', () => {
     await succeedNode(executionId, 'after');
     const detail = await getExecutionDetail(pool, executionId);
     expect(detail?.execution.status).toBe('SUCCEEDED');
+  });
+});
+
+describe('handleNodeCompleted loop concurrency', () => {
+  async function succeedLoopWith(executionId: string, items: unknown[]) {
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['PENDING'], to: 'READY' });
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['READY', 'QUEUED'], to: 'QUEUED' });
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    await casNode(pool, {
+      executionId,
+      nodeId: 'lp',
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'SUCCEEDED',
+      patch: { outputJson: { items, count: items.length }, outputPort: 'item', completedAt: true },
+    });
+    await handleNodeCompleted(deps, { executionId, nodeId: 'lp', attempt: 1, status: 'SUCCEEDED', outputPort: 'item' });
+  }
+
+  async function finishInstance(executionId: string, nodeId: string) {
+    await casNode(pool, { executionId, nodeId, attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    await casNode(pool, {
+      executionId,
+      nodeId,
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'SUCCEEDED',
+      patch: { outputJson: {}, outputPort: 'main', completedAt: true },
+    });
+    await handleNodeCompleted(deps, { executionId, nodeId, attempt: 1, status: 'SUCCEEDED', outputPort: 'main' });
+  }
+
+  test('concurrency 2 keeps at most two iterations in flight', async () => {
+    const { executionId } = await seedExecution(pool, loopIr({ concurrency: 2 }));
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoopWith(executionId, [1, 2, 3, 4, 5]);
+
+    const states = await latestNodeStates(pool, executionId);
+    const started = states.filter((s) => s.nodeId.startsWith('b1#'));
+    expect(started).toHaveLength(2);
+    expect(started.every((s) => s.status === 'QUEUED')).toBe(true);
+  });
+
+  test('the default of one runs iterations strictly one at a time', async () => {
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoopWith(executionId, [1, 2, 3]);
+    const states = await latestNodeStates(pool, executionId);
+    expect(states.filter((s) => s.nodeId.startsWith('b1#'))).toHaveLength(1);
+  });
+
+  test('finishing one iteration lets the next start', async () => {
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoopWith(executionId, [1, 2, 3]);
+    await finishInstance(executionId, 'b1#0');
+    await finishInstance(executionId, 'b2#0');
+
+    const states = await latestNodeStates(pool, executionId);
+    const byId = Object.fromEntries(states.map((s) => [s.nodeId, s.status]));
+    expect(byId['b1#1']).toBe('QUEUED');
+    // The third iteration has not been materialised at all yet.
+    expect(byId['b1#2']).toBeUndefined();
+  });
+
+  test('a second node of the same iteration does not spend a fresh slot', async () => {
+    // b2#0 belongs to an iteration already under way; holding it back would deadlock the
+    // loop at concurrency 1, because the slot is only released when the iteration finishes.
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoopWith(executionId, [1, 2]);
+    await finishInstance(executionId, 'b1#0');
+
+    const states = await latestNodeStates(pool, executionId);
+    expect(states.find((s) => s.nodeId === 'b2#0')?.status).toBe('QUEUED');
+  });
+
+  test('every iteration eventually runs and the loop completes', async () => {
+    const { executionId } = await seedExecution(pool, loopIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoopWith(executionId, [1, 2, 3]);
+    for (let i = 0; i < 3; i += 1) {
+      await finishInstance(executionId, `b1#${i}`);
+      await finishInstance(executionId, `b2#${i}`);
+    }
+    const states = await latestNodeStates(pool, executionId);
+    const byId = Object.fromEntries(states.map((s) => [s.nodeId, s.status]));
+    expect(byId['lp$join']).toBe('SUCCEEDED');
+    expect(byId['after']).toBe('QUEUED');
   });
 });

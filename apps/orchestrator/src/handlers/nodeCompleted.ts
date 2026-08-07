@@ -11,7 +11,15 @@ import {
   recordExecutionUsage,
   withTx,
 } from '@xperiment/db';
-import { computeReadiness, expandLoops, instanceId, joinId, type NodeOutcome, type NodeStatus } from '@xperiment/engine-core';
+import {
+  computeReadiness,
+  expandLoops,
+  instanceId,
+  joinId,
+  parseInstanceId,
+  type NodeOutcome,
+  type NodeStatus,
+} from '@xperiment/engine-core';
 import type { NodeCompletedPayload } from '@xperiment/queue';
 import {
   buildExecutionUsage,
@@ -104,16 +112,18 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
     const readiness = computeReadiness(graph, outcomes);
 
     // Loop instances have no row: the execution seeded only the authored nodes, because a
-    // body node never runs under its authored id. Materialise the ones the scheduler just
-    // decided on, so the CAS below has something to claim.
+    // body node never runs under its authored id. Materialise on the way past, never ahead of
+    // time — a row created for an iteration the throttle has not released would show in the
+    // timeline as a node that is somehow already pending.
     const known = new Set(outcomes.map((o) => o.nodeId));
-    for (const id of [...readiness.ready, ...readiness.skipped]) {
-      if (!known.has(id)) {
-        await ensureNodeAttempt(client, { executionId, nodeId: id, attempt: 1, status: 'PENDING' });
-      }
-    }
+    const materialise = async (id: string): Promise<void> => {
+      if (known.has(id)) return;
+      await ensureNodeAttempt(client, { executionId, nodeId: id, attempt: 1, status: 'PENDING' });
+      known.add(id);
+    };
 
     for (const skippedId of readiness.skipped) {
+      await materialise(skippedId);
       const ok = await casNode(client, {
         executionId,
         nodeId: skippedId,
@@ -123,7 +133,41 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
       });
       if (ok) await appendEvent(client, { executionId, eventType: 'node.skipped', nodeId: skippedId });
     }
+    // Readiness marks every iteration ready at once; the limit belongs here, at dispatch.
+    // A slot is held by any instance that is neither PENDING nor terminal.
+    const ACTIVE = ['READY', 'QUEUED', 'RUNNING', 'WAITING', 'RETRY_SCHEDULED'];
+    const budget = new Map<string, number>();
+    for (const [loopId, count] of Object.entries(counts)) {
+      if (count === 0) continue;
+      const loopNode = ctx.ir.nodes.find((n) => n.id === loopId);
+      const limit = Number((loopNode?.parameters as { concurrency?: unknown } | undefined)?.concurrency ?? 1);
+      const body = new Set(ctx.ir.nodes.filter((n) => n.scope?.loopId === loopId).map((n) => n.id));
+      const running = new Set<number>();
+      for (const s of states) {
+        const parsed = parseInstanceId(s.nodeId);
+        if (parsed && body.has(parsed.nodeId) && ACTIVE.includes(s.status)) running.add(parsed.iteration);
+      }
+      budget.set(loopId, Math.max(0, limit - running.size));
+    }
+    const loopOf = new Map(ctx.ir.nodes.filter((n) => n.scope).map((n) => [n.id, n.scope!.loopId]));
+    const starting = new Map<string, Set<number>>();
+
     for (const readyId of readiness.ready) {
+      const parsed = parseInstanceId(readyId);
+      const owner = parsed ? loopOf.get(parsed.nodeId) : undefined;
+      if (owner !== undefined && parsed) {
+        const started = starting.get(owner) ?? new Set<number>();
+        // A second node of an iteration already under way costs nothing more; only a new
+        // iteration spends budget. Charging it again would deadlock at concurrency 1.
+        if (!started.has(parsed.iteration)) {
+          const left = budget.get(owner) ?? 0;
+          if (left <= 0) continue; // stays PENDING; the next completion picks it up
+          budget.set(owner, left - 1);
+          started.add(parsed.iteration);
+          starting.set(owner, started);
+        }
+      }
+      await materialise(readyId);
       const claimed = await casNode(client, {
         executionId,
         nodeId: readyId,
