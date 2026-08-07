@@ -126,6 +126,28 @@ export function definitionToCanvas(definition: unknown): { nodes: EditorNode[]; 
   return { nodes, edges };
 }
 
+/**
+ * Narrows a React Flow node back to the shape `canvasToDefinition` reads. Extracted from the
+ * editor so the lossy step is testable: `scope` is derived solely from `parentNode`, so a
+ * rebuild that drops it silently strips every loop body on the next save.
+ */
+export function toEditorNode(node: {
+  id: string;
+  type?: string | undefined;
+  position: { x: number; y: number };
+  data: { ir: IRNodeData };
+  parentNode?: string | undefined;
+  extent?: unknown;
+}): EditorNode {
+  return {
+    id: node.id,
+    type: node.type === 'xperimentLoop' ? 'xperimentLoop' : 'xperiment',
+    position: node.position,
+    data: node.data,
+    ...(node.parentNode ? { parentNode: node.parentNode, extent: 'parent' as const } : {}),
+  };
+}
+
 export function canvasToDefinition(args: {
   workflowId: string;
   name: string;

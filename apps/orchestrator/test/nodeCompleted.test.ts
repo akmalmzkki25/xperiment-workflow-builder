@@ -15,7 +15,17 @@ import type { OrchestratorDeps } from '../src/deps.js';
 import { handleExecutionRequested } from '../src/handlers/executionRequested.js';
 import { handleNodeCompleted } from '../src/handlers/nodeCompleted.js';
 import { handleWatchdog } from '../src/handlers/watchdog.js';
-import { branchIr, errorPathIr, linearIr, loopIr, seedExecution, truncateAll } from './helpers.js';
+import {
+  branchIr,
+  errorPathIr,
+  fanInIr,
+  linearIr,
+  loopIr,
+  loopWithBranchIr,
+  parallelIr,
+  seedExecution,
+  truncateAll,
+} from './helpers.js';
 
 let pool: Pool;
 let deps: OrchestratorDeps;
@@ -525,5 +535,101 @@ describe('handleNodeCompleted loop concurrency', () => {
     const byId = Object.fromEntries(states.map((s) => [s.nodeId, s.status]));
     expect(byId['lp$join']).toBe('SUCCEEDED');
     expect(byId['after']).toBe('QUEUED');
+  });
+});
+
+describe('adversarial review regressions', () => {
+  async function succeedLoopNode(executionId: string, items: unknown[]) {
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['PENDING'], to: 'READY' });
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['READY', 'QUEUED'], to: 'QUEUED' });
+    await casNode(pool, { executionId, nodeId: 'lp', attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    const outputPort = items.length === 0 ? 'done' : 'item';
+    await casNode(pool, {
+      executionId,
+      nodeId: 'lp',
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'SUCCEEDED',
+      patch: { outputJson: { items, count: items.length }, outputPort, completedAt: true },
+    });
+    await handleNodeCompleted(deps, { executionId, nodeId: 'lp', attempt: 1, status: 'SUCCEEDED', outputPort });
+  }
+
+  async function failNodeRaw(executionId: string, nodeId: string) {
+    await casNode(pool, { executionId, nodeId, attempt: 1, from: ['PENDING', 'READY', 'QUEUED'], to: 'RUNNING' });
+    await casNode(pool, {
+      executionId,
+      nodeId,
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'FAILED',
+      patch: { errorJson: { code: 'boom', retryable: false }, completedAt: true },
+    });
+    await handleNodeCompleted(deps, { executionId, nodeId, attempt: 1, status: 'FAILED' });
+  }
+
+  test('an iteration whose exit is skipped still completes the loop', async () => {
+    // The last undecided instance is decided by a SKIP, which emits no node.completed. Seeding
+    // the join from the pre-skip snapshot means nothing is dispatched again and the run hangs
+    // until the watchdog times it out.
+    const { executionId } = await seedExecution(pool, loopWithBranchIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedLoopNode(executionId, ['x']);
+
+    await casNode(pool, { executionId, nodeId: 'b1#0', attempt: 1, from: ['QUEUED'], to: 'RUNNING' });
+    await casNode(pool, {
+      executionId,
+      nodeId: 'b1#0',
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'SUCCEEDED',
+      patch: { outputJson: { result: false }, outputPort: 'false', completedAt: true },
+    });
+    await handleNodeCompleted(deps, {
+      executionId,
+      nodeId: 'b1#0',
+      attempt: 1,
+      status: 'SUCCEEDED',
+      outputPort: 'false',
+    });
+
+    const states = await latestNodeStates(pool, executionId);
+    const byId = Object.fromEntries(states.map((s) => [s.nodeId, s.status]));
+    expect(byId['b2#0']).toBe('SKIPPED');
+    expect(byId['lp$join']).toBe('SUCCEEDED');
+    expect(byId['after']).toBe('QUEUED');
+  });
+
+  test('a fatal failure does not dispatch a sibling that just became ready', async () => {
+    // A fatal failure is "decided", so a fan-in node reads as ready. Queueing it in the same
+    // transaction that fails the execution strands it QUEUED forever: the worker refuses to
+    // run anything belonging to a terminal execution.
+    const { executionId } = await seedExecution(pool, fanInIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await succeedNode(executionId, 'a');
+    await failNodeRaw(executionId, 'b');
+
+    const detail = await getExecutionDetail(pool, executionId);
+    expect(detail?.execution.status).toBe('FAILED');
+    const states = await latestNodeStates(pool, executionId);
+    expect(states.find((s) => s.nodeId === 'z')?.status).not.toBe('QUEUED');
+  });
+
+  test('a failed run leaves no node stuck at PENDING', async () => {
+    // The deleted FAILED short-circuit used to sweep every PENDING node to SKIPPED. Readiness
+    // only skips nodes whose inbound edges are all inactive, so one sitting behind a
+    // still-RUNNING sibling would stay PENDING on a finished execution forever.
+    const { executionId } = await seedExecution(pool, parallelIr());
+    await handleExecutionRequested(deps, { executionId });
+    await succeedNode(executionId, 't');
+    await casNode(pool, { executionId, nodeId: 'b', attempt: 1, from: ['PENDING', 'QUEUED'], to: 'RUNNING' });
+    await failNodeRaw(executionId, 'a');
+
+    const detail = await getExecutionDetail(pool, executionId);
+    expect(detail?.execution.status).toBe('FAILED');
+    const states = await latestNodeStates(pool, executionId);
+    expect(states.filter((s) => s.status === 'PENDING').map((s) => s.nodeId)).toEqual([]);
   });
 });

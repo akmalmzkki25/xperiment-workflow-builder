@@ -6,6 +6,7 @@ import {
   makeNode,
   nextNodeId,
   remapEdgesForRename,
+  toEditorNode,
   type EditorNode,
 } from '../src/lib/irCanvas';
 
@@ -272,5 +273,68 @@ describe('loop scopes on the canvas', () => {
     };
     // Validation rejects a scoped entrypoint, so the editor must not produce one.
     expect(out.entrypoints).toEqual([]);
+  });
+});
+
+describe('toEditorNode — the Editor save path', () => {
+  const flowNode = {
+    id: 'body',
+    type: 'xperiment',
+    position: { x: 40, y: 60 },
+    data: { ir: { id: 'body', kind: 'logic' as const, type: 'core.transform', operationVersion: '0.1.0', parameters: {} } },
+    parentNode: 'lp',
+    extent: 'parent' as const,
+    selected: true,
+    dragging: false,
+  };
+
+  test('carries the container membership through', () => {
+    // Editor rebuilds every node before saving. Dropping parentNode here silently strips
+    // scope from every body node on the very first Save, destroying the loop.
+    expect(toEditorNode(flowNode).parentNode).toBe('lp');
+    expect(toEditorNode(flowNode).extent).toBe('parent');
+  });
+
+  test('keeps the loop container its own type', () => {
+    const loop = { ...flowNode, id: 'lp', type: 'xperimentLoop', parentNode: undefined, extent: undefined };
+    expect(toEditorNode(loop).type).toBe('xperimentLoop');
+  });
+
+  test('an unparented node stays unparented', () => {
+    const free = { ...flowNode, parentNode: undefined, extent: undefined };
+    expect(toEditorNode(free).parentNode).toBeUndefined();
+  });
+
+  test('a full Editor round trip preserves scope', () => {
+    const definition = {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_lp', name: 'Loop' },
+      entrypoints: ['hook'],
+      nodes: [
+        { id: 'hook', kind: 'trigger', type: 'webhook.trigger', operationVersion: '0.1.0', parameters: {} },
+        { id: 'lp', kind: 'logic', type: 'core.loop', operationVersion: '0.1.0', parameters: { items: [] } },
+        {
+          id: 'body',
+          kind: 'logic',
+          type: 'core.transform',
+          operationVersion: '0.1.0',
+          parameters: {},
+          scope: { loopId: 'lp' },
+        },
+      ],
+      edges: [
+        { id: 'e1', from: { nodeId: 'hook', port: 'main' }, to: { nodeId: 'lp', port: 'input' } },
+        { id: 'e2', from: { nodeId: 'lp', port: 'item' }, to: { nodeId: 'body', port: 'input' } },
+      ],
+    };
+    const { nodes, edges } = definitionToCanvas(definition);
+    // Exactly what Editor.buildDefinition does: rebuild each node, then map to a definition.
+    const out = canvasToDefinition({
+      workflowId: 'wf_lp',
+      name: 'Loop',
+      nodes: nodes.map(toEditorNode),
+      edges,
+    }) as { nodes: { id: string; scope?: { loopId: string } }[] };
+    expect(out.nodes.find((n) => n.id === 'body')!.scope).toEqual({ loopId: 'lp' });
   });
 });

@@ -20,8 +20,8 @@ import {
   makeNode,
   nextNodeId,
   remapEdgesForRename,
+  toEditorNode,
   type EditorEdge,
-  type EditorNode,
   type IRNodeData,
 } from '../../lib/irCanvas';
 import { defaultParams } from '../../lib/schemaForm';
@@ -99,9 +99,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     return canvasToDefinition({
       workflowId,
       name: workflowQ.data?.name ?? 'Workflow',
-      nodes: nodes.map(
-        (n): EditorNode => ({ id: n.id, type: 'xperiment', position: n.position, data: n.data }),
-      ),
+      nodes: nodes.map(toEditorNode),
       edges: edges.map(
         (e): EditorEdge => ({
           id: e.id,

@@ -110,6 +110,84 @@ export function loopIr(opts: { concurrency?: number } = {}): WorkflowIR {
   };
 }
 
+/** Like loopIr, but the body starts with a core.if whose false branch skips the exit. */
+export function loopWithBranchIr(): WorkflowIR {
+  const scope = { loopId: 'lp' };
+  return {
+    schemaVersion: '0.1',
+    workflow: { id: 'wf_loop_br', name: 'Loop with branch' },
+    entrypoints: ['t'],
+    nodes: [
+      { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+      { id: 'lp', kind: 'logic', type: 'core.loop', operationVersion: '0.1.0', parameters: { items: [] } },
+      { id: 'b1', kind: 'logic', type: 'core.if', operationVersion: '0.1.0', parameters: { condition: true }, scope },
+      { id: 'b2', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} }, scope },
+      { id: 'after', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: {} } },
+    ],
+    edges: [
+      { id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'lp', port: 'input' } },
+      { id: 'e2', from: { nodeId: 'lp', port: 'item' }, to: { nodeId: 'b1', port: 'input' } },
+      { id: 'e3', from: { nodeId: 'b1', port: 'true' }, to: { nodeId: 'b2', port: 'input' } },
+      { id: 'e4', from: { nodeId: 'lp', port: 'done' }, to: { nodeId: 'after', port: 'input' } },
+    ],
+  };
+}
+
+/** A fan-in: t → a, t → b, a → z, b → z. */
+export function fanInIr(): WorkflowIR {
+  const node = (id: string, kind: 'trigger' | 'logic', type: string) => ({
+    id,
+    kind,
+    type,
+    operationVersion: '0.1.0',
+    parameters: kind === 'trigger' ? {} : { fields: {} },
+  });
+  return {
+    schemaVersion: '0.1',
+    workflow: { id: 'wf_fan', name: 'Fan in' },
+    entrypoints: ['t'],
+    nodes: [
+      node('t', 'trigger', 'manual.trigger'),
+      node('a', 'logic', 'core.transform'),
+      node('b', 'logic', 'core.transform'),
+      node('z', 'logic', 'core.transform'),
+    ],
+    edges: [
+      { id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'a', port: 'input' } },
+      { id: 'e2', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'b', port: 'input' } },
+      { id: 'e3', from: { nodeId: 'a', port: 'main' }, to: { nodeId: 'z', port: 'input' } },
+      { id: 'e4', from: { nodeId: 'b', port: 'main' }, to: { nodeId: 'z', port: 'input' } },
+    ],
+  };
+}
+
+/** Two parallel branches, one of them two nodes deep: t → a, t → b → c. */
+export function parallelIr(): WorkflowIR {
+  const node = (id: string, kind: 'trigger' | 'logic', type: string) => ({
+    id,
+    kind,
+    type,
+    operationVersion: '0.1.0',
+    parameters: kind === 'trigger' ? {} : { fields: {} },
+  });
+  return {
+    schemaVersion: '0.1',
+    workflow: { id: 'wf_par', name: 'Parallel' },
+    entrypoints: ['t'],
+    nodes: [
+      node('t', 'trigger', 'manual.trigger'),
+      node('a', 'logic', 'core.transform'),
+      node('b', 'logic', 'core.transform'),
+      node('c', 'logic', 'core.transform'),
+    ],
+    edges: [
+      { id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'a', port: 'input' } },
+      { id: 'e2', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'b', port: 'input' } },
+      { id: 'e3', from: { nodeId: 'b', port: 'main' }, to: { nodeId: 'c', port: 'input' } },
+    ],
+  };
+}
+
 export async function seedExecution(
   pool: Pool,
   ir: WorkflowIR,

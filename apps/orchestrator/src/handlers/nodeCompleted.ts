@@ -83,46 +83,79 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
       outputPort: s.outputPort,
     }));
 
-    // A join has no inbound edges, so readiness will never schedule it. Seed it the moment
-    // every instance of its loop is decided; the readiness pass below then sees it succeeded
-    // and lets the loop's `done` edges fire.
-    for (const [loopId, count] of Object.entries(counts)) {
-      if (count === 0) continue; // an empty loop fires `done` from the loop node itself
-      const jid = joinId(loopId);
-      if (outcomes.some((o) => o.nodeId === jid)) continue;
-      const body = ctx.ir.nodes.filter((n) => n.scope?.loopId === loopId).map((n) => n.id);
-      const wanted = body.flatMap((b) => Array.from({ length: count }, (_, i) => instanceId(b, i)));
-      const decided = wanted.every((id) => {
-        const o = outcomes.find((x) => x.nodeId === id);
-        return o !== undefined && ['SUCCEEDED', 'SKIPPED', 'FAILED'].includes(o.status);
-      });
-      if (!decided) continue;
-      const seeded = await ensureNodeAttempt(client, {
-        executionId,
-        nodeId: jid,
-        attempt: 1,
-        status: 'SUCCEEDED',
-      });
-      if (seeded) {
-        await appendEvent(client, { executionId, eventType: 'loop.completed', nodeId: loopId, payload: { count } });
+    /**
+     * A join has no inbound edges, so readiness will never schedule it. Seed it the moment
+     * every instance of its loop is decided, which lets the loop's `done` edges fire.
+     *
+     * Returns true when it seeded anything.
+     */
+    const seedFinishedJoins = async (): Promise<boolean> => {
+      let seededAny = false;
+      for (const [loopId, count] of Object.entries(counts)) {
+        if (count === 0) continue; // an empty loop fires `done` from the loop node itself
+        const jid = joinId(loopId);
+        if (outcomes.some((o) => o.nodeId === jid)) continue;
+        const body = ctx.ir.nodes.filter((n) => n.scope?.loopId === loopId).map((n) => n.id);
+        const wanted = body.flatMap((b) => Array.from({ length: count }, (_, i) => instanceId(b, i)));
+        const decided = wanted.every((id) => {
+          const o = outcomes.find((x) => x.nodeId === id);
+          return o !== undefined && ['SUCCEEDED', 'SKIPPED', 'FAILED'].includes(o.status);
+        });
+        if (!decided) continue;
+        const seeded = await ensureNodeAttempt(client, {
+          executionId,
+          nodeId: jid,
+          attempt: 1,
+          status: 'SUCCEEDED',
+        });
+        if (seeded) {
+          await appendEvent(client, { executionId, eventType: 'loop.completed', nodeId: loopId, payload: { count } });
+        }
+        outcomes.push({ nodeId: jid, status: 'SUCCEEDED', outputPort: 'main' });
+        seededAny = true;
       }
-      outcomes.push({ nodeId: jid, status: 'SUCCEEDED', outputPort: 'main' });
-    }
+      return seededAny;
+    };
 
-    const readiness = computeReadiness(graph, outcomes);
+    await seedFinishedJoins();
+    let readiness = computeReadiness(graph, outcomes);
+
+    // A skip decides a node but emits no node.completed, so nothing would re-enter this
+    // handler. If the last undecided instance of a loop is decided by a skip — a core.if in
+    // the body taking the branch that leads nowhere — the join must be seeded in THIS pass or
+    // the execution hangs until the watchdog. Fold the skips in and try again; seeding one
+    // join can decide the next, so iterate until nothing new is seeded. There are finitely
+    // many loops, so this terminates.
+    // Accumulated across passes: once a node is folded in as SKIPPED, a later readiness call
+    // reports it as already decided rather than newly skipped, so the last pass alone does not
+    // carry every id that still needs a row written.
+    const toSkip = new Set<string>();
+    for (;;) {
+      for (const id of readiness.skipped) {
+        toSkip.add(id);
+        const existing = outcomes.find((o) => o.nodeId === id);
+        if (existing) existing.status = 'SKIPPED';
+        else outcomes.push({ nodeId: id, status: 'SKIPPED' });
+      }
+      if (!(await seedFinishedJoins())) break;
+      readiness = computeReadiness(graph, outcomes);
+    }
 
     // Loop instances have no row: the execution seeded only the authored nodes, because a
     // body node never runs under its authored id. Materialise on the way past, never ahead of
     // time — a row created for an iteration the throttle has not released would show in the
     // timeline as a node that is somehow already pending.
-    const known = new Set(outcomes.map((o) => o.nodeId));
+    // Built from what the DATABASE holds, not from `outcomes` — the passes above push
+    // synthetic SKIPPED and join entries into `outcomes`, and treating those as existing rows
+    // would skip the insert the CAS below needs.
+    const known = new Set(states.map((s) => s.nodeId));
     const materialise = async (id: string): Promise<void> => {
       if (known.has(id)) return;
       await ensureNodeAttempt(client, { executionId, nodeId: id, attempt: 1, status: 'PENDING' });
       known.add(id);
     };
 
-    for (const skippedId of readiness.skipped) {
+    for (const skippedId of toSkip) {
       await materialise(skippedId);
       const ok = await casNode(client, {
         executionId,
@@ -152,7 +185,12 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
     const loopOf = new Map(ctx.ir.nodes.filter((n) => n.scope).map((n) => [n.id, n.scope!.loopId]));
     const starting = new Map<string, Set<number>>();
 
-    for (const readyId of readiness.ready) {
+    // An unhandled failure is "decided", so a fan-in node downstream of it can read as ready
+    // in the very pass that ends the run. Dispatching it would strand a QUEUED row forever:
+    // the worker refuses any task belonging to a terminal execution.
+    const dispatchable = readiness.terminal === 'FAILED' ? [] : readiness.ready;
+
+    for (const readyId of dispatchable) {
       const parsed = parseInstanceId(readyId);
       const owner = parsed ? loopOf.get(parsed.nodeId) : undefined;
       if (owner !== undefined && parsed) {
@@ -200,6 +238,21 @@ export async function handleNodeCompleted(deps: OrchestratorDeps, payload: NodeC
         errorSummary: payload.status === 'FAILED' ? `Node '${nodeId}' failed` : 'A node failed',
       });
       if (done) {
+        // Readiness only skips a node whose inbound edges are all inactive, so one sitting
+        // behind a still-RUNNING sibling stays PENDING. Sweep the remainder, as the deleted
+        // FAILED short-circuit used to, or a finished execution keeps nodes at PENDING
+        // forever.
+        for (const s of await latestNodeStates(client, executionId)) {
+          if (s.status !== 'PENDING') continue;
+          const swept = await casNode(client, {
+            executionId,
+            nodeId: s.nodeId,
+            attempt: s.attempt,
+            from: ['PENDING'],
+            to: 'SKIPPED',
+          });
+          if (swept) await appendEvent(client, { executionId, eventType: 'node.skipped', nodeId: s.nodeId });
+        }
         await closeOpenWaits(client, executionId);
         await appendEvent(client, { executionId, eventType: 'execution.failed' });
         await enqueueCompletionCallback(client, { workflowId: ctx.execution.workflowId, executionId });
