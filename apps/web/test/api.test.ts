@@ -212,8 +212,8 @@ describe('endpoint helpers', () => {
   test('the mfa endpoints carry the right verbs, paths and bodies', async () => {
     responder = () => json(200, { secretBase32: 'AAAA', otpauthUri: 'otpauth://x', recoveryCodes: [], token: 't' });
     const client = makeClient();
-    await client.mfaSetup();
-    await client.mfaConfirm('123456');
+    await client.mfaSetup('pw');
+    await client.mfaConfirm('123456', 'pw');
     await client.mfaDisable('123456');
     await client.mfaRecoveryCodes('123456');
     await client.mfaVerify('qm_c', '123456');
@@ -226,8 +226,9 @@ describe('endpoint helpers', () => {
       'POST /v1/auth/mfa/verify',
       'PUT /v1/workspaces/mfa-policy',
     ]);
-    expect(calls[0]!.init.body).toBeUndefined();
-    expect(calls[1]!.init.body).toBe(JSON.stringify({ code: '123456' }));
+    // Enrolment carries the password: a bearer token alone must not attach a factor.
+    expect(calls[0]!.init.body).toBe(JSON.stringify({ password: 'pw' }));
+    expect(calls[1]!.init.body).toBe(JSON.stringify({ code: '123456', password: 'pw' }));
     expect(calls[4]!.init.body).toBe(JSON.stringify({ challenge: 'qm_c', code: '123456' }));
     expect(calls[5]!.init.body).toBe(JSON.stringify({ requireMfa: true }));
   });

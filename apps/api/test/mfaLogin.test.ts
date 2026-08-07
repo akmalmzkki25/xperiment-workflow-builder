@@ -40,13 +40,13 @@ async function enrolled(): Promise<{ email: string; secretBase32: string; recove
     payload: { email, password: 'password-123' },
   });
   const token = reg.json<{ token: string }>().token;
-  const s = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(token) });
+  const s = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(token), payload: { password: 'password-123' } });
   const secretBase32 = s.json<{ secretBase32: string }>().secretBase32;
   const c = await app.inject({
     method: 'POST',
     url: '/v1/auth/mfa/confirm',
     headers: auth(token),
-    payload: { code: codeFor(secretBase32) },
+    payload: { password: 'password-123', code: codeFor(secretBase32) },
   });
   expect(c.statusCode).toBe(200);
   return { email, secretBase32, recoveryCodes: c.json<{ recoveryCodes: string[] }>().recoveryCodes };
@@ -196,5 +196,54 @@ describe('two-step login', () => {
       );
       expect(rows.rows[0]!.c).toBe('0');
     }
+  });
+});
+
+describe('the account cap on TOTP guessing', () => {
+  test('minting a fresh challenge does not buy fresh guesses', async () => {
+    // The whole attack: whoever holds the password calls login again for a new challenge,
+    // and a per-challenge limiter would hand them five more tries at a six-digit code. The
+    // account cap is what makes the second factor cost anything to guess.
+    const { email } = await enrolled();
+    let sawTooMany = false;
+    for (let round = 0; round < 4 && !sawTooMany; round += 1) {
+      const challenge = (await login(email)).json<{ challenge?: string }>().challenge;
+      if (!challenge) break; // login itself is now limited too, which is also a pass
+      for (let i = 0; i < 3; i += 1) {
+        const r = await app.inject({
+          method: 'POST',
+          url: '/v1/auth/mfa/verify',
+          payload: { challenge, code: '000000' },
+        });
+        if (r.statusCode === 429) sawTooMany = true;
+      }
+    }
+    expect(sawTooMany, 'guessing must become bounded across challenges').toBe(true);
+  });
+
+  test('a correct password alone no longer clears the login limiter', async () => {
+    // Login used to reset its budget the moment the password verified, which let an attacker
+    // mint challenges without limit.
+    const { email } = await enrolled();
+    const statuses: number[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      statuses.push((await login(email)).statusCode);
+    }
+    expect(statuses).toContain(429);
+  });
+
+  test('a completed second step clears the account budget', async () => {
+    const { email, secretBase32 } = await enrolled();
+    const challenge = (await login(email)).json<{ challenge: string }>().challenge;
+    await app.inject({ method: 'POST', url: '/v1/auth/mfa/verify', payload: { challenge, code: '000000' } });
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/verify',
+      payload: { challenge, code: codeFor(secretBase32, 1) },
+    });
+    expect(ok.statusCode).toBe(200);
+    // A legitimate user who mistyped once and then succeeded is not left throttled.
+    const next = (await login(email)).json<{ challenge?: string }>().challenge;
+    expect(next).toBeDefined();
   });
 });

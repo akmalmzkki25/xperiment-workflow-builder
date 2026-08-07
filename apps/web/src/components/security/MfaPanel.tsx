@@ -28,6 +28,9 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
   const qc = useQueryClient();
   const [stage, setStage] = useState<Stage>({ kind: 'idle' });
   const [code, setCode] = useState('');
+  // Enrolment re-authenticates. A stolen session must not be able to attach a factor the
+  // real owner does not hold — a password reset would not remove it.
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -45,14 +48,15 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
 
   const start = () =>
     run(async () => {
-      const r = await getBrowserClient().mfaSetup();
+      const r = await getBrowserClient().mfaSetup(password);
       setStage({ kind: 'enrolling', uri: r.otpauthUri, key: r.secretBase32 });
     });
 
   const confirm = () =>
     run(async () => {
-      const r = await getBrowserClient().mfaConfirm(code);
+      const r = await getBrowserClient().mfaConfirm(code, password);
       setCode('');
+      setPassword('');
       setStage({ kind: 'codes', codes: r.recoveryCodes });
       await qc.invalidateQueries({ queryKey: ['me'] });
     });
@@ -123,9 +127,24 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
       ) : null}
 
       {stage.kind === 'idle' && !enabled ? (
-        <button className="q-btn" disabled={busy} onClick={() => void start()} data-testid="mfa-start">
-          Set up
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <TextField
+            label="Your password"
+            type="password"
+            value={password}
+            onChange={setPassword}
+            hint="Confirms it is really you before a second factor is attached"
+            testId="mfa-password"
+          />
+          <button
+            className="q-btn"
+            disabled={busy || password.length === 0}
+            onClick={() => void start()}
+            data-testid="mfa-start"
+          >
+            Set up
+          </button>
+        </div>
       ) : null}
 
       {stage.kind === 'idle' && enabled ? (

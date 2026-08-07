@@ -262,6 +262,7 @@ test('a user turns on two-factor and is challenged at the next sign in', async (
   await loginWithToken(page);
   await page.getByTestId('nav-security').click();
   await expect(page.getByTestId('security-page')).toBeVisible();
+  await page.getByTestId('mfa-password').fill('password-123');
   await page.getByTestId('mfa-start').click();
   // The QR is drawn in the browser; the key beside it is what this test enrols with.
   await expect(page.getByTestId('mfa-qr')).toBeVisible();

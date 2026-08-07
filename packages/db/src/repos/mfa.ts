@@ -102,6 +102,21 @@ export async function consumeRecoveryCode(db: Db, userId: string, hash: string):
   return (r.rowCount ?? 0) > 0;
 }
 
+/**
+ * Every workspace whose policy requires this user's second factor — that is, where they hold
+ * a privileged role and `require_mfa` is on. Disabling MFA while any exist would strand them
+ * behind their own workspace's gate.
+ */
+export async function workspacesRequiringMfa(db: Db, userId: string): Promise<string[]> {
+  const r = await db.query(
+    `SELECT m.workspace_id FROM workspace_members m
+     JOIN workspaces w ON w.id = m.workspace_id
+     WHERE m.user_id = $1 AND w.require_mfa AND m.role IN ('owner','admin')`,
+    [userId],
+  );
+  return (r.rows as { workspace_id: string }[]).map((row) => row.workspace_id);
+}
+
 export async function countLiveRecoveryCodes(db: Db, userId: string): Promise<number> {
   const r = await db.query(
     `SELECT count(*)::int AS c FROM mfa_recovery_codes WHERE user_id = $1 AND consumed_at IS NULL`,

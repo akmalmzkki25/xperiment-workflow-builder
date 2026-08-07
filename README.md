@@ -533,6 +533,21 @@ Codes are single use: the verification window is ±1 step, so a code is live for
 and `user_mfa.last_used_step` is the floor that stops that window from doubling as a replay
 window.
 
+**Both enrolment steps re-authenticate by password.** A bearer token alone must not attach a
+factor: a stolen session could otherwise enrol one, and because a password reset revokes
+sessions but leaves MFA standing, the real owner would reset, sign in, and be challenged for a
+code only the attacker holds — with no owner-initiated reset, a permanent takeover. The
+re-authentication is rate limited per user so it cannot become a password oracle.
+
+**Guessing is capped per account, not per challenge.** Whoever holds the password can ask for
+as many challenges as they like, so a per-challenge budget bounds nothing. Login no longer
+clears its own limiter when a second factor is pending — only a login that ends in a session
+does — and `/v1/auth/mfa/verify` counts failures against the account.
+
+`disable` is refused with `409` while the caller holds a privileged role in any workspace that
+requires the factor, and the MFA policy route is session-only: an API key carrying the owner
+role must not be able to switch off the very policy it is exempt from.
+
 Ten single-use recovery codes are issued at enrolment and shown **once**. They are the only
 way back in without the authenticator — an owner cannot reset a member's factor.
 

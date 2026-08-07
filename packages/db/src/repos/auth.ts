@@ -151,16 +151,19 @@ export async function getMembership(
   db: Db,
   workspaceId: string,
   userId: string,
-): Promise<{ role: Role; requireMfa: boolean } | null> {
+): Promise<{ workspaceId: string; role: Role; requireMfa: boolean } | null> {
   const r = await db.query(
-    `SELECT m.role, w.require_mfa FROM workspace_members m
+    // workspace_id comes back too: the caller supplies this id from a request header, and
+    // Postgres matches a uuid parameter regardless of case. Returning the canonical form
+    // keeps a non-canonical header out of everything downstream — above all the AES-GCM AAD.
+    `SELECT m.workspace_id, m.role, w.require_mfa FROM workspace_members m
      JOIN workspaces w ON w.id = m.workspace_id
      WHERE m.workspace_id = $1 AND m.user_id = $2`,
     [workspaceId, userId],
   );
   if (!r.rowCount) return null;
-  const row = r.rows[0] as { role: Role; require_mfa: boolean };
-  return { role: row.role, requireMfa: row.require_mfa };
+  const row = r.rows[0] as { workspace_id: string; role: Role; require_mfa: boolean };
+  return { workspaceId: row.workspace_id, role: row.role, requireMfa: row.require_mfa };
 }
 
 export async function setWorkspaceRequireMfa(db: Db, workspaceId: string, enabled: boolean): Promise<void> {

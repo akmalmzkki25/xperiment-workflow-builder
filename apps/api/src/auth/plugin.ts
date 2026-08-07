@@ -105,7 +105,11 @@ export function registerAuthPlugin(app: FastifyInstance, deps: { pool: pg.Pool }
         const explicit: AuthContext = {
           userId: session.userId,
           apiKeyId: null,
-          workspaceId: requestedWorkspace,
+          // The canonical id from the database, never the raw header. Postgres matches a
+          // uuid parameter case-insensitively, so an upper-case header reaches the same row
+          // — but the header string would then become the AES-GCM AAD on every secret this
+          // request seals, and nothing could ever open it again with the canonical id.
+          workspaceId: membership.workspaceId,
           role: membership.role,
         };
         if (await mfaPolicyBlocks(deps.pool, path, explicit, membership.requireMfa)) {

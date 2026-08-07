@@ -49,7 +49,7 @@ function codeFor(base32: string, offsetSteps = 0): string {
 }
 
 async function setup(token: string): Promise<{ secretBase32: string; otpauthUri: string }> {
-  const res = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(token) });
+  const res = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(token), payload: { password: 'password-123' } });
   expect(res.statusCode).toBe(200);
   return res.json();
 }
@@ -79,7 +79,7 @@ describe('mfa setup', () => {
       payload: { name: 'ci', role: 'admin' },
     });
     const apiKey = key.json<{ key: string }>().key;
-    const res = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(apiKey) });
+    const res = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(apiKey), payload: { password: 'password-123' } });
     expect(res.statusCode).toBe(400);
   });
 });
@@ -92,7 +92,7 @@ describe('mfa confirm', () => {
       method: 'POST',
       url: '/v1/auth/mfa/confirm',
       headers: auth(token),
-      payload: { code: codeFor(secretBase32) },
+      payload: { password: 'password-123', code: codeFor(secretBase32) },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json<{ recoveryCodes: string[] }>();
@@ -115,7 +115,7 @@ describe('mfa confirm', () => {
       method: 'POST',
       url: '/v1/auth/mfa/confirm',
       headers: auth(token),
-      payload: { code: '000000' },
+      payload: { password: 'password-123', code: '000000' },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json<{ title: string }>().title).toBe('Invalid code');
@@ -129,7 +129,7 @@ describe('mfa confirm', () => {
       method: 'POST',
       url: '/v1/auth/mfa/confirm',
       headers: auth(token),
-      payload: { code: '000000' },
+      payload: { password: 'password-123', code: '000000' },
     });
     expect(res.statusCode).toBe(400);
   });
@@ -141,9 +141,9 @@ describe('mfa confirm', () => {
       method: 'POST',
       url: '/v1/auth/mfa/confirm',
       headers: auth(token),
-      payload: { code: codeFor(secretBase32) },
+      payload: { password: 'password-123', code: codeFor(secretBase32) },
     });
-    const again = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(token) });
+    const again = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(token), payload: { password: 'password-123' } });
     expect(again.statusCode).toBe(409);
   });
 
@@ -154,7 +154,7 @@ describe('mfa confirm', () => {
       method: 'POST',
       url: '/v1/auth/mfa/confirm',
       headers: auth(token),
-      payload: { code: codeFor(secretBase32) },
+      payload: { password: 'password-123', code: codeFor(secretBase32) },
     });
     const first = res.json<{ recoveryCodes: string[] }>().recoveryCodes[0]!;
     for (const needle of [secretBase32, first]) {
@@ -175,7 +175,7 @@ async function enrolled(): Promise<{ email: string; token: string; secretBase32:
     method: 'POST',
     url: '/v1/auth/mfa/confirm',
     headers: auth(token),
-    payload: { code: codeFor(secretBase32) },
+    payload: { password: 'password-123', code: codeFor(secretBase32) },
   });
   expect(res.statusCode).toBe(200);
   return { email, token, secretBase32, recoveryCodes: res.json<{ recoveryCodes: string[] }>().recoveryCodes };
@@ -269,5 +269,56 @@ describe('mfa recovery-codes', () => {
       payload: { code: recoveryCodes[0]! },
     });
     expect(again.statusCode).toBe(400);
+  });
+});
+
+describe('enrolment requires the password', () => {
+  test('a session alone cannot start enrolment', async () => {
+    // A stolen session must not be able to attach a factor: a password reset revokes sessions
+    // but leaves MFA standing, so the real owner would reset, sign in, and be challenged for a
+    // code only the attacker holds — and no one can reset it for them.
+    const { token } = await newAccount();
+    const res = await app.inject({ method: 'POST', url: '/v1/auth/mfa/setup', headers: auth(token), payload: {} });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('a wrong password is refused at setup', async () => {
+    const { token } = await newAccount();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/setup',
+      headers: auth(token),
+      payload: { password: 'not-the-password' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  test('a wrong password is refused at confirm, leaving the factor off', async () => {
+    const { token } = await newAccount();
+    const { secretBase32 } = await setup(token);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/mfa/confirm',
+      headers: auth(token),
+      payload: { password: 'not-the-password', code: codeFor(secretBase32) },
+    });
+    expect(res.statusCode).toBe(401);
+    const me = await app.inject({ method: 'GET', url: '/v1/auth/me', headers: auth(token) });
+    expect(me.json<{ mfaEnabled: boolean }>().mfaEnabled).toBe(false);
+  });
+
+  test('repeated wrong passwords are rate limited, so this is no password oracle', async () => {
+    const { token } = await newAccount();
+    const statuses: number[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const r = await app.inject({
+        method: 'POST',
+        url: '/v1/auth/mfa/setup',
+        headers: auth(token),
+        payload: { password: `guess-${i}` },
+      });
+      statuses.push(r.statusCode);
+    }
+    expect(statuses).toContain(429);
   });
 });

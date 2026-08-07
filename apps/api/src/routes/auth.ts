@@ -139,9 +139,11 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
       });
       return sendProblem(reply, 401, 'Invalid credentials');
     }
-    limiter.reset(limiterKey);
     const mfa = await getMfa(deps.pool, user.id);
     if (mfa?.confirmedAt) {
+      // Deliberately NOT resetting the limiter here. A correct password is only half of this
+      // login, and clearing the budget now would let whoever holds it mint challenges without
+      // limit — five fresh TOTP guesses each, which is no bound at all on a six-digit code.
       // No session yet: a password alone must not produce anything that authenticates.
       const challenge = generateToken('qm');
       await createAuthToken(deps.pool, {
@@ -161,6 +163,8 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
       });
       return { mfaRequired: true, challenge: challenge.token };
     }
+    // Only a login that actually ends in a session clears the budget.
+    limiter.reset(limiterKey);
     const { token, hash } = generateToken('qs');
     await createSession(deps.pool, { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
     await appendAuditEvent(deps.pool, {

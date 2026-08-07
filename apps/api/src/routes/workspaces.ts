@@ -191,6 +191,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: ResolvedServ
 
   app.put('/v1/workspaces/mfa-policy', async (req, reply) => {
     const ctx = authOf(req);
+    // Session-only. An API key is deliberately outside the policy, so letting one carrying
+    // the owner role switch the policy off would hand it the one lever it must not have.
+    if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only', 'API keys cannot set the MFA policy');
     if (ctx.role !== 'owner') return sendProblem(reply, 403, 'Forbidden', 'Only an owner may set the MFA policy');
     const parsed = z.object({ requireMfa: z.boolean() }).strict().safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);

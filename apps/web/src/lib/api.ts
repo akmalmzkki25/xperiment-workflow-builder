@@ -234,12 +234,13 @@ export class ApiClient {
     return this.request('POST', '/v1/auth/login', { body: { email, password } });
   }
 
-  mfaSetup(): Promise<{ secretBase32: string; otpauthUri: string }> {
-    return this.request('POST', '/v1/auth/mfa/setup');
+  /** Both enrolment steps re-authenticate: a bearer token alone must not attach a factor. */
+  mfaSetup(password: string): Promise<{ secretBase32: string; otpauthUri: string }> {
+    return this.request('POST', '/v1/auth/mfa/setup', { body: { password } });
   }
 
-  mfaConfirm(code: string): Promise<{ recoveryCodes: string[]; remaining: number }> {
-    return this.request('POST', '/v1/auth/mfa/confirm', { body: { code } });
+  mfaConfirm(code: string, password: string): Promise<{ recoveryCodes: string[]; remaining: number }> {
+    return this.request('POST', '/v1/auth/mfa/confirm', { body: { code, password } });
   }
 
   mfaDisable(code: string): Promise<{ mfaEnabled: boolean }> {
