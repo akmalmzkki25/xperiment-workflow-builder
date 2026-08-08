@@ -46,7 +46,10 @@ describe('core.merge combineByKey', () => {
     { sku: 'B', name: 'Teh' },
   ];
   const right = [
-    { sku: 'B', stock: 4 },
+    // `name` OVERLAPS deliberately. With disjoint fields the spread is commutative and
+    // toEqual ignores key order, so the precedence this test claims to pin would pass
+    // under either order — the assertion would prove nothing.
+    { sku: 'B', name: 'Teh Botol', stock: 4 },
     { sku: 'C', stock: 9 },
   ];
 
@@ -54,9 +57,47 @@ describe('core.merge combineByKey', () => {
     const r = await coreMerge.run(ctx({ mode: 'combineByKey', key: 'sku', sources: [left, right] }));
     expect(out(r)['items']).toEqual([
       { sku: 'A', name: 'Kopi' },
-      { sku: 'B', name: 'Teh', stock: 4 },
+      { sku: 'B', name: 'Teh Botol', stock: 4 },
       { sku: 'C', stock: 9 },
     ]);
+    const reversed = await coreMerge.run(ctx({ mode: 'combineByKey', key: 'sku', sources: [right, left] }));
+    const b = (out(reversed)['items'] as { sku: string; name?: string }[]).find((i) => i.sku === 'B');
+    expect(b?.name).toBe('Teh');
+  });
+
+  test('an id of 1 and an id of "1" stay two rows', async () => {
+    // node-postgres returns int8 and numeric columns as STRINGS by default, so joining a
+    // postgres.query result against an HTTP API's JSON is exactly this case. String(raw)
+    // as a map key would merge two different orders into one and lose the type.
+    const r = await coreMerge.run(
+      ctx({ mode: 'combineByKey', key: 'id', sources: [[{ id: 1, name: 'Kopi' }], [{ id: '1', stock: 9 }]] }),
+    );
+    expect(out(r)).toMatchObject({ count: 2 });
+  });
+
+  test('refuses a row whose key is absent rather than folding them together', async () => {
+    // Folding keyless rows into one bucket discards every one but the last, silently.
+    const err = await coreMerge
+      .run(ctx({ mode: 'combineByKey', key: 'sku', sources: [[{ a: 1 }, { a: 2 }], [{ b: 3 }]] }))
+      .catch((e: unknown) => e);
+    expect((err as NodeRunError).code).toBe('missing_merge_key');
+    expect((err as NodeRunError).retryable).toBe(false);
+  });
+
+  test('refuses a non-primitive key rather than merging everything into [object Object]', async () => {
+    const err = await coreMerge
+      .run(ctx({ mode: 'combineByKey', key: 'c', sources: [[{ c: { id: 7 } }], [{ c: { id: 8 } }]] }))
+      .catch((e: unknown) => e);
+    expect((err as NodeRunError).code).toBe('unsupported_group_key');
+  });
+
+  test('never reads an inherited property as a key', async () => {
+    // A bare cur[segment] returns Object.prototype.toString, so every row would share
+    // one key and three rows would merge into one.
+    const err = await coreMerge
+      .run(ctx({ mode: 'combineByKey', key: 'toString', sources: [[{ a: 1 }, { b: 2 }], [{ c: 3 }]] }))
+      .catch((e: unknown) => e);
+    expect((err as NodeRunError).code).toBe('missing_merge_key');
   });
 
   test('output is sorted by key, not by arrival order', async () => {
@@ -81,9 +122,9 @@ describe('core.merge combineByKey', () => {
     expect((notObject as NodeRunError).code).toBe('row_not_object');
   });
 
-  test('a row with no key folds into a single null bucket', async () => {
-    const r = await coreMerge.run(ctx({ mode: 'combineByKey', key: 'sku', sources: [[{ a: 1 }], [{ b: 2 }]] }));
-    expect(out(r)['items']).toEqual([{ a: 1, b: 2 }]);
+  test('reports how many rows went in, so a collapse is visible', async () => {
+    const r = await coreMerge.run(ctx({ mode: 'combineByKey', key: 'sku', sources: [left, right] }));
+    expect(out(r)).toMatchObject({ inputCount: 4, count: 3 });
   });
 });
 

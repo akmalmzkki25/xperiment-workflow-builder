@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { NodeRunError, type ConnectorDefinition } from '../types.js';
-import { compareValues, readField, MAX_ITEMS } from './compare.js';
+import { assertOutputSize, compareValues, groupKeyOf, readField, MAX_ITEMS } from './compare.js';
 
 const MODES = ['append', 'combineByKey', 'priority'] as const;
 
@@ -66,14 +66,23 @@ export const coreMerge: ConnectorDefinition = {
     if (mode === 'append') {
       const items: unknown[] = [];
       for (const source of usable) {
-        if (Array.isArray(source)) items.push(...source);
-        else items.push(source);
-        assertCap(items.length);
+        const incoming = Array.isArray(source) ? source : [source];
+        // Check BEFORE appending, and append in a loop: `push(...source)` spreads the
+        // whole array as call arguments and blows the stack around 131k elements — which
+        // fits inside a legal 256 KiB upstream payload, and whose exact threshold is
+        // stack-size dependent, so the same input could pass on one worker and not another.
+        assertCap(items.length + incoming.length);
+        for (const item of incoming) items.push(item);
       }
-      return { output: { items, count: items.length, sourceCount: usable.length }, outputPort: 'main' };
+      const output = { items, count: items.length, sourceCount: usable.length };
+      // The item cap is a count, not a size: ten sources of 1,000 rows each are all
+      // individually legal and together are ten times what a node output may hold.
+      assertOutputSize('core.merge', output);
+      return { output, outputPort: 'main' };
     }
 
     const merged = new Map<string, Record<string, unknown>>();
+    let rowsSeen = 0;
     for (const source of usable) {
       if (!Array.isArray(source)) {
         throw new NodeRunError('source_not_array', 'core.merge combineByKey expects every source to be an array', false);
@@ -82,18 +91,32 @@ export const coreMerge: ConnectorDefinition = {
         if (row === null || typeof row !== 'object' || Array.isArray(row)) {
           throw new NodeRunError('row_not_object', 'core.merge combineByKey expects every row to be an object', false);
         }
+        rowsSeen += 1;
+        // Bounds the work, not just the distinct-key count: rows that all share one key
+        // would otherwise never trip a cap on `merged.size`.
+        assertCap(rowsSeen);
         const raw = readField('core.merge', row, key!);
-        // Absent folds to the literal 'null', the same choice core.aggregate makes, so
-        // the two nodes cannot disagree about what an empty key is.
-        const id = raw === null || raw === undefined ? 'null' : String(raw);
+        if (raw === null || raw === undefined) {
+          // A row with no key cannot be combined BY KEY. Folding them all into one bucket
+          // silently discards every one but the last.
+          throw new NodeRunError(
+            'missing_merge_key',
+            `core.merge combineByKey found a row with no '${key!}'`,
+            false,
+          );
+        }
+        // Type-tagged, so an id of 1 and an id of '1' stay two rows — which matters
+        // because node-postgres returns int8 and numeric columns as strings.
+        const id = groupKeyOf('core.merge key', raw).id;
         // Later sources win.
         merged.set(id, { ...(merged.get(id) ?? {}), ...(row as Record<string, unknown>) });
-        assertCap(merged.size);
       }
     }
 
-    // Sorted by key, never by arrival: arrival order is a race between workers.
+    // Sorted by the lossless key, never by arrival: arrival is a race between workers.
     const items = [...merged.entries()].sort((a, b) => compareValues(a[0], b[0])).map(([, row]) => row);
-    return { output: { items, count: items.length, sourceCount: usable.length }, outputPort: 'main' };
+    const output = { items, count: items.length, sourceCount: usable.length, inputCount: rowsSeen };
+    assertOutputSize('core.merge', output);
+    return { output, outputPort: 'main' };
   },
 };

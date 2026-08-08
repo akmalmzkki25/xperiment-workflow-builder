@@ -56,7 +56,8 @@ describe('core.aggregate without grouping', () => {
     for (const operation of ['avg', 'min', 'max'] as const) {
       expect(out(await coreAggregate.run(ctx({ ...empty, operation }))), operation).toMatchObject({ value: null });
     }
-    expect(out(await coreAggregate.run(ctx({ ...empty, operation: 'count' })))).toMatchObject({ value: 0 });
+    // count reads no field, so it must not be given one.
+    expect(out(await coreAggregate.run(ctx({ items: [], operation: 'count' })))).toMatchObject({ value: 0 });
   });
 
   test('a field of only non-numeric values behaves like an empty list', async () => {
@@ -81,8 +82,8 @@ describe('core.aggregate with grouping', () => {
     const r = await coreAggregate.run(ctx({ items: orders, operation: 'sum', field: 'total', groupBy: 'city' }));
     expect(out(r)).toMatchObject({ groupCount: 2 });
     expect(out(r)['groups']).toEqual([
-      { key: 'Bandung', value: 1750, count: 2, skipped: 1 },
-      { key: 'Jakarta', value: 9900, count: 1, skipped: 1 },
+      { key: 'Bandung', keyType: 'string', value: 1750, count: 2, skipped: 1 },
+      { key: 'Jakarta', keyType: 'string', value: 9900, count: 1, skipped: 1 },
     ]);
   });
 
@@ -94,8 +95,8 @@ describe('core.aggregate with grouping', () => {
     const forward = await coreAggregate.run(ctx({ items: rows, operation: 'count', groupBy: 'city' }));
     const reversed = await coreAggregate.run(ctx({ items: [...rows].reverse(), operation: 'count', groupBy: 'city' }));
     expect(out(forward)['groups']).toEqual([
-      { key: 'Bandung', value: 2, count: 2, skipped: 0 },
-      { key: 'Surabaya', value: 1, count: 1, skipped: 0 },
+      { key: 'Bandung', keyType: 'string', value: 2, count: 2, skipped: 0 },
+      { key: 'Surabaya', keyType: 'string', value: 1, count: 1, skipped: 0 },
     ]);
     expect(out(reversed)['groups']).toEqual(out(forward)['groups']);
   });
@@ -103,8 +104,8 @@ describe('core.aggregate with grouping', () => {
   test('groups by a nested field', async () => {
     const r = await coreAggregate.run(ctx({ items: orders, operation: 'count', groupBy: 'customer.tier' }));
     expect(out(r)['groups']).toEqual([
-      { key: 'gold', value: 3, count: 3, skipped: 0 },
-      { key: 'silver', value: 2, count: 2, skipped: 0 },
+      { key: 'gold', keyType: 'string', value: 3, count: 3, skipped: 0 },
+      { key: 'silver', keyType: 'string', value: 2, count: 2, skipped: 0 },
     ]);
   });
 
@@ -112,9 +113,59 @@ describe('core.aggregate with grouping', () => {
     const rows = [{ city: null, n: 1 }, { n: 2 }, { city: 'Bogor', n: 3 }];
     const r = await coreAggregate.run(ctx({ items: rows, operation: 'sum', field: 'n', groupBy: 'city' }));
     expect(out(r)['groups']).toEqual([
-      { key: 'Bogor', value: 3, count: 1, skipped: 0 },
-      { key: 'null', value: 3, count: 2, skipped: 0 },
+      { key: 'null', keyType: 'null', value: 3, count: 2, skipped: 0 },
+      { key: 'Bogor', keyType: 'string', value: 3, count: 1, skipped: 0 },
     ]);
+  });
+
+  test('the number 1 and the string "1" are two customers, not one', async () => {
+    // node-postgres returns int8 and numeric as STRINGS by default, so a merchant joining
+    // a postgres.query result against an HTTP API meets this on the first try. String(raw)
+    // as a map key would sum both into one group and never say so.
+    const rows = [
+      { customer: 1, total: 100 },
+      { customer: '1', total: 50 },
+    ];
+    const r = await coreAggregate.run(ctx({ items: rows, operation: 'sum', field: 'total', groupBy: 'customer' }));
+    expect(out(r)).toMatchObject({ groupCount: 2 });
+    expect(out(r)['groups']).toEqual([
+      { key: '1', keyType: 'number', value: 100, count: 1, skipped: 0 },
+      { key: '1', keyType: 'string', value: 50, count: 1, skipped: 0 },
+    ]);
+  });
+
+  test('refuses an object group key rather than folding everyone into [object Object]', async () => {
+    const rows = [
+      { c: { id: 7 }, t: 1 },
+      { c: { id: 8 }, t: 1 },
+    ];
+    const err = await coreAggregate
+      .run(ctx({ items: rows, operation: 'sum', field: 't', groupBy: 'c' }))
+      .catch((e: unknown) => e);
+    expect((err as NodeRunError).code).toBe('unsupported_group_key');
+    expect((err as NodeRunError).retryable).toBe(false);
+  });
+
+  test('never groups by an inherited property', async () => {
+    // A bare cur[segment] returns Object.prototype.toString for every row, so all of them
+    // would land in one group keyed by a function's source text.
+    const r = await coreAggregate.run(ctx({ items: orders, operation: 'count', groupBy: 'toString' }));
+    expect(out(r)['groups']).toEqual([{ key: 'null', keyType: 'null', value: 5, count: 5, skipped: 0 }]);
+  });
+
+  test('count refuses a field it would ignore', async () => {
+    // Accepting one and throwing it away answers "count the orders that have an email"
+    // with the total row count.
+    await expect(
+      coreAggregate.run(ctx({ items: orders, operation: 'count', field: 'city' })),
+    ).rejects.toBeInstanceOf(NodeRunError);
+  });
+
+  test('inputCount removes the doubt about what count means', async () => {
+    const counted = await coreAggregate.run(ctx({ items: orders, operation: 'count' }));
+    expect(out(counted)).toMatchObject({ count: 5, skipped: 0, inputCount: 5 });
+    const summed = await coreAggregate.run(ctx({ items: orders, operation: 'sum', field: 'total' }));
+    expect(out(summed)).toMatchObject({ count: 3, skipped: 2, inputCount: 5 });
   });
 
   test('refuses more than the group cap', async () => {

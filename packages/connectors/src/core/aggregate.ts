@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { NodeRunError, type ConnectorDefinition } from '../types.js';
-import { assertItems, compareValues, readField } from './compare.js';
+import { assertItems, assertOutputSize, compareValues, groupKeyOf, readField, type GroupKey } from './compare.js';
 
 /** A groupBy on a unique id would build a payload that then trips the 256 KiB node cap. */
 export const MAX_GROUPS = 1000;
@@ -19,6 +19,11 @@ const paramsSchema = z
   .superRefine((v, c) => {
     if (v.operation !== 'count' && (v.field === undefined || v.field === '')) {
       c.addIssue({ code: z.ZodIssueCode.custom, message: `operation '${v.operation}' needs a field`, path: ['field'] });
+    }
+    // count reads no field, so accepting one and throwing it away would answer
+    // "count the orders that have an email" with the total row count instead.
+    if (v.operation === 'count' && v.field !== undefined) {
+      c.addIssue({ code: z.ZodIssueCode.custom, message: "operation 'count' does not read a field", path: ['field'] });
     }
   });
 
@@ -96,39 +101,48 @@ export const coreAggregate: ConnectorDefinition = {
       const bucket = emptyBucket();
       for (const row of items) accumulate(bucket, operation, read(row));
       return {
-        output: { operation, value: resolve(bucket, operation), count: bucket.count, skipped: bucket.skipped },
+        output: {
+          operation,
+          value: resolve(bucket, operation),
+          // count is rows that CONTRIBUTED; inputCount removes any doubt about which
+          // of the two a caller is reading. count + skipped === inputCount always.
+          count: bucket.count,
+          skipped: bucket.skipped,
+          inputCount: items.length,
+        },
         outputPort: 'main',
       };
     }
 
-    const buckets = new Map<string, Bucket>();
+    const buckets = new Map<string, { key: GroupKey; bucket: Bucket }>();
     for (const row of items) {
-      const raw = readField('core.aggregate', row, groupBy);
-      // String(v), with absent folded to the literal 'null' — the same choice core.merge
-      // makes, so the two nodes cannot disagree about what an empty key is.
-      const key = raw === null || raw === undefined ? 'null' : String(raw);
-      let bucket = buckets.get(key);
-      if (bucket === undefined) {
+      // Type-tagged, so the number 1 and the string '1' stay two customers.
+      const key = groupKeyOf('core.aggregate groupBy', readField('core.aggregate', row, groupBy));
+      let entry = buckets.get(key.id);
+      if (entry === undefined) {
         if (buckets.size >= MAX_GROUPS) {
           throw new NodeRunError('too_many_groups', `core.aggregate refuses more than ${MAX_GROUPS} groups`, false);
         }
-        bucket = emptyBucket();
-        buckets.set(key, bucket);
+        entry = { key, bucket: emptyBucket() };
+        buckets.set(key.id, entry);
       }
-      accumulate(bucket, operation, read(row));
+      accumulate(entry.bucket, operation, read(row));
     }
 
-    // Sorted by key, never by insertion: insertion order would make the output depend on
-    // the order the upstream connector happened to return its rows.
-    const groups = [...buckets.entries()]
-      .sort((a, b) => compareValues(a[0], b[0]))
-      .map(([key, bucket]) => ({
-        key,
+    // Sorted by the lossless id, never by insertion: insertion order would make the
+    // output depend on the order the upstream connector happened to return its rows.
+    const groups = [...buckets.values()]
+      .sort((a, b) => compareValues(a.key.id, b.key.id))
+      .map(({ key, bucket }) => ({
+        key: key.display,
+        keyType: key.type,
         value: resolve(bucket, operation),
         count: bucket.count,
         skipped: bucket.skipped,
       }));
 
-    return { output: { operation, groups, groupCount: groups.length }, outputPort: 'main' };
+    const output = { operation, groups, groupCount: groups.length, inputCount: items.length };
+    assertOutputSize('core.aggregate', output);
+    return { output, outputPort: 'main' };
   },
 };

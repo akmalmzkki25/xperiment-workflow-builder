@@ -36,9 +36,62 @@ export function readField(name: string, row: unknown, field: string): unknown {
       throw new NodeRunError('forbidden_field_path', `${name} refuses the field segment '${segment}'`, false);
     }
     if (cur === null || cur === undefined || typeof cur !== 'object') return undefined;
+    // Own properties only. FORBIDDEN covers __proto__/constructor/prototype, but the rest
+    // of Object.prototype is still reachable through a bare read: `field: 'toString'`
+    // would hand back a Function, and every row would then share one group key.
+    if (!Object.hasOwn(cur, segment)) return undefined;
     cur = (cur as Record<string, unknown>)[segment];
   }
   return cur;
+}
+
+/** What a grouping key was, so a caller can tell the number 1 from the string '1'. */
+export type GroupKeyType = 'string' | 'number' | 'boolean' | 'null';
+
+export interface GroupKey {
+  /** Lossless, for use as a Map key. Never shown to a user. */
+  id: string;
+  /** Human-readable, and what a downstream loop reads. */
+  display: string;
+  type: GroupKeyType;
+}
+
+/**
+ * Turns a raw field value into a grouping key WITHOUT collapsing distinct values.
+ *
+ * `String(raw)` alone collides the number 1 with the string '1', true with 'true', and
+ * every object with every other object as '[object Object]'. That is not exotic here:
+ * node-postgres returns int8 and numeric columns as strings by default, so joining a
+ * `postgres.query` result against an HTTP API's JSON merges two different entities into
+ * one row, silently and with no counter to notice it by.
+ */
+export function groupKeyOf(name: string, raw: unknown): GroupKey {
+  if (raw === null || raw === undefined) return { id: 'null:', display: 'null', type: 'null' };
+  const kind = typeof raw;
+  if (kind !== 'string' && kind !== 'number' && kind !== 'boolean') {
+    // '[object Object]' is never a useful group. Fail loudly rather than merge everyone.
+    throw new NodeRunError(
+      'unsupported_group_key',
+      `${name} needs a string, number, boolean or null key, got ${Array.isArray(raw) ? 'array' : kind}`,
+      false,
+    );
+  }
+  const display = String(raw);
+  return { id: `${kind}:${display}`, display, type: kind };
+}
+
+/** Matches the node payload cap, so a node fails with its own code rather than the DB's. */
+export const MAX_OUTPUT_BYTES = 262_144;
+
+export function assertOutputSize(name: string, value: unknown): void {
+  const size = JSON.stringify(value)?.length ?? 0;
+  if (size > MAX_OUTPUT_BYTES) {
+    throw new NodeRunError(
+      'output_too_large',
+      `${name} produced about ${size} characters, more than the ${MAX_OUTPUT_BYTES} a node output may hold`,
+      false,
+    );
+  }
 }
 
 /** A type predicate, not a boolean: callers below rely on it to narrow `unknown`. */

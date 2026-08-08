@@ -161,14 +161,45 @@ describe('core.sort', () => {
     expect((r.output as { items: number[] }).items).not.toBe(input);
   });
 
-  test('is stable for equal keys', async () => {
+  test('is stable for equal keys in both directions', async () => {
+    // Descending is the direction that goes through the negation and then the absent-last
+    // re-partition, so testing ascending alone leaves the harder path uncovered.
     const dupes = [
       { k: 1, id: 'first' },
       { k: 0, id: 'x' },
       { k: 1, id: 'second' },
     ];
-    const r = await coreSort.run(ctx({ items: dupes, field: 'k' }));
-    expect((r.output as { items: { id: string }[] }).items.map((i) => i.id)).toEqual(['x', 'first', 'second']);
+    const asc = await coreSort.run(ctx({ items: dupes, field: 'k' }));
+    expect((asc.output as { items: { id: string }[] }).items.map((i) => i.id)).toEqual(['x', 'first', 'second']);
+    const desc = await coreSort.run(ctx({ items: dupes, field: 'k', direction: 'desc' }));
+    expect((desc.output as { items: { id: string }[] }).items.map((i) => i.id)).toEqual(['first', 'second', 'x']);
+  });
+
+  test('several absent keys stay last and keep their order when descending', async () => {
+    const mixed = [
+      { id: 'noKeyA' },
+      { id: 'five', k: 5 },
+      { id: 'noKeyB', k: null },
+      { id: 'nine', k: 9 },
+      { id: 'noKeyC' },
+    ];
+    const desc = await coreSort.run(ctx({ items: mixed, field: 'k', direction: 'desc' }));
+    expect((desc.output as { items: { id: string }[] }).items.map((i) => i.id)).toEqual([
+      'nine',
+      'five',
+      'noKeyA',
+      'noKeyB',
+      'noKeyC',
+    ]);
+  });
+
+  test('readField never returns an inherited property', async () => {
+    // A bare cur[segment] hands back Object.prototype.toString, so every row would look
+    // like it has a value and a filter on it would keep all of them.
+    expect(readField('readField', rows[0], 'toString')).toBeUndefined();
+    expect(readField('readField', rows[0], 'valueOf')).toBeUndefined();
+    const kept = await coreFilter.run(ctx({ items: rows, field: 'valueOf', op: 'isNotNull' }));
+    expect((kept.output as { count: number }).count).toBe(0);
   });
 });
 

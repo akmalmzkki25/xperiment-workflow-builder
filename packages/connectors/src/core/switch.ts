@@ -20,7 +20,21 @@ const paramsSchema = z
     cases: z
       .array(z.object({ equals: z.unknown() }).strict())
       .min(1)
-      .max(SWITCH_MAX_CASES),
+      .max(SWITCH_MAX_CASES)
+      .superRefine((cases, c) => {
+        // z.unknown() is OPTIONAL in zod, so `cases: [{}]` parses — and `equals ?? null`
+        // would turn a half-written case into a catch-all sitting ahead of the real ones.
+        // .strict() catches an extra key; only this catches a missing one.
+        cases.forEach((entry, i) => {
+          if (!Object.hasOwn(entry, 'equals')) {
+            c.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'each case needs an explicit equals — write null for the null case',
+              path: [i, 'equals'],
+            });
+          }
+        });
+      }),
   })
   .strict();
 
@@ -33,7 +47,16 @@ const MAX_DEPTH = 32;
  */
 function sameValue(a: unknown, b: unknown, depth = 0): boolean {
   if (a === b) return true;
-  if (depth > MAX_DEPTH) return false;
+  if (depth > MAX_DEPTH) {
+    // Answering "not equal" past a depth budget takes a BRANCH on a value it never
+    // actually compared — two structurally equal payloads would route to default.
+    // Every other bounded operation in this set fails loudly; so does this one.
+    throw new NodeRunError(
+      'value_too_deep',
+      `core.switch cannot compare values nested deeper than ${MAX_DEPTH} levels`,
+      false,
+    );
+  }
   if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
   if (Array.isArray(a) !== Array.isArray(b)) return false;
   if (Array.isArray(a) && Array.isArray(b)) {

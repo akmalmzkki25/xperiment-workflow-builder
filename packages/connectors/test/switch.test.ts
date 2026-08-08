@@ -97,6 +97,35 @@ describe('core.switch', () => {
     );
   });
 
+  test('refuses a case with no equals rather than turning it into a catch-all', async () => {
+    // z.unknown() is OPTIONAL in zod, so `{}` parses — and `equals ?? null` would make a
+    // half-written case match every null, sitting ahead of the real cases.
+    const err = await coreSwitch.run(ctx({ value: null, cases: [{}, { equals: 'a' }] })).catch((e: unknown) => e);
+    expect((err as NodeRunError).code).toBe('invalid_parameters');
+    // An explicit null still works.
+    const explicit = await coreSwitch.run(ctx({ value: null, cases: [{ equals: null }] }));
+    expect(explicit.outputPort).toBe('case1');
+  });
+
+  test('refuses values nested deeper than it can compare, rather than answering default', async () => {
+    // Returning false past a depth budget takes a BRANCH on a value it never compared:
+    // two structurally equal payloads would silently route to default. 34 levels is
+    // about 210 bytes of JSON, which an HTTP response body reaches easily.
+    const nest = (depth: number): unknown => {
+      let v: unknown = 'leaf';
+      for (let i = 0; i < depth; i += 1) v = { x: v };
+      return v;
+    };
+    const err = await coreSwitch
+      .run(ctx({ value: nest(40), cases: [{ equals: nest(40) }] }))
+      .catch((e: unknown) => e);
+    expect((err as NodeRunError).code).toBe('value_too_deep');
+    expect((err as NodeRunError).retryable).toBe(false);
+    // Comfortably inside the budget still matches.
+    const shallow = await coreSwitch.run(ctx({ value: nest(5), cases: [{ equals: nest(5) }] }));
+    expect(shallow.outputPort).toBe('case1');
+  });
+
   test('the tenth case reaches the tenth port', async () => {
     const cases = Array.from({ length: 10 }, (_, i) => ({ equals: i }));
     const r = await coreSwitch.run(ctx({ value: 9, cases }));
