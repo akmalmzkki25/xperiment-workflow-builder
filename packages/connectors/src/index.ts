@@ -10,6 +10,7 @@ export { connectorCatalog, type ConnectorCatalogItem } from './catalog.js';
 export { manualTrigger } from './manual/trigger.js';
 export { coreTransform } from './core/transform.js';
 export { coreIf } from './core/if.js';
+export { coreSwitch, SWITCH_MAX_CASES } from './core/switch.js';
 export { coreDelay } from './core/delay.js';
 export { coreWaitForEvent } from './core/waitForEvent.js';
 export { coreApproval } from './core/approval.js';

@@ -201,4 +201,38 @@ describe('error path', () => {
     expect(r.ready).toEqual(['c']);
     expect(r.terminal).toBeNull();
   });
+
+  test('an edge from an unfired switch port is skipped, not left hanging', () => {
+    // core.switch declares ten fixed ports, so a graph can legitimately carry an edge from
+    // a port that a given run never selects. validateGraph cannot catch an edge from case7
+    // when only three cases are configured, because layer 2 never reads node parameters —
+    // so the guarantee has to hold at runtime, and it must be SKIPPED rather than ready: [].
+    const routed = ir(
+      [{ id: 't' }, { id: 'sw', type: 'core.switch' }, { id: 'hit' }, { id: 'miss' }],
+      [
+        ['t', 'sw'],
+        ['sw', 'hit', 'case1'],
+        ['sw', 'miss', 'case7'],
+      ],
+    );
+    const r = computeReadiness(routed, [o('t', 'SUCCEEDED'), o('sw', 'SUCCEEDED', 'case1')]);
+    expect(r.ready).toEqual(['hit']);
+    expect(r.skipped).toEqual(['miss']);
+    expect(r.terminal).toBeNull();
+  });
+
+  test('a switch that reaches default skips every case branch', () => {
+    const routed = ir(
+      [{ id: 't' }, { id: 'sw', type: 'core.switch' }, { id: 'a' }, { id: 'b' }, { id: 'fallback' }],
+      [
+        ['t', 'sw'],
+        ['sw', 'a', 'case1'],
+        ['sw', 'b', 'case2'],
+        ['sw', 'fallback', 'default'],
+      ],
+    );
+    const r = computeReadiness(routed, [o('t', 'SUCCEEDED'), o('sw', 'SUCCEEDED', 'default')]);
+    expect(r.ready).toEqual(['fallback']);
+    expect(r.skipped.sort()).toEqual(['a', 'b']);
+  });
 });
