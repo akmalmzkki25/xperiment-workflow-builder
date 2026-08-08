@@ -35,6 +35,8 @@ describe('connectionFields', () => {
 
   test('buildPayload rejects missing required fields and unknown connectors', () => {
     expect(() => buildPayload('telegram', { baseUrl: 'x' })).toThrow(/Bot token/);
-    expect(() => buildPayload('slack', {})).toThrow(/Unknown connector/);
+    // 'fax' is the standing sentinel for a connector that will never exist. The old
+    // sentinel was 'slack', which stops being unknown the moment a slack connector lands.
+    expect(() => buildPayload('fax', {})).toThrow(/Unknown connector/);
   });
 });

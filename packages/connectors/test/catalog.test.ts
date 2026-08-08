@@ -9,11 +9,14 @@ interface JsonSchemaObject {
 }
 
 describe('connectorCatalog', () => {
-  const items = connectorCatalog(createDefaultRegistry());
+  const registry = createDefaultRegistry();
+  const items = connectorCatalog(registry);
   const byType = new Map(items.map((i) => [i.type, i]));
 
   test('lists every registered connector with metadata only', () => {
-    expect(items).toHaveLength(18);
+    // The invariant is that the catalog is a faithful projection of the registry.
+    // A hard count was the same edit in two files every time a connector landed.
+    expect(items.map((i) => i.type).sort()).toEqual(registry.list().map((d) => d.type).sort());
     for (const item of items) {
       expect(Object.keys(item).sort()).toEqual(
         expect.arrayContaining(['defaultEffectClass', 'kind', 'operationVersion', 'outputPorts', 'paramsJsonSchema', 'type']),

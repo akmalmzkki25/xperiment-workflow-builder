@@ -10,10 +10,12 @@ let pool: Pool;
 let app: FastifyInstance;
 let auth: AuthedUser;
 
+const registry = createDefaultRegistry();
+
 beforeAll(async () => {
   pool = createPool();
   await runMigrations(pool);
-  app = buildServer({ pool, registry: createDefaultRegistry() });
+  app = buildServer({ pool, registry });
   auth = await createAuthedUser(app);
 });
 afterAll(async () => {
@@ -31,7 +33,9 @@ describe('GET /v1/connectors', () => {
     const r = await auth.inject({ method: 'GET', url: '/v1/connectors' });
     expect(r.statusCode).toBe(200);
     const body = r.json<{ items: Record<string, unknown>[] }>();
-    expect(body.items).toHaveLength(18);
+    // The route serves the whole catalog. Asserting against the registry rather than
+    // a literal keeps this green as connectors land.
+    expect(body.items).toHaveLength(registry.list().length);
     const webhook = body.items.find((i) => i['type'] === 'webhook.trigger');
     expect(webhook).toBeDefined();
     expect((webhook!['paramsJsonSchema'] as { type: string }).type).toBe('object');
