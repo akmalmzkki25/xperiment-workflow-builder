@@ -31,6 +31,19 @@ function numericList(name: string, args: unknown[]): number[] {
   return args.map((v, i) => num(name, v, i));
 }
 
+/**
+ * A loop, not `Math.min(...list)`. Spreading 131k arguments is a RangeError, and the
+ * threshold is stack-size dependent — the same expression could pass on one machine and
+ * crash on another, which is a determinism hazard on top of the crash.
+ */
+function extremum(list: number[], sign: 1 | -1): number {
+  let best = list[0]!;
+  for (const v of list) {
+    if (sign === 1 ? v > best : v < best) best = v;
+  }
+  return best;
+}
+
 function total(name: string, list: unknown[]): number {
   let sum = 0;
   for (const [i, v] of list.entries()) {
@@ -70,12 +83,12 @@ export const NUMBER_FUNCTIONS: Record<string, Fn> = {
 
   min: (args) => {
     arity('min', args, 1, 10);
-    return Math.min(...numericList('min', args));
+    return extremum(numericList('min', args), -1);
   },
 
   max: (args) => {
     arity('max', args, 1, 10);
-    return Math.max(...numericList('max', args));
+    return extremum(numericList('max', args), 1);
   },
 
   sum: (args) => {

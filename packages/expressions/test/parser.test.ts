@@ -46,7 +46,7 @@ describe('parseExpression', () => {
     }
   });
 
-  test('?? has lowest precedence', () => {
+  test('?? binds looser than || but tighter than the ternary', () => {
     const ast = parseExpression("trigger.body.x ?? 'default'");
     expect(ast).toEqual({
       type: 'binary',

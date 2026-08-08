@@ -1,4 +1,5 @@
 import { evaluate, type ExpressionContext } from './evaluator.js';
+import { defineOwn } from './lib/guards.js';
 import { parseExpression } from './parser.js';
 
 const EXPR_RE = /\{\{([\s\S]+?)\}\}/g;
@@ -17,7 +18,9 @@ export function resolveTemplate(value: unknown, ctx: ExpressionContext): unknown
   if (Array.isArray(value)) return value.map((v) => resolveTemplate(v, ctx));
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = resolveTemplate(v, ctx);
+    // defineOwn, not assignment: a parameter key literally named `__proto__` would hit
+    // the inherited setter and be dropped from the resolved parameters.
+    for (const [k, v] of Object.entries(value)) defineOwn(out, k, resolveTemplate(v, ctx));
     return out;
   }
   return value;

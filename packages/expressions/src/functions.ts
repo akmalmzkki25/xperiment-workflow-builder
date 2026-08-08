@@ -14,6 +14,9 @@ export type { Fn } from './lib/guards.js';
  * and the Ast union has no function-value node. Array work happens at the graph
  * level instead — core.filter, core.sort, core.aggregate.
  */
+/** Deliberately excludes hex, Infinity and the empty string, all of which Number() accepts. */
+const DECIMAL_LITERAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
 const CORE_FUNCTIONS: Record<string, Fn> = {
   lower: (args) => {
     arity('lower', args, 1);
@@ -35,7 +38,18 @@ const CORE_FUNCTIONS: Record<string, Fn> = {
   },
   toNumber: (args) => {
     arity('toNumber', args, 1);
-    const n = Number(args[0]);
+    const v = args[0];
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v)) throw new ExpressionEvalError('toNumber() expects a finite number');
+      return v;
+    }
+    // Number() coerces null to 0, true to 1 and [] to 0. A missing amount silently
+    // becoming zero lands on an invoice, so only a real decimal string is accepted.
+    const text = typeof v === 'string' ? v.trim() : '';
+    if (text === '' || !DECIMAL_LITERAL.test(text)) {
+      throw new ExpressionEvalError('toNumber() expects a number or a decimal string');
+    }
+    const n = Number(text);
     // Finite, not merely non-NaN: Number('1e999') is Infinity, and letting that through
     // would reintroduce the value the arithmetic guards exist to keep out.
     if (!Number.isFinite(n)) throw new ExpressionEvalError('toNumber() could not convert value to a finite number');

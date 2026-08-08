@@ -63,14 +63,32 @@ function partsIn(name: string, instant: number, tz: string): Parts {
   };
 }
 
+/**
+ * Date.UTC maps a year argument of 0-99 to 1900+y, so `0026-02-10` would silently become
+ * 1926. setUTCFullYear has no such rule.
+ */
+function utcMs(y: number, mo: number, d: number, h = 0, mi = 0, s = 0, ms = 0): number {
+  const date = new Date(0);
+  date.setUTCFullYear(y, mo - 1, d);
+  date.setUTCHours(h, mi, s, ms);
+  return date.getTime();
+}
+
 /** Offset of `tz` at `instant`, in milliseconds. */
 function offsetAt(name: string, instant: number, tz: string): number {
   const p = partsIn(name, instant, tz);
-  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  const asUtc = utcMs(p.year, p.month, p.day, p.hour, p.minute, p.second);
   return asUtc - Math.floor(instant / 1000) * 1000;
 }
 
-/** Reads wall-clock components in `tz` as an instant. Two passes settle a DST edge. */
+/**
+ * Reads wall-clock components in `tz` as an instant.
+ *
+ * Two passes settle an ordinary DST edge, but a local time inside a spring-forward GAP
+ * does not exist at all, and the two-pass solve maps it BACKWARDS — landing on the
+ * previous calendar day, so startOfDay(D) could precede endOfDay(D-1). Detect that by
+ * reading the wall clock back, and push forward by the gap instead.
+ */
 function zonedToInstant(
   name: string,
   tz: string,
@@ -82,16 +100,29 @@ function zonedToInstant(
   s: number,
   ms: number,
 ): number {
-  const guess = Date.UTC(y, mo - 1, d, h, mi, s, ms);
+  const guess = utcMs(y, mo, d, h, mi, s, ms);
   const firstPass = guess - offsetAt(name, guess, tz);
-  return guess - offsetAt(name, firstPass, tz);
+  const instant = guess - offsetAt(name, firstPass, tz);
+
+  // `guess` already normalised any out-of-range component (day 32, month 13), so compare
+  // against that rather than the raw arguments.
+  const wanted = new Date(guess);
+  const got = partsIn(name, instant, tz);
+  const drift =
+    utcMs(wanted.getUTCFullYear(), wanted.getUTCMonth() + 1, wanted.getUTCDate(), wanted.getUTCHours(), wanted.getUTCMinutes()) -
+    utcMs(got.year, got.month, got.day, got.hour, got.minute);
+  // Only forward, and only by less than a day: anything larger is not a DST gap.
+  return drift > 0 && drift < 86_400_000 ? instant + drift : instant;
 }
 
 const BARE_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const BARE_DATETIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?$/;
+// 1-9 fractional digits: a Postgres `timestamp` renders microseconds, and that is the
+// single most common zoneless value a workflow will meet.
+const BARE_DATETIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,9}))?$/;
+const HAS_EXPLICIT_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/;
 
 function assertCalendar(name: string, y: number, mo: number, d: number): void {
-  const probe = new Date(Date.UTC(y, mo - 1, d));
+  const probe = new Date(utcMs(y, mo, d));
   if (mo < 1 || mo > 12 || d < 1 || probe.getUTCMonth() !== mo - 1 || probe.getUTCDate() !== d) {
     throw new ExpressionEvalError(`${name}() received a value that is not a real calendar date`);
   }
@@ -124,10 +155,20 @@ function toInstant(name: string, v: unknown, pos: number, tz: string): number {
       Number(h),
       Number(mi),
       Number(sec ?? '0'),
-      Number((frac ?? '0').padEnd(3, '0')),
+      // Truncate to milliseconds; anything finer is not representable.
+      Number((frac ?? '0').slice(0, 3).padEnd(3, '0')),
     );
   }
 
+  // Everything left must carry its own zone. Date.parse's legacy path reads a zoneless
+  // string in the HOST timezone, so the same workflow and input would give a different
+  // answer on a developer's machine than in the container — a determinism break, and
+  // worse than a UTC fallback because it depends on where the process happens to run.
+  if (!HAS_EXPLICIT_ZONE.test(s)) {
+    throw new ExpressionEvalError(
+      `${name}() needs an ISO date, an ISO date-time, or a value carrying an explicit timezone`,
+    );
+  }
   const parsed = Date.parse(s);
   if (Number.isNaN(parsed)) throw new ExpressionEvalError(`${name}() could not read the value as a date`);
   return parsed;
@@ -255,8 +296,8 @@ export const DATE_FUNCTIONS: Record<string, Fn> = {
     const tz = tzArg('diffDays', args, 2);
     const a = partsIn('diffDays', toInstant('diffDays', args[0], 0, tz), tz);
     const b = partsIn('diffDays', toInstant('diffDays', args[1], 1, tz), tz);
-    const dayA = Date.UTC(a.year, a.month - 1, a.day);
-    const dayB = Date.UTC(b.year, b.month - 1, b.day);
+    const dayA = utcMs(a.year, a.month, a.day);
+    const dayB = utcMs(b.year, b.month, b.day);
     return Math.round((dayA - dayB) / 86_400_000);
   },
 

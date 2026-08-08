@@ -21,6 +21,10 @@ const ctx: ExpressionContext = {
       empty: [],
       order: { id: 'o-1', customer: { city: 'Bandung' }, lines: [{ sku: 'x' }, { sku: 'y' }] },
       raw: '{"a":1,"b":[2,3]}',
+      equalShapes: [
+        { a: 1, b: 2 },
+        { b: 2, a: 1 },
+      ],
       blank: '',
       zero: 0,
       no: false,
@@ -153,6 +157,15 @@ describe('collection functions', () => {
   test('unique deduplicates primitives and structurally equal objects', () => {
     expect(run("unique(split('a,b,a,c', ','))")).toEqual(['a', 'b', 'c']);
     expect(run('unique(trigger.body.order.lines)')).toEqual([{ sku: 'x' }, { sku: 'y' }]);
+    // The structural half of the claim needs input that actually contains a duplicate —
+    // and one written with its keys in a different order.
+    expect(run('unique(trigger.body.equalShapes)')).toEqual([{ a: 1, b: 2 }]);
+  });
+
+  test('sort orders strings by code unit, not by locale', () => {
+    // 'b','a','c' sorts identically under either rule, so it proves nothing. Capitals do:
+    // localeCompare puts 'a' before 'B'; code-unit order puts 'B' first.
+    expect(run("sort(split('a,B,apple,Zoo', ','))")).toEqual(['B', 'Zoo', 'a', 'apple']);
   });
 
   test('sort returns a NEW array, leaves the input alone, and refuses mixed types', () => {

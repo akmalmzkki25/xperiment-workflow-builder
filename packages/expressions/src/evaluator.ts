@@ -22,6 +22,9 @@ export function evaluate(ast: Ast, ctx: ExpressionContext): unknown {
       for (const part of ast.parts.slice(1)) {
         if (cur === null || cur === undefined) return null;
         if (typeof cur !== 'object') return null;
+        // Own properties only. Reading an inherited member would put a Function into the
+        // closed value space, and JSON.stringify drops such a key from input_json entirely.
+        if (!Object.hasOwn(cur, part)) return null;
         cur = (cur as Record<string, unknown>)[part];
       }
       return cur === undefined ? null : cur;

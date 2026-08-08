@@ -1,5 +1,5 @@
 import { ExpressionEvalError } from '../errors.js';
-import { arity, arr, describeValue, int, str, MAX_PAD, type Fn } from './guards.js';
+import { arity, arr, describeValue, int, str, MAX_OUTPUT_CHARS, MAX_PAD, type Fn } from './guards.js';
 
 export const STRING_FUNCTIONS: Record<string, Fn> = {
   split: (args) => {
@@ -14,16 +14,18 @@ export const STRING_FUNCTIONS: Record<string, Fn> = {
     arity('join', args, 2);
     const list = arr('join', args[0], 0);
     const sep = str('join', args[1], 1);
-    return list
-      .map((v, i) => {
-        if (typeof v === 'string') return v;
-        // Never let an object become '[object Object]' silently.
-        if (typeof v === 'number' && Number.isFinite(v)) return String(v);
-        throw new ExpressionEvalError(
-          `join() element ${i + 1} expects a string or a finite number, got ${describeValue(v)}`,
-        );
-      })
-      .join(sep);
+    const pieces = list.map((v, i) => {
+      if (typeof v === 'string') return v;
+      // Never let an object become '[object Object]' silently.
+      if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+      throw new ExpressionEvalError(
+        `join() element ${i + 1} expects a string or a finite number, got ${describeValue(v)}`,
+      );
+    });
+    let total = sep.length * Math.max(0, pieces.length - 1);
+    for (const piece of pieces) total += piece.length;
+    assertOutput('join', total);
+    return pieces.join(sep);
   },
 
   replace: (args) => {
@@ -32,8 +34,12 @@ export const STRING_FUNCTIONS: Record<string, Fn> = {
     const find = str('replace', args[1], 1);
     const to = str('replace', args[2], 2);
     if (find === '') throw new ExpressionEvalError('replace() search text must not be empty');
-    // split/join replaces every occurrence without needing a regex.
-    return s.split(find).join(to);
+    // split/join replaces every occurrence without needing a regex — but it also
+    // MULTIPLIES: occurrences x |replacement|. Size the result before building it.
+    const parts = s.split(find);
+    const occurrences = parts.length - 1;
+    assertOutput('replace', s.length + occurrences * (to.length - find.length));
+    return parts.join(to);
   },
 
   slice: (args) => {
@@ -82,6 +88,13 @@ export const STRING_FUNCTIONS: Record<string, Fn> = {
     return s.padEnd(width, args.length === 3 ? str('padEnd', args[2], 2) : ' ');
   },
 };
+
+/** The two functions that multiply their input are the ones that need this. */
+function assertOutput(name: string, projected: number): void {
+  if (projected > MAX_OUTPUT_CHARS) {
+    throw new ExpressionEvalError(`${name}() would produce more than ${MAX_OUTPUT_CHARS} characters`);
+  }
+}
 
 function padWidth(name: string, v: unknown): number {
   const width = int(name, v, 1);

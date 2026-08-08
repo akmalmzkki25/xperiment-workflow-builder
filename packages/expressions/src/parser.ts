@@ -5,8 +5,16 @@ import { tokenize, type Token } from './tokenizer.js';
 
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);
 
+/**
+ * Each grouping level costs about ten stack frames, so without a cap well under a
+ * kilobyte of source overflows the stack — and a RangeError is reported as an
+ * internal_error rather than an expression error.
+ */
+const MAX_NESTING = 64;
+
 class Parser {
   private pos = 0;
+  private depth = 0;
   constructor(private readonly tokens: Token[]) {}
 
   private peek(): Token {
@@ -44,12 +52,22 @@ class Parser {
 
   /** Loosest level, and right-associative: `a ? b : c ? d : e` groups to the right. */
   private conditional(): Ast {
-    const test = this.nullish();
-    if (!this.atPunct('?')) return test;
-    this.next();
-    const consequent = this.conditional();
-    this.expectPunct(':');
-    return { type: 'cond', test, consequent, alternate: this.conditional() };
+    // Every nesting construct — parens, call arguments, ternary branches — enters here,
+    // so one counter bounds them all.
+    if (this.depth >= MAX_NESTING) {
+      throw new ExpressionParseError('Expression is nested too deeply', this.peek().pos);
+    }
+    this.depth += 1;
+    try {
+      const test = this.nullish();
+      if (!this.atPunct('?')) return test;
+      this.next();
+      const consequent = this.conditional();
+      this.expectPunct(':');
+      return { type: 'cond', test, consequent, alternate: this.conditional() };
+    } finally {
+      this.depth -= 1;
+    }
   }
 
   private nullish(): Ast {

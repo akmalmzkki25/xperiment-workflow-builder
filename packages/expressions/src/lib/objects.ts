@@ -1,5 +1,5 @@
 import { ExpressionEvalError } from '../errors.js';
-import { arity, str, MAX_JSON_CHARS, type Fn } from './guards.js';
+import { arity, defineOwn, str, MAX_JSON_CHARS, type Fn } from './guards.js';
 
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);
 const MAX_DEPTH = 64;
@@ -17,6 +17,9 @@ function walk(name: string, root: unknown, path: string): Lookup {
       throw new ExpressionEvalError(`${name}() refuses the path segment '${segment}'`);
     }
     if (cur === null || cur === undefined || typeof cur !== 'object') return { found: false, value: undefined };
+    // Own properties only. An inherited member would put a Function into the closed value
+    // space, and JSON.stringify then drops that key from the stored payload entirely.
+    if (!Object.hasOwn(cur, segment)) return { found: false, value: undefined };
     cur = (cur as Record<string, unknown>)[segment];
   }
   return { found: cur !== undefined, value: cur };
@@ -32,7 +35,7 @@ export function sortDeep(v: unknown, depth = 0): unknown {
   if (v !== null && typeof v === 'object') {
     const out: Record<string, unknown> = {};
     for (const key of Object.keys(v as Record<string, unknown>).sort()) {
-      out[key] = sortDeep((v as Record<string, unknown>)[key], depth + 1);
+      defineOwn(out, key, sortDeep((v as Record<string, unknown>)[key], depth + 1));
     }
     return out;
   }

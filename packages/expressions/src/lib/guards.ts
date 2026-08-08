@@ -14,6 +14,19 @@ export type Fn = (args: unknown[], ctx: ExpressionContext) => unknown;
 export const MAX_PAD = 1000;
 export const MAX_ITEMS = 10_000;
 export const MAX_JSON_CHARS = 262_144;
+/** Matches the node payload cap, so an expression cannot outgrow what can be stored. */
+export const MAX_OUTPUT_CHARS = 262_144;
+
+/**
+ * Writes an OWN property.
+ *
+ * Plain `obj[key] = v` invokes the inherited setter when the key is literally
+ * `__proto__`, so no own property is created and the value silently vanishes. That key
+ * arrives in DATA, which the workflow author does not control.
+ */
+export function defineOwn(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+}
 
 export function arity(name: string, args: unknown[], min: number, max: number = min): void {
   if (args.length < min || args.length > max) {

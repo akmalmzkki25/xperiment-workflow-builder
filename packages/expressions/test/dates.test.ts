@@ -44,7 +44,9 @@ describe('the evaluation clock', () => {
     expect(run('today()')).toBe('2026-08-08');
   });
 
-  test('two now() calls in one expression agree', () => {
+  test('two now() calls in one expression agree, even across a clock change', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('1999-01-01T00:00:00.000Z'));
     expect(run('now() == now()')).toBe(true);
   });
 });
