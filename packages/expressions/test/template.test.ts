@@ -5,6 +5,7 @@ const ctx: ExpressionContext = {
   trigger: { body: { name: 'Budi', total: 150, nested: { a: 1 } } },
   nodes: {},
   execution: { id: 'exec-1' },
+  now: Date.parse('2026-08-08T03:15:00.000Z'),
 };
 
 describe('resolveTemplate', () => {

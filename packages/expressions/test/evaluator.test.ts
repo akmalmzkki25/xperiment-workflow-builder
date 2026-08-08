@@ -5,6 +5,7 @@ const ctx: ExpressionContext = {
   trigger: { body: { name: 'Budi', phone: '0812', total: 150, vip: true, tags: ['a', 'b'] } },
   nodes: { check: { output: { exists: false, count: 0 } } },
   execution: { id: 'exec-1' },
+  now: Date.parse('2026-08-08T03:15:00.000Z'),
 };
 
 const run = (src: string) => evaluate(parseExpression(src), ctx);

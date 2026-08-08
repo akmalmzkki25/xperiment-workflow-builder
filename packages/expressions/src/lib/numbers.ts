@@ -69,12 +69,12 @@ export const NUMBER_FUNCTIONS: Record<string, Fn> = {
   },
 
   min: (args) => {
-    arity('min', args, 1, 64);
+    arity('min', args, 1, 10);
     return Math.min(...numericList('min', args));
   },
 
   max: (args) => {
-    arity('max', args, 1, 64);
+    arity('max', args, 1, 10);
     return Math.max(...numericList('max', args));
   },
 

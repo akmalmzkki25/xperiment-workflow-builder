@@ -4,4 +4,5 @@ export { ExpressionParseError, ExpressionEvalError } from './errors.js';
 export { parseExpression } from './parser.js';
 export { FUNCTION_NAMES, FUNCTIONS, type Fn } from './functions.js';
 export { evaluate, CONTEXT_ROOTS } from './evaluator.js';
+export { DEFAULT_TZ } from './lib/dates.js';
 export { resolveTemplate } from './template.js';

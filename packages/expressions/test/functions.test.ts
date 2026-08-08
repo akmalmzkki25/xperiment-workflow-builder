@@ -28,6 +28,7 @@ const ctx: ExpressionContext = {
   },
   nodes: {},
   execution: { id: 'exec-1' },
+  now: Date.parse('2026-08-08T03:15:00.000Z'),
 };
 
 const run = (src: string) => evaluate(parseExpression(src), ctx);
@@ -229,9 +230,20 @@ describe('object and json functions', () => {
 });
 
 describe('registry invariants', () => {
+  /** The only functions that legitimately take nothing. Everything else must refuse. */
+  const ZERO_ARITY = new Set(['now', 'today']);
+
   test('every FUNCTIONS entry is arity-checked', () => {
     for (const name of FUNCTION_NAMES) {
+      if (ZERO_ARITY.has(name)) continue;
       expect(() => FUNCTIONS[name]!([], ctx), `${name}() with no arguments`).toThrow(ExpressionEvalError);
+    }
+  });
+
+  test('even a zero-arity function refuses too many arguments', () => {
+    const tooMany = new Array<unknown>(12).fill('x');
+    for (const name of FUNCTION_NAMES) {
+      expect(() => FUNCTIONS[name]!(tooMany, ctx), `${name}() with twelve arguments`).toThrow(ExpressionEvalError);
     }
   });
 

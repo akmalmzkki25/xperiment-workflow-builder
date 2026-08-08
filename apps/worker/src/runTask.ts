@@ -168,7 +168,13 @@ export async function runNodeTask(deps: WorkerDeps, payload: NodeTaskPayload): P
       const items = (outputs[node.scope.loopId] as { items?: unknown } | undefined)?.items;
       if (Array.isArray(items)) loopFrame = { index: instance.iteration, item: items[instance.iteration] };
     }
-    const ctx = buildContext(executionId, triggerBody, outputs, loopFrame);
+    // The one and only wall-clock read in the expression path. Fixing it here means
+    // every {{ now() }} in this node's parameters agrees, and a replay can pin it.
+    const evaluatedAt = Date.now();
+    const ctx = buildContext(executionId, triggerBody, outputs, {
+      now: evaluatedAt,
+      ...(loopFrame ? { loop: loopFrame } : {}),
+    });
     resolvedParams = resolveTemplate(node.parameters, ctx);
     const result = await executeNode(deps, {
       node,

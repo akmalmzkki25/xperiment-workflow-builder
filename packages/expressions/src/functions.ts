@@ -1,5 +1,6 @@
 import { ExpressionEvalError } from './errors.js';
 import { COLLECTION_FUNCTIONS } from './lib/collections.js';
+import { DATE_FUNCTIONS } from './lib/dates.js';
 import { arity, str, type Fn } from './lib/guards.js';
 import { NUMBER_FUNCTIONS } from './lib/numbers.js';
 import { OBJECT_FUNCTIONS } from './lib/objects.js';
@@ -57,6 +58,7 @@ export const FUNCTIONS: Record<string, Fn> = {
   ...NUMBER_FUNCTIONS,
   ...COLLECTION_FUNCTIONS,
   ...OBJECT_FUNCTIONS,
+  ...DATE_FUNCTIONS,
 };
 
 export const FUNCTION_NAMES: ReadonlySet<string> = new Set(Object.keys(FUNCTIONS));
