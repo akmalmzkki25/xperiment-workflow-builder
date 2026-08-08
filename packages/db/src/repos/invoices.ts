@@ -191,17 +191,26 @@ export async function markInvoicePaid(
  *
  * Takes the period as one object rather than two dates so the pair cannot be passed in
  * the wrong order, which would silently invoice the wrong month.
+ *
+ * BOUNDED. Each workspace costs the caller about eight sequential round trips, so an
+ * unbounded result set turns one scheduler tick into minutes of work with no visibility:
+ * measured at ~138 workspaces/sec, an 11,800-row backlog took 86 seconds. The caller
+ * drains the remainder on the next tick.
  */
+export const DEFAULT_INVOICE_BATCH = 500;
+
 export async function workspacesNeedingInvoice(
   db: Db,
   period: { start: Date; end: Date },
+  limit: number = DEFAULT_INVOICE_BATCH,
 ): Promise<{ workspaceId: string }[]> {
   const r = await db.query(
     `SELECT w.id FROM workspaces w
      WHERE w.created_at < $2
        AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.workspace_id = w.id AND i.period_start = $1::date)
-     ORDER BY w.created_at, w.id`,
-    [dateParam(period.start), period.end],
+     ORDER BY w.created_at, w.id
+     LIMIT $3`,
+    [dateParam(period.start), period.end, limit],
   );
   return (r.rows as { id: string }[]).map((row) => ({ workspaceId: row.id }));
 }

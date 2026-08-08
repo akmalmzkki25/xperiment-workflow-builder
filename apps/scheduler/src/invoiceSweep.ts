@@ -1,10 +1,18 @@
-import { getQuotaUsage, getWorkspacePlan, issueInvoice, workspacesNeedingInvoice } from '@xperiment/db';
+import {
+  DEFAULT_INVOICE_BATCH,
+  getQuotaUsage,
+  getWorkspacePlan,
+  issueInvoice,
+  workspacesNeedingInvoice,
+} from '@xperiment/db';
 import { buildInvoice, DEFAULT_TAX_RATE_BPS, previousPeriod, resolveLimits } from '@xperiment/plans';
 import type pg from 'pg';
 
 export interface InvoiceSweepDeps {
   pool: pg.Pool;
   log: (msg: string, extra?: Record<string, unknown>) => void;
+  /** Workspaces to close per tick. The remainder drains on the next one. */
+  batchSize?: number;
 }
 
 function taxRateBps(): number {
@@ -20,9 +28,10 @@ function taxRateBps(): number {
  * through `UNIQUE (workspace_id, period_start)`, so two scheduler instances racing
  * produce one invoice and one skipped duplicate.
  */
-export async function runInvoiceSweep(deps: InvoiceSweepDeps): Promise<{ issued: number }> {
+export async function runInvoiceSweep(deps: InvoiceSweepDeps): Promise<{ issued: number; capped: boolean }> {
   const period = previousPeriod(new Date());
-  const due = await workspacesNeedingInvoice(deps.pool, period);
+  const batchSize = deps.batchSize ?? DEFAULT_INVOICE_BATCH;
+  const due = await workspacesNeedingInvoice(deps.pool, period, batchSize);
   let issued = 0;
 
   for (const { workspaceId } of due) {
@@ -47,6 +56,10 @@ export async function runInvoiceSweep(deps: InvoiceSweepDeps): Promise<{ issued:
     }
   }
 
+  // A full batch means there is more waiting. Saying so turns a tick that quietly runs
+  // long into a visible line naming the real condition.
+  const capped = due.length === batchSize;
+  if (capped) deps.log('invoice_sweep.backlog_capped', { batchSize, periodStart: period.start.toISOString() });
   if (issued) deps.log('invoice_sweep.done', { issued, periodStart: period.start.toISOString() });
-  return { issued };
+  return { issued, capped };
 }
