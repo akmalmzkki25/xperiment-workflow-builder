@@ -1,16 +1,15 @@
 import type { Ast } from './ast.js';
+import type { ExpressionContext } from './context.js';
 import { ExpressionEvalError } from './errors.js';
 import { FUNCTIONS } from './functions.js';
 
-export interface ExpressionContext {
-  trigger: { body: unknown };
-  nodes: Record<string, { output: unknown }>;
-  execution: { id: string };
-  /** Present only while a loop body node is running. */
-  loop?: { index: number; item: unknown };
-}
+// Re-exported so every existing import specifier keeps working.
+export type { ExpressionContext } from './context.js';
 
-const ROOTS = new Set(['trigger', 'nodes', 'execution', 'loop']);
+/** The closed set of readable roots. Nothing writes into the context. */
+export const CONTEXT_ROOTS: ReadonlySet<string> = new Set(['trigger', 'nodes', 'execution', 'loop']);
+
+const ROOTS = CONTEXT_ROOTS;
 
 export function evaluate(ast: Ast, ctx: ExpressionContext): unknown {
   switch (ast.type) {
@@ -30,7 +29,10 @@ export function evaluate(ast: Ast, ctx: ExpressionContext): unknown {
     case 'call': {
       const fn = FUNCTIONS[ast.name];
       if (!fn) throw new ExpressionEvalError(`Unknown function '${ast.name}'`);
-      return fn(ast.args.map((a) => evaluate(a, ctx)));
+      return fn(
+        ast.args.map((a) => evaluate(a, ctx)),
+        ctx,
+      );
     }
     case 'unary': {
       const v = evaluate(ast.operand, ctx);

@@ -1,54 +1,62 @@
 import { ExpressionEvalError } from './errors.js';
+import { COLLECTION_FUNCTIONS } from './lib/collections.js';
+import { arity, str, type Fn } from './lib/guards.js';
+import { NUMBER_FUNCTIONS } from './lib/numbers.js';
+import { OBJECT_FUNCTIONS } from './lib/objects.js';
+import { STRING_FUNCTIONS } from './lib/strings.js';
 
-type Fn = (args: unknown[]) => unknown;
+export type { Fn } from './lib/guards.js';
 
-function requireArity(name: string, args: unknown[], n: number): void {
-  if (args.length !== n) {
-    throw new ExpressionEvalError(`${name}() expects ${n} argument(s), got ${args.length}`);
-  }
-}
-
-function requireString(name: string, v: unknown): string {
-  if (typeof v !== 'string') {
-    throw new ExpressionEvalError(`${name}() expects a string, got ${typeof v}`);
-  }
-  return v;
-}
-
-export const FUNCTIONS: Record<string, Fn> = {
+/**
+ * There are no lambdas, so map/filter/reduce are not possible here and are not
+ * missing by oversight: every Fn receives arguments that are already evaluated,
+ * and the Ast union has no function-value node. Array work happens at the graph
+ * level instead — core.filter, core.sort, core.aggregate.
+ */
+const CORE_FUNCTIONS: Record<string, Fn> = {
   lower: (args) => {
-    requireArity('lower', args, 1);
-    return requireString('lower', args[0]).toLowerCase();
+    arity('lower', args, 1);
+    return str('lower', args[0], 0).toLowerCase();
   },
   upper: (args) => {
-    requireArity('upper', args, 1);
-    return requireString('upper', args[0]).toUpperCase();
+    arity('upper', args, 1);
+    return str('upper', args[0], 0).toUpperCase();
   },
   trim: (args) => {
-    requireArity('trim', args, 1);
-    return requireString('trim', args[0]).trim();
+    arity('trim', args, 1);
+    return str('trim', args[0], 0).trim();
   },
   length: (args) => {
-    requireArity('length', args, 1);
+    arity('length', args, 1);
     const v = args[0];
     if (typeof v === 'string' || Array.isArray(v)) return v.length;
     throw new ExpressionEvalError(`length() expects a string or array, got ${typeof v}`);
   },
   toNumber: (args) => {
-    requireArity('toNumber', args, 1);
+    arity('toNumber', args, 1);
     const n = Number(args[0]);
     // Finite, not merely non-NaN: Number('1e999') is Infinity, and letting that through
     // would reintroduce the value the arithmetic guards exist to keep out.
     if (!Number.isFinite(n)) throw new ExpressionEvalError('toNumber() could not convert value to a finite number');
     return n;
   },
+  // Annotated because `toString` collides with Object.prototype.toString, so the
+  // Record<string, Fn> contextual type does not reach this one property.
   toString: (args: unknown[]) => {
-    requireArity('toString', args, 1);
+    arity('toString', args, 1);
     const v = args[0];
     if (v === null || v === undefined) return '';
     if (typeof v === 'object') return JSON.stringify(v);
     return String(v);
   },
+};
+
+export const FUNCTIONS: Record<string, Fn> = {
+  ...CORE_FUNCTIONS,
+  ...STRING_FUNCTIONS,
+  ...NUMBER_FUNCTIONS,
+  ...COLLECTION_FUNCTIONS,
+  ...OBJECT_FUNCTIONS,
 };
 
 export const FUNCTION_NAMES: ReadonlySet<string> = new Set(Object.keys(FUNCTIONS));
