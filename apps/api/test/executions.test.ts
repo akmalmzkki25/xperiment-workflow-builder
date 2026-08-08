@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildServer } from '../src/server.js';
-import { createAuthedUser, type AuthedUser } from './authHelpers.js';
+import { addMemberWithRole, createAuthedUser, type AuthedUser } from './authHelpers.js';
 import { leadCheckIr } from './fixtures.js';
 
 let pool: Pool;
@@ -39,6 +39,68 @@ async function publishedWorkflow(): Promise<string> {
   await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/publish` });
   return id;
 }
+
+describe('node payloads on the detail response', () => {
+  /** Runs a node to SUCCEEDED with a payload carrying a secret-shaped key. */
+  async function executionWithPayload(): Promise<string> {
+    const wf = await publishedWorkflow();
+    const r = await auth.inject({ method: 'POST', url: `/v1/workflows/${wf}/execute`, payload: { name: 'Budi' } });
+    const executionId = r.json<{ executionId: string }>().executionId;
+    await pool.query(
+      `UPDATE execution_nodes SET status = 'SUCCEEDED', input_json = $2, output_json = $3
+       WHERE execution_id = $1 AND node_id = 't'`,
+      [
+        executionId,
+        JSON.stringify({ url: 'https://api.test/v1', headers: { authorization: 'Bearer sk-live-999' } }),
+        JSON.stringify({ status: 200, body: { ok: true } }),
+      ],
+    );
+    return executionId;
+  }
+
+  test('a member who can run sees the recorded input and output', async () => {
+    const id = await executionWithPayload();
+    const d = await auth.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    const body = d.json<{ payloadsVisible: boolean; nodes: { nodeId: string; outputJson?: unknown }[] }>();
+    expect(body.payloadsVisible).toBe(true);
+    const node = body.nodes.find((n) => n.nodeId === 't')!;
+    expect(node.outputJson).toEqual({ status: 200, body: { ok: true } });
+  });
+
+  test('a secret-named parameter key is redacted on the way out', async () => {
+    const id = await executionWithPayload();
+    const d = await auth.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    const node = d
+      .json<{ nodes: { nodeId: string; inputJson?: { headers?: { authorization?: string }; url?: string } }[] }>()
+      .nodes.find((n) => n.nodeId === 't')!;
+    expect(node.inputJson?.headers?.authorization).toBe('[redacted]');
+    // Only the credential-shaped key, not the whole object.
+    expect(node.inputJson?.url).toBe('https://api.test/v1');
+    expect(JSON.stringify(d.json())).not.toContain('sk-live-999');
+  });
+
+  test('a viewer gets payloadsVisible false and no payload keys at all', async () => {
+    // A viewer is a read-only observer. Handing it payloads would turn execution:read
+    // into a transitive read of anything an author typed into a parameter.
+    const id = await executionWithPayload();
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    const d = await viewer.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    expect(d.statusCode).toBe(200);
+    const body = d.json<{ payloadsVisible: boolean; nodes: Record<string, unknown>[] }>();
+    expect(body.payloadsVisible).toBe(false);
+    for (const node of body.nodes) {
+      expect(Object.keys(node)).not.toContain('inputJson');
+      expect(Object.keys(node)).not.toContain('outputJson');
+    }
+  });
+
+  test('an operator can see payloads, since it may start the run', async () => {
+    const id = await executionWithPayload();
+    const operator = await addMemberWithRole(app, pool, auth.workspaceId, 'operator');
+    const d = await operator.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    expect(d.json<{ payloadsVisible: boolean }>().payloadsVisible).toBe(true);
+  });
+});
 
 describe('execute and inspect', () => {
   test('execute creates a CREATED execution with PENDING nodes and outbox rows', async () => {

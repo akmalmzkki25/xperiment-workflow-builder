@@ -373,6 +373,9 @@ export interface NodeRow {
   errorJson: unknown;
   startedAt: string | null;
   completedAt: string | null;
+  /** Present only with `includePayloads`. Expression-RESOLVED parameters, not the draft. */
+  inputJson?: unknown;
+  outputJson?: unknown;
 }
 
 export interface EventRow {
@@ -392,18 +395,31 @@ export interface WaitDetail {
   resolvedBy: string | null;
 }
 
+export interface ExecutionDetailOptions {
+  /**
+   * Off by default, and that matters: this function is on the worker's hot path
+   * (apps/worker/src/runTask.ts, apps/orchestrator/src/deps.ts, apps/worker/src/callback.ts),
+   * where selecting the payload columns would drag up to PAYLOAD_CAP_BYTES per node
+   * across the wire on every task, for nothing.
+   */
+  includePayloads?: boolean;
+}
+
 export async function getExecutionDetail(
   pool: pg.Pool,
   id: string,
   workspaceId?: string,
+  opts?: ExecutionDetailOptions,
 ): Promise<{ execution: ExecutionRow; nodes: NodeRow[]; events: EventRow[]; waits: WaitDetail[] } | null> {
   const ex = workspaceId
     ? await pool.query(`SELECT * FROM executions WHERE id = $1 AND workspace_id = $2`, [id, workspaceId])
     : await pool.query(`SELECT * FROM executions WHERE id = $1`, [id]);
   if (!ex.rowCount) return null;
   const ts = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string | null));
+  // Built from a boolean, never from caller input — no injection surface.
+  const payloadColumns = opts?.includePayloads === true ? ', input_json, output_json' : '';
   const nodes = await pool.query(
-    `SELECT node_id, status, attempt, output_port, error_json, started_at, completed_at
+    `SELECT node_id, status, attempt, output_port, error_json, started_at, completed_at${payloadColumns}
      FROM execution_nodes WHERE execution_id = $1 ORDER BY node_id, attempt`,
     [id],
   );
@@ -429,6 +445,9 @@ export async function getExecutionDetail(
       errorJson: r['error_json'],
       startedAt: ts(r['started_at']),
       completedAt: ts(r['completed_at']),
+      // Absent keys rather than nulls when not requested, so a caller cannot mistake
+      // "not asked for" for "the node recorded nothing".
+      ...(opts?.includePayloads === true ? { inputJson: r['input_json'], outputJson: r['output_json'] } : {}),
     })),
     events: (events.rows as Record<string, unknown>[]).map((r) => ({
       sequence: Number(r['sequence']),

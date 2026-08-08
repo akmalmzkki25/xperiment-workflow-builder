@@ -169,6 +169,40 @@ describe('attempts and reads', () => {
     expect(detail?.events.map((e) => e.eventType)).toContain('node.started');
   });
 
+  test('getExecutionDetail omits the payload columns unless asked', async () => {
+    // The default matters: this runs on the worker's hot path, where selecting up to
+    // 256 KiB per node on every task would be pure waste.
+    const execution = executionOf(await createExecutionWithTrigger(pool, createArgs()));
+    await casNode(pool, { executionId: execution.id, nodeId: 't', attempt: 1, from: ['PENDING'], to: 'RUNNING' });
+    await casNode(pool, {
+      executionId: execution.id,
+      nodeId: 't',
+      attempt: 1,
+      from: ['RUNNING'],
+      to: 'SUCCEEDED',
+      patch: { inputJson: { url: 'https://x.test' }, outputJson: { status: 200 } },
+    });
+
+    const lean = await getExecutionDetail(pool, execution.id);
+    const leanNode = lean!.nodes.find((n) => n.nodeId === 't')!;
+    expect('inputJson' in leanNode).toBe(false);
+    expect('outputJson' in leanNode).toBe(false);
+
+    const full = await getExecutionDetail(pool, execution.id, undefined, { includePayloads: true });
+    const fullNode = full!.nodes.find((n) => n.nodeId === 't')!;
+    expect(fullNode.inputJson).toEqual({ url: 'https://x.test' });
+    expect(fullNode.outputJson).toEqual({ status: 200 });
+  });
+
+  test('a node that never ran reports null payloads rather than an empty object', async () => {
+    // "Not recorded" and "recorded nothing" are different things to an operator.
+    const execution = executionOf(await createExecutionWithTrigger(pool, createArgs()));
+    const full = await getExecutionDetail(pool, execution.id, undefined, { includePayloads: true });
+    const pending = full!.nodes[0]!;
+    expect(pending.inputJson).toBeNull();
+    expect(pending.outputJson).toBeNull();
+  });
+
   test('listExecutions filters by workflow and paginates', async () => {
     for (let i = 0; i < 3; i += 1) await createExecutionWithTrigger(pool, createArgs(`k${i}`));
     const page = await listExecutions(pool, { workflowId, limit: 2 });

@@ -31,6 +31,30 @@ export function fmtTime(iso: string | null): string {
 }
 
 /**
+ * Absolute wall time in Jakarta, with the zone named.
+ *
+ * Schedules default to Asia/Jakarta on the server, so a wait's expiry has to be shown in
+ * the same frame. A relative "expires in 2 hours" computed off an arbitrary browser clock
+ * is exactly how an operator in another timezone misreads it.
+ */
+export function fmtJakarta(iso: string | null): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(date);
+  const pick = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  return `${pick('day')}/${pick('month')}/${pick('year')} ${pick('hour')}:${pick('minute')} WIB`;
+}
+
+/**
  * How an execution row's node id reads to a person. The engine encodes loop iterations into
  * the id (`b1#3`) and adds a synthetic join (`lp$join`); neither is something an author wrote,
  * so neither should be shown raw.

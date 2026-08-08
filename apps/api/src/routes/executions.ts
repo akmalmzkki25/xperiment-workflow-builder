@@ -21,7 +21,9 @@ import { runnableNodeIds, workflowIrSchema } from '@xperiment/ir';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { authOf, requirePermission } from '../auth/plugin.js';
+import { hasPermission } from '../auth/permissions.js';
 import { sendProblem } from '../problem.js';
+import { redactSecrets } from './redact.js';
 import type { ResolvedServerDeps } from './deps.js';
 
 const DEFAULT_EXECUTION_TIMEOUT_MS = 900000;
@@ -88,10 +90,15 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
   });
 
   app.get('/v1/executions/:id', async (req, reply) => {
-    // The timeline carries every node's payload — gate it like the list.
-    if (!requirePermission(reply, authOf(req), 'execution:read')) return;
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'execution:read')) return;
     const { id } = req.params as { id: string };
-    const detail = await getExecutionDetail(deps.pool, id, authOf(req).workspaceId);
+    // Whoever may START a run may see the data that ran. A viewer is a read-only
+    // observer, and handing it payloads would turn `execution:read` into a transitive
+    // read of anything an author typed into a parameter. Same field-level shape as the
+    // credential reveal on the triggers route.
+    const canSeePayloads = hasPermission(ctx.role, 'execution:run');
+    const detail = await getExecutionDetail(deps.pool, id, ctx.workspaceId, { includePayloads: canSeePayloads });
     if (!detail) return sendProblem(reply, 404, 'Execution not found');
     // Surface the resume URL for open event waits so an operator/external system
     // can discover the callback endpoint. Tokens are added deliberately here and
@@ -106,7 +113,17 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       ...w,
       ...(resumeUrlByNode.has(w.nodeId) ? { resumeUrl: resumeUrlByNode.get(w.nodeId) } : {}),
     }));
-    return { ...detail, waits };
+    const nodes = canSeePayloads
+      ? detail.nodes.map((n) => ({
+          ...n,
+          inputJson: redactSecrets(n.inputJson),
+          outputJson: redactSecrets(n.outputJson),
+        }))
+      : detail.nodes;
+    // An explicit boolean, not the absence of a key: the UI has to be able to say
+    // "payloads are visible to members who can run workflows" rather than implying the
+    // node recorded nothing. Absent keys also vanish through JSON.stringify.
+    return { ...detail, nodes, waits, payloadsVisible: canSeePayloads };
   });
 
   const TERMINAL = ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED'];

@@ -1,6 +1,8 @@
 import type { ExecutionDetail, ExecutionNodeRow } from '../../lib/api';
 import { fmtDuration, fmtTime, nodeLabel } from '../../lib/format';
+import { PayloadPanel } from '../ui/PayloadPanel';
 import { StatusChip } from '../ui/StatusChip';
+import { WaitsPanel } from './WaitsPanel';
 
 function groupByNode(nodes: ExecutionNodeRow[]): Map<string, ExecutionNodeRow[]> {
   const map = new Map<string, ExecutionNodeRow[]>();
@@ -50,11 +52,41 @@ export function Timeline({ detail }: { detail: ExecutionDetail }) {
                   <span className="q-field__hint mono">→ {attempt.outputPort}</span>
                 ) : null}
                 {error ? <span className="q-field__error">{error}</span> : null}
+                {detail.payloadsVisible ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 'var(--space-1)',
+                      width: '100%',
+                      marginTop: 'var(--space-1)',
+                    }}
+                  >
+                    <PayloadPanel
+                      label="Input"
+                      value={attempt.inputJson}
+                      testId={`payload-in-${nodeId}-${attempt.attempt}`}
+                    />
+                    <PayloadPanel
+                      label="Output"
+                      value={attempt.outputJson}
+                      testId={`payload-out-${nodeId}-${attempt.attempt}`}
+                    />
+                  </div>
+                ) : null}
               </div>
             );
           })}
         </div>
       ))}
+
+      {!detail.payloadsVisible ? (
+        <span className="q-field__hint" data-testid="payloads-hidden">
+          Node data is shown to members who can run workflows.
+        </span>
+      ) : null}
+
+      <WaitsPanel waits={detail.waits} />
 
       <div className="q-trigger-panel" style={{ gap: 'var(--space-1)' }}>
         <div className="q-inspector__section-title">Event log</div>

@@ -80,6 +80,9 @@ export interface ExecutionNodeRow {
   errorJson: unknown;
   startedAt: string | null;
   completedAt: string | null;
+  /** Present only when `payloadsVisible`. Expression-resolved parameters, secrets blanked. */
+  inputJson?: unknown;
+  outputJson?: unknown;
 }
 
 export interface ExecutionEventRow {
@@ -105,6 +108,12 @@ export interface ExecutionDetail {
   nodes: ExecutionNodeRow[];
   events: ExecutionEventRow[];
   waits: ExecutionWaitRow[];
+  /**
+   * Whether this member may see node payloads at all — an explicit boolean so the UI can
+   * say "visible to members who can run workflows" rather than implying the node recorded
+   * nothing. Absent keys would also vanish through JSON.stringify.
+   */
+  payloadsVisible: boolean;
 }
 
 export interface UsageSummary {

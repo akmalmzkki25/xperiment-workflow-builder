@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fmtDuration, fmtTime, nodeLabel, shortId } from '../src/lib/format';
+import { fmtDuration, fmtJakarta, fmtTime, nodeLabel, shortId } from '../src/lib/format';
 
 describe('format helpers', () => {
   test('shortId truncates to 8 chars', () => {
@@ -40,5 +40,22 @@ describe('nodeLabel', () => {
 
   test('an id that merely contains a hash is not an instance', () => {
     expect(nodeLabel('b1#x')).toEqual({ text: 'b1#x', iteration: null });
+  });
+});
+
+describe('fmtJakarta', () => {
+  test('renders absolute Jakarta wall time with the zone named', () => {
+    // 22:30 UTC is already 05:30 the next day in Jakarta — a relative label computed off
+    // the viewer's own clock would read this wrong for anyone outside WIB.
+    expect(fmtJakarta('2026-03-01T22:30:00.000Z')).toBe('02/03/2026 05:30 WIB');
+  });
+
+  test('midnight renders as 00, not 24', () => {
+    expect(fmtJakarta('2026-03-01T17:00:00.000Z')).toBe('02/03/2026 00:00 WIB');
+  });
+
+  test('returns a dash for null and for an unparseable value', () => {
+    expect(fmtJakarta(null)).toBe('—');
+    expect(fmtJakarta('not a date')).toBe('—');
   });
 });
