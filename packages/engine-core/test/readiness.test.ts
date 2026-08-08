@@ -221,6 +221,54 @@ describe('error path', () => {
     expect(r.terminal).toBeNull();
   });
 
+  // These two protect core.merge, which relies on the join behaviour below rather than
+  // on any scheduler change. If someone later "tightens" readiness to require every
+  // inbound edge to be ACTIVE, merge stops working silently and every workflow using it
+  // hangs with ready: [] and terminal: null. These are what catches that.
+  test('a fan-in behind an if fires once the skipped branch is decided', () => {
+    const diamond = ir(
+      [{ id: 't' }, { id: 'gate', type: 'core.if' }, { id: 'yes' }, { id: 'no' }, { id: 'mg', type: 'core.merge' }],
+      [
+        ['t', 'gate'],
+        ['gate', 'yes', 'true'],
+        ['gate', 'no', 'false'],
+        ['yes', 'mg'],
+        ['no', 'mg'],
+      ],
+    );
+    const afterGate = computeReadiness(diamond, [o('t', 'SUCCEEDED'), o('gate', 'SUCCEEDED', 'true')]);
+    expect(afterGate.ready).toEqual(['yes']);
+    expect(afterGate.skipped).toEqual(['no']);
+
+    const afterBranch = computeReadiness(diamond, [
+      o('t', 'SUCCEEDED'),
+      o('gate', 'SUCCEEDED', 'true'),
+      o('yes', 'SUCCEEDED', 'main'),
+      o('no', 'SKIPPED'),
+    ]);
+    // One inbound edge is active and the other is decided-but-inactive, so the merge runs.
+    expect(afterBranch.ready).toEqual(['mg']);
+    expect(afterBranch.terminal).toBeNull();
+  });
+
+  test('a fan-in whose branches are both skipped is itself skipped', () => {
+    const diamond = ir(
+      [{ id: 't' }, { id: 'gate', type: 'core.if' }, { id: 'yes' }, { id: 'no' }, { id: 'mg', type: 'core.merge' }],
+      [
+        ['t', 'gate'],
+        ['gate', 'yes', 'true'],
+        ['gate', 'no', 'false'],
+        ['yes', 'mg'],
+        ['no', 'mg'],
+      ],
+    );
+    // A switch-style port that fires nothing downstream: both branches decided inactive.
+    const r = computeReadiness(diamond, [o('t', 'SUCCEEDED'), o('gate', 'SUCCEEDED', 'other')]);
+    expect(r.ready).toEqual([]);
+    expect(r.skipped.sort()).toEqual(['mg', 'no', 'yes']);
+    expect(r.terminal).toBe('SUCCEEDED');
+  });
+
   test('a switch that reaches default skips every case branch', () => {
     const routed = ir(
       [{ id: 't' }, { id: 'sw', type: 'core.switch' }, { id: 'a' }, { id: 'b' }, { id: 'fallback' }],

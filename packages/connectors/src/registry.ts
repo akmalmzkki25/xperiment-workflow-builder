@@ -8,6 +8,7 @@ import { coreSort } from './core/sort.js';
 import { coreLimit } from './core/limit.js';
 import { coreAggregate } from './core/aggregate.js';
 import { coreSplitBatch } from './core/splitBatch.js';
+import { coreMerge } from './core/merge.js';
 import { coreTransform } from './core/transform.js';
 import { coreWaitForEvent } from './core/waitForEvent.js';
 import { createHttpRequest } from './http/request.js';
@@ -46,6 +47,7 @@ export function createDefaultRegistry(cfg: RegistryConfig = {}): ConnectorRegist
     coreLimit,
     coreAggregate,
     coreSplitBatch,
+    coreMerge,
     coreDelay,
     coreWaitForEvent,
     coreApproval,
