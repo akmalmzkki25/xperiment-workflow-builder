@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fmtDuration, fmtJakarta, fmtTime, nodeLabel, shortId } from '../src/lib/format';
+import { authoredNodeId, fmtDuration, fmtJakarta, fmtTime, nodeLabel, shortId } from '../src/lib/format';
 
 describe('format helpers', () => {
   test('shortId truncates to 8 chars', () => {
@@ -57,5 +57,27 @@ describe('fmtJakarta', () => {
   test('returns a dash for null and for an unparseable value', () => {
     expect(fmtJakarta(null)).toBe('—');
     expect(fmtJakarta('not a date')).toBe('—');
+  });
+});
+
+describe('authoredNodeId', () => {
+  test('strips a loop iteration suffix and a synthetic join suffix', () => {
+    expect(authoredNodeId('b1#3')).toBe('b1');
+    expect(authoredNodeId('lp$join')).toBe('lp');
+  });
+
+  test('leaves an ordinary id and a non-numeric hash alone', () => {
+    // A '#' is not legal in an authored id, but the guard must not eat one either way.
+    expect(authoredNodeId('send_receipt')).toBe('send_receipt');
+    expect(authoredNodeId('a#b')).toBe('a#b');
+    expect(authoredNodeId('#3')).toBe('#3');
+  });
+
+  test('agrees with nodeLabel about where the engine suffix begins', () => {
+    for (const id of ['b1#0', 'b1#12', 'lp$join', 'plain']) {
+      expect(nodeLabel(id).text, id).toBe(
+        id.endsWith('$join') ? `${authoredNodeId(id)} — all iterations done` : authoredNodeId(id),
+      );
+    }
   });
 });

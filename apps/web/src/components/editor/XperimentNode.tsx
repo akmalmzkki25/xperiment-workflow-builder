@@ -26,7 +26,7 @@ const READINESS_LABEL: Record<NodeReadiness, string> = {
 };
 
 export function XperimentNode({ data, selected }: NodeProps<{ ir: IRNodeData }>) {
-  const { catalogByType, findingsByNode } = useEditorContext();
+  const { catalogByType, findingsByNode, runStatusByNode } = useEditorContext();
   const ir = data.ir;
   const item = catalogByType.get(ir.type);
   const fields = useMemo(() => (item ? deriveFields(item.paramsJsonSchema) : []), [item]);
@@ -41,7 +41,13 @@ export function XperimentNode({ data, selected }: NodeProps<{ ir: IRNodeData }>)
   const multiPort = outputPorts.length > 1;
 
   return (
-    <div className={selected ? 'q-node q-node--selected' : 'q-node'} data-testid={`node-${ir.id}`}>
+    <div
+      className={selected ? 'q-node q-node--selected' : 'q-node'}
+      data-testid={`node-${ir.id}`}
+      // A data attribute rather than a class: CSS owns the palette, and this never
+      // reaches node.data.ir, so it cannot be persisted into the saved definition.
+      data-run={runStatusByNode.get(ir.id)}
+    >
       <span className="q-node__rail" style={{ background: `var(--rail-${ir.kind})` }} />
       {ir.kind !== 'trigger' ? (
         <Handle type="target" id="input" position={Position.Left} style={{ top: '50%' }} />

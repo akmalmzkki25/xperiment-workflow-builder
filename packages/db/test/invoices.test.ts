@@ -160,6 +160,14 @@ describe('workspacesNeedingInvoice', () => {
    * row under test at the front, so a small limit reaches it.
    */
   let order = 0;
+
+  beforeAll(async () => {
+    // These fixtures are back-dated to the epoch so a bounded batch reaches them. Left
+    // behind they accumulate across runs and crowd each other out of that batch — the
+    // same coupling the LIMIT exists to bound. No real workspace predates 1971.
+    await pool.query(`DELETE FROM workspaces WHERE created_at < '1971-01-01'`);
+  });
+
   async function oldWorkspace(): Promise<string> {
     const ws = await newWorkspace();
     order += 1;

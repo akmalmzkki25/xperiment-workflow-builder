@@ -8,6 +8,14 @@ export interface EditorContextValue {
   connections: ConnectionRow[];
   /** Validation findings grouped by nodeId ('' key = workflow-level). */
   findingsByNode: Map<string, Finding[]>;
+  /**
+   * Live status per AUTHORED node id while a run is being watched.
+   *
+   * Context only, never `node.data.ir`: canvasToDefinition spreads `ir` straight into the
+   * saved definition, so a status field there would be persisted into the workflow IR and
+   * then rejected by validation on the next Save.
+   */
+  runStatusByNode: Map<string, string>;
 }
 
 const Ctx = createContext<EditorContextValue | null>(null);

@@ -23,6 +23,9 @@ let seedOrder = 0;
 beforeAll(async () => {
   pool = createPool();
   await runMigrations(pool);
+  // Epoch-dated fixtures accumulate across runs and crowd each other out of the bounded
+  // batch. No real workspace predates 1971.
+  await pool.query(`DELETE FROM workspaces WHERE created_at < '1971-01-01'`);
 });
 afterAll(async () => {
   await pool.end();

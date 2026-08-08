@@ -399,3 +399,35 @@
   bottom: -16px;
   color: var(--color-coral);
 }
+
+/*
+ * Live run status on the canvas.
+ *
+ * Driven by a data attribute set from React context, never from node.data.ir —
+ * canvasToDefinition spreads `ir` straight into the saved definition, so a status
+ * written there would be persisted into the workflow IR and rejected on the next Save.
+ */
+.q-node[data-run],
+.q-loop[data-run] {
+  box-shadow: 0 0 0 2px var(--run-colour, transparent);
+}
+.q-node[data-run='RUNNING'],
+.q-loop[data-run='RUNNING'] {
+  --run-colour: var(--status-running);
+}
+.q-node[data-run='SUCCEEDED'],
+.q-loop[data-run='SUCCEEDED'] {
+  --run-colour: var(--status-succeeded);
+}
+.q-node[data-run='FAILED'],
+.q-node[data-run='TIMED_OUT'],
+.q-loop[data-run='FAILED'],
+.q-loop[data-run='TIMED_OUT'] {
+  --run-colour: var(--status-failed);
+}
+.q-node[data-run='RETRY_SCHEDULED'],
+.q-node[data-run='WAITING'],
+.q-loop[data-run='RETRY_SCHEDULED'],
+.q-loop[data-run='WAITING'] {
+  --run-colour: var(--status-retry);
+}

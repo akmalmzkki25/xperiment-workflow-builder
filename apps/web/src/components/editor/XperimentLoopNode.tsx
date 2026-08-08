@@ -15,14 +15,18 @@ const DEFAULT_CONCURRENCY = 1;
  * carrying the run onward once every iteration has finished.
  */
 export function XperimentLoopNode({ data, selected }: NodeProps<{ ir: IRNodeData }>) {
-  const { findingsByNode } = useEditorContext();
+  const { findingsByNode, runStatusByNode } = useEditorContext();
   const ir = data.ir;
   const findings = findingsByNode.get(ir.id) ?? [];
   const params = ir.parameters as { concurrency?: unknown; maxIterations?: unknown };
   const concurrency = typeof params.concurrency === 'number' ? params.concurrency : DEFAULT_CONCURRENCY;
 
   return (
-    <div className={selected ? 'q-loop q-loop--selected' : 'q-loop'} data-testid={`node-${ir.id}`}>
+    <div
+      className={selected ? "q-loop q-loop--selected" : "q-loop"}
+      data-testid={`node-${ir.id}`}
+      data-run={runStatusByNode.get(ir.id)}
+    >
       <Handle type="target" id="input" position={Position.Left} style={{ top: 28 }} />
       <div className="q-loop__head">
         <span className="q-loop__glyph" aria-hidden>

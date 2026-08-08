@@ -24,9 +24,11 @@ import {
   type EditorEdge,
   type IRNodeData,
 } from '../../lib/irCanvas';
+import { runStatusByNode } from '../../lib/runStatus';
 import { defaultParams } from '../../lib/schemaForm';
 import { useEditorStore } from '../../stores/editorStore';
 import { ActionBar } from './ActionBar';
+import { RunBanner } from './RunBanner';
 import { AiDock } from './AiDock';
 import { Canvas } from './Canvas';
 import { EditorProvider, type EditorContextValue } from './EditorContext';
@@ -35,6 +37,10 @@ import { NodeLibrary } from './NodeLibrary';
 
 type FlowNode = Node<{ ir: IRNodeData }>;
 
+const TERMINAL_RUN_STATUS = new Set(['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED']);
+/** An approval or a long timer never terminates; stop watching rather than poll forever. */
+const WATCH_DEADLINE_MS = 10 * 60 * 1000;
+
 function EditorInner({ workflowId }: { workflowId: string }) {
   const { selectedNodeId, libraryOpen, select, setLibraryOpen, markDirty, reset } = useEditorStore();
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<{ ir: IRNodeData }>([]);
@@ -42,6 +48,8 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const [revision, setRevision] = useState<number | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [aiOpen, setAiOpen] = useState(false);
+  const [runExecutionId, setRunExecutionId] = useState<string | null>(null);
+  const [watchStartedAt, setWatchStartedAt] = useState<number | null>(null);
   const initializedRef = useRef(false);
   const previousDefinitionRef = useRef<unknown>({});
 
@@ -90,9 +98,33 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     return map;
   }, [findings]);
 
+  // The SAME query key the execution detail page owns. TanStack dedupes by key, so there
+  // is exactly one poller and one cache entry — one truth — and navigating from here to
+  // /executions/{id} lands on a warm cache rather than refetching.
+  const runQ = useQuery({
+    queryKey: ['execution', runExecutionId],
+    queryFn: () => getBrowserClient().getExecution(runExecutionId!),
+    enabled: runExecutionId !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.execution.status;
+      if (status && TERMINAL_RUN_STATUS.has(status)) return false;
+      // A run parked on an approval or a timer never reaches a terminal status, so an
+      // uncapped interval would poll for days from an open tab.
+      if (watchStartedAt !== null && Date.now() - watchStartedAt > WATCH_DEADLINE_MS) return false;
+      return 2000;
+    },
+  });
+
+  const runStatuses = useMemo(() => runStatusByNode(runQ.data?.nodes ?? []), [runQ.data]);
+
   const contextValue: EditorContextValue = useMemo(
-    () => ({ catalogByType, connections: connectionsQ.data?.items ?? [], findingsByNode }),
-    [catalogByType, connectionsQ.data, findingsByNode],
+    () => ({
+      catalogByType,
+      connections: connectionsQ.data?.items ?? [],
+      findingsByNode,
+      runStatusByNode: runStatuses,
+    }),
+    [catalogByType, connectionsQ.data, findingsByNode, runStatuses],
   );
 
   const buildDefinition = useCallback((): Record<string, unknown> => {
@@ -281,7 +313,22 @@ function EditorInner({ workflowId }: { workflowId: string }) {
           nodeCount={nodes.length}
           onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
           onToggleAi={() => setAiOpen((v) => !v)}
+          onRunStarted={(executionId) => {
+            setRunExecutionId(executionId);
+            setWatchStartedAt(Date.now());
+          }}
         />
+        {runExecutionId ? (
+          <RunBanner
+            executionId={runExecutionId}
+            detail={runQ.data}
+            watchExpired={watchStartedAt !== null && Date.now() - watchStartedAt > WATCH_DEADLINE_MS}
+            onStopWatching={() => {
+              setRunExecutionId(null);
+              setWatchStartedAt(null);
+            }}
+          />
+        ) : null}
         <div className="q-editor">
           {libraryOpen ? <NodeLibrary items={catalogQ.data?.items ?? []} onAdd={addNodeFromItem} /> : null}
           <Canvas

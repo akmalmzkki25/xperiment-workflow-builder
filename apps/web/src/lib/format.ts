@@ -63,12 +63,26 @@ export function fmtJakarta(iso: string | null): string {
  */
 export function nodeLabel(nodeId: string): { text: string; iteration: number | null } {
   if (nodeId.endsWith('$join')) {
-    return { text: `${nodeId.slice(0, -'$join'.length)} — all iterations done`, iteration: null };
+    return { text: `${authoredNodeId(nodeId)} — all iterations done`, iteration: null };
   }
   const at = nodeId.lastIndexOf('#');
   if (at > 0) {
     const suffix = nodeId.slice(at + 1);
-    if (/^\d+$/.test(suffix)) return { text: nodeId.slice(0, at), iteration: Number(suffix) + 1 };
+    if (/^\d+$/.test(suffix)) return { text: authoredNodeId(nodeId), iteration: Number(suffix) + 1 };
   }
   return { text: nodeId, iteration: null };
+}
+
+/**
+ * The id the AUTHOR wrote, stripped of anything the engine added.
+ *
+ * A canvas node is keyed by the authored id, but an execution reports `b1#3` per loop
+ * iteration and a synthetic `lp$join`. `nodeLabel` shares this so the two can never
+ * disagree about where an engine suffix begins.
+ */
+export function authoredNodeId(nodeId: string): string {
+  if (nodeId.endsWith('$join')) return nodeId.slice(0, -'$join'.length);
+  const at = nodeId.lastIndexOf('#');
+  if (at > 0 && /^\d+$/.test(nodeId.slice(at + 1))) return nodeId.slice(0, at);
+  return nodeId;
 }

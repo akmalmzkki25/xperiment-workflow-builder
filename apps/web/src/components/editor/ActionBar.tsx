@@ -19,6 +19,7 @@ interface ActionBarProps {
   nodeCount: number;
   onToggleLibrary: () => void;
   onToggleAi: () => void;
+  onRunStarted: (executionId: string) => void;
 }
 
 type Notice = { kind: 'ok' | 'err'; text: string } | null;
@@ -34,6 +35,7 @@ export function ActionBar({
   nodeCount,
   onToggleLibrary,
   onToggleAi,
+  onRunStarted,
 }: ActionBarProps) {
   const queryClient = useQueryClient();
   const { dirty, clearDirtyUpTo } = useEditorStore();
@@ -107,6 +109,17 @@ export function ActionBar({
     },
   });
 
+  const run = useMutation({
+    mutationFn: () => getBrowserClient().execute(workflow.id),
+    onSuccess: (r) => {
+      setNotice(null);
+      onRunStarted(r.executionId);
+    },
+    onError: (e) => {
+      setNotice({ kind: 'err', text: e instanceof Error ? e.message : 'Could not start the run' });
+    },
+  });
+
   const activate = useMutation({
     mutationFn: () => getBrowserClient().activate(workflow.id),
     onSuccess: async (r) => {
@@ -129,7 +142,13 @@ export function ActionBar({
     onError: (e) => setNotice({ kind: 'err', text: e instanceof Error ? e.message : 'Deactivation failed' }),
   });
 
-  const busy = save.isPending || validate.isPending || publish.isPending || activate.isPending || deactivate.isPending;
+  const busy =
+    save.isPending ||
+    validate.isPending ||
+    publish.isPending ||
+    activate.isPending ||
+    deactivate.isPending ||
+    run.isPending;
 
   return (
     <>
@@ -169,6 +188,21 @@ export function ActionBar({
           data-testid="action-validate"
         >
           Validate
+        </button>
+        <button
+          className="q-btn q-btn--ghost q-btn--sm"
+          // Enabled while dirty on purpose: POST /execute reads activeVersionId, never
+          // the draft, so refusing here would imply the two are related when they are not.
+          disabled={busy || !workflow.activeVersionId}
+          title={
+            workflow.activeVersionId
+              ? 'Runs the published version — unsaved changes are not included'
+              : 'Publish a version first'
+          }
+          onClick={() => run.mutate()}
+          data-testid="action-run"
+        >
+          Run
         </button>
         <button
           className="q-btn q-btn--sm"
