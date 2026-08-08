@@ -80,6 +80,22 @@ export function validateGraph(ir: WorkflowIR, registry: RegistryLike): Validatio
     }
   }
 
+  // ---- stop nodes ----
+  // core.stopAndError exists to end a run. Under an onError 'continue' policy the engine
+  // routes a failure to 'main' — but the node declares no ports, so nothing is downstream,
+  // readiness sees it decided, and the execution reaches terminal SUCCEEDED. The stop
+  // silently does not stop. Catch that at publish, which is the right time.
+  for (const n of ir.nodes) {
+    if (n.type !== 'core.stopAndError') continue;
+    const policy = n.settings?.onError ?? ir.metadata?.onError ?? 'fail';
+    if (policy === 'continue') {
+      g('stop_node_cannot_continue', `Stop node '${n.id}' cannot run under an onError 'continue' policy`, n.id);
+    }
+    if (ir.edges.some((e) => e.from.nodeId === n.id && e.from.port === 'error')) {
+      g('stop_node_cannot_continue', `Stop node '${n.id}' must not have an outgoing error edge`, n.id);
+    }
+  }
+
   // ---- loop scopes ----
   const loopIds = new Set(ir.nodes.filter((n) => n.type === 'core.loop').map((n) => n.id));
   const scopeOf = new Map(ir.nodes.filter((n) => n.scope).map((n) => [n.id, n.scope!.loopId]));

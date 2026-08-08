@@ -153,19 +153,51 @@ describe('markInvoicePaid', () => {
 });
 
 describe('workspacesNeedingInvoice', () => {
-  test('lists a workspace with no invoice for the period', async () => {
+  /**
+   * The query is bounded and ordered by created_at, and nothing truncates `workspaces` —
+   * this shared database carries thousands of rows from every other package's tests, all
+   * of them needing an invoice for the closed period. Back-dating to the epoch puts the
+   * row under test at the front, so a small limit reaches it.
+   */
+  let order = 0;
+  async function oldWorkspace(): Promise<string> {
     const ws = await newWorkspace();
-    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [ws, period.start]);
-    const ids = (await workspacesNeedingInvoice(pool, period)).map((w) => w.workspaceId);
+    order += 1;
+    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [ws, new Date(order * 1000)]);
+    return ws;
+  }
+
+  test('lists a workspace with no invoice for the period', async () => {
+    const ws = await oldWorkspace();
+    const ids = (await workspacesNeedingInvoice(pool, period, 20)).map((w) => w.workspaceId);
     expect(ids).toContain(ws);
   });
 
   test('omits a workspace already invoiced', async () => {
-    const ws = await newWorkspace();
-    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [ws, period.start]);
+    const ws = await oldWorkspace();
     await issue(ws);
-    const ids = (await workspacesNeedingInvoice(pool, period)).map((w) => w.workspaceId);
+    const ids = (await workspacesNeedingInvoice(pool, period, 20)).map((w) => w.workspaceId);
     expect(ids).not.toContain(ws);
+  });
+
+  test('never returns more rows than the limit', async () => {
+    // Unbounded, this returns every un-invoiced workspace — measured at 11,826 rows,
+    // which the caller then walks at about eight round trips each.
+    await oldWorkspace();
+    await oldWorkspace();
+    expect(await workspacesNeedingInvoice(pool, period, 1)).toHaveLength(1);
+    expect(await workspacesNeedingInvoice(pool, period, 2)).toHaveLength(2);
+  });
+
+  test('returns the oldest workspaces first, so a bounded batch drains in order', async () => {
+    // Ordering is what makes a bounded batch make progress instead of re-reading the
+    // same head every tick.
+    const older = await oldWorkspace();
+    const newer = await oldWorkspace();
+    const ids = (await workspacesNeedingInvoice(pool, period, 50)).map((w) => w.workspaceId);
+    expect(ids).toContain(older);
+    expect(ids).toContain(newer);
+    expect(ids.indexOf(older)).toBeLessThan(ids.indexOf(newer));
   });
 
   test('omits a workspace created after the period ended', async () => {

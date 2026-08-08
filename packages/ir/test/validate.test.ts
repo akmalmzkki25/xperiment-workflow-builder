@@ -9,19 +9,19 @@ const fakeRegistry: RegistryLike = {
       'core.transform': { kind: 'logic', ports: ['main'] },
       'core.if': { kind: 'logic', ports: ['true', 'false'] },
       'core.loop': { kind: 'logic', ports: ['item', 'done'] },
+      'core.stopAndError': { kind: 'logic', ports: [] },
+    };
+    const schemas: Record<string, z.ZodTypeAny> = {
+      'core.transform': z.object({ fields: z.record(z.string(), z.unknown()) }).strict(),
+      'core.if': z.object({ condition: z.unknown() }).strict(),
+      'core.loop': z.object({ items: z.unknown() }).strict(),
+      'core.stopAndError': z.object({ message: z.string().min(1) }).strict(),
     };
     const info = table[type];
     if (!info) return undefined;
     return {
       kind: info.kind,
-      paramsSchema:
-        type === 'core.transform'
-          ? z.object({ fields: z.record(z.string(), z.unknown()) }).strict()
-          : type === 'core.if'
-            ? z.object({ condition: z.unknown() }).strict()
-            : type === 'core.loop'
-              ? z.object({ items: z.unknown() }).strict()
-              : z.object({}).strict(),
+      paramsSchema: schemas[type] ?? z.object({}).strict(),
       defaultEffectClass: 'pure' as const,
       outputPorts: info.ports,
     };
@@ -43,6 +43,7 @@ interface TestIr {
   entrypoints: string[];
   nodes: TestNode[];
   edges: { id: string; from: { nodeId: string; port: string }; to: { nodeId: string; port: string } }[];
+  metadata?: { onError?: 'fail' | 'continue' };
 }
 
 function baseIr(): TestIr {
@@ -266,5 +267,81 @@ describe('loop scopes', () => {
     });
     ir.edges.push({ id: 'e4', from: { nodeId: 'lp', port: 'item' }, to: { nodeId: 'b2', port: 'input' } });
     expect(codes(ir)).toContain('loop_body_not_single_entry');
+  });
+});
+
+describe('stop nodes', () => {
+  /** t → stop, where stop declares no output ports. */
+  function stopIr(): TestIr {
+    return {
+      schemaVersion: '0.1',
+      workflow: { id: 'wf_st', name: 'Stop' },
+      entrypoints: ['t'],
+      nodes: [
+        { id: 't', kind: 'trigger', type: 'manual.trigger', operationVersion: '0.1.0', parameters: {} },
+        {
+          id: 'stop',
+          kind: 'logic',
+          type: 'core.stopAndError',
+          operationVersion: '0.1.0',
+          parameters: { message: 'halt' },
+        },
+      ],
+      edges: [{ id: 'e1', from: { nodeId: 't', port: 'main' }, to: { nodeId: 'stop', port: 'input' } }],
+    };
+  }
+
+  const codes = (ir: TestIr) => validate(ir).findings.map((f) => f.code);
+
+  test('a plain stop node is valid', () => {
+    expect(codes(stopIr())).toEqual([]);
+  });
+
+  test('a stop node under a workflow onError continue policy is rejected at publish', () => {
+    // errorRouting would send the failure to 'main', but the node declares no ports, so
+    // nothing is downstream, readiness sees it decided, and the run reaches SUCCEEDED.
+    // The stop would silently not stop.
+    const ir = stopIr();
+    ir.metadata = { onError: 'continue' };
+    expect(codes(ir)).toContain('stop_node_cannot_continue');
+  });
+
+  test('a stop node with its own onError continue setting is rejected', () => {
+    const ir = stopIr();
+    ir.nodes = ir.nodes.map((n) => (n.id === 'stop' ? { ...n, settings: { onError: 'continue' as const } } : n));
+    expect(codes(ir)).toContain('stop_node_cannot_continue');
+  });
+
+  test('a node setting of fail overrides a continue policy on the workflow', () => {
+    const ir = stopIr();
+    ir.metadata = { onError: 'continue' };
+    ir.nodes = ir.nodes.map((n) => (n.id === 'stop' ? { ...n, settings: { onError: 'fail' as const } } : n));
+    expect(codes(ir)).not.toContain('stop_node_cannot_continue');
+  });
+
+  test('a stop node with an outgoing error edge is rejected', () => {
+    const ir = stopIr();
+    ir.nodes.push({
+      id: 'after',
+      kind: 'logic',
+      type: 'core.transform',
+      operationVersion: '0.1.0',
+      parameters: { fields: {} },
+    });
+    ir.edges.push({ id: 'e2', from: { nodeId: 'stop', port: 'error' }, to: { nodeId: 'after', port: 'input' } });
+    expect(codes(ir)).toContain('stop_node_cannot_continue');
+  });
+
+  test('an outgoing main edge is rejected by the port check, since it declares none', () => {
+    const ir = stopIr();
+    ir.nodes.push({
+      id: 'after',
+      kind: 'logic',
+      type: 'core.transform',
+      operationVersion: '0.1.0',
+      parameters: { fields: {} },
+    });
+    ir.edges.push({ id: 'e2', from: { nodeId: 'stop', port: 'main' }, to: { nodeId: 'after', port: 'input' } });
+    expect(codes(ir)).toContain('unknown_output_port');
   });
 });
