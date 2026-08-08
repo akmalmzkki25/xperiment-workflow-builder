@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  appendAuditEvent,
   appendEvent,
   casExecution,
   casNode,
@@ -20,7 +21,7 @@ import type { QuotaRefusal } from '@xperiment/db';
 import { runnableNodeIds, workflowIrSchema } from '@xperiment/ir';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { authOf, requirePermission } from '../auth/plugin.js';
+import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { hasPermission } from '../auth/permissions.js';
 import { sendProblem } from '../problem.js';
 import { redactSecrets } from './redact.js';
@@ -103,23 +104,37 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
     // Surface the resume URL for open event waits so an operator/external system
     // can discover the callback endpoint. Tokens are added deliberately here and
     // never by getExecutionDetail itself.
-    const rows = await waitsForExecution(deps.pool, id);
-    const resumeUrlByNode = new Map(
-      rows
-        .filter((w) => w.status === 'open' && w.kind === 'event' && w.resumeToken)
-        .map((w) => [w.nodeId, `${deps.gatewayUrl}/r/${w.resumeToken}`]),
-    );
+    // A resume URL is a bearer credential: POST /r/:resumeToken carries NO auth, so
+    // whoever holds it can drive the run and write that node's output. Gate it with the
+    // payloads — a viewer is denied execution:run precisely so it cannot drive a run —
+    // and audit every reveal, exactly as the trigger-secret route does.
+    const rows = canSeePayloads ? await waitsForExecution(deps.pool, id) : [];
+    const openEventWaits = rows.filter((w) => w.status === 'open' && w.kind === 'event' && w.resumeToken);
+    const resumeUrlByNode = new Map(openEventWaits.map((w) => [w.nodeId, `${deps.gatewayUrl}/r/${w.resumeToken}`]));
+    for (const w of openEventWaits) {
+      await appendAuditEvent(deps.pool, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'execution_resume.reveal',
+        targetType: 'execution',
+        targetId: id,
+        metadata: { nodeId: w.nodeId },
+      });
+    }
     const waits = detail.waits.map((w) => ({
       ...w,
       ...(resumeUrlByNode.has(w.nodeId) ? { resumeUrl: resumeUrlByNode.get(w.nodeId) } : {}),
     }));
-    const nodes = canSeePayloads
-      ? detail.nodes.map((n) => ({
-          ...n,
-          inputJson: redactSecrets(n.inputJson),
-          outputJson: redactSecrets(n.outputJson),
-        }))
-      : detail.nodes;
+    const nodes = detail.nodes.map((n) => ({
+      ...n,
+      // errorJson is returned to EVERY role and is not author-typed: an http.request
+      // failure carries the provider's full response body, and an SSRF refusal carries
+      // the raw URL including any query-string credential. Redact it regardless.
+      errorJson: redactSecrets(n.errorJson),
+      ...(canSeePayloads
+        ? { inputJson: redactSecrets(n.inputJson), outputJson: redactSecrets(n.outputJson) }
+        : {}),
+    }));
     // An explicit boolean, not the absence of a key: the UI has to be able to say
     // "payloads are visible to members who can run workflows" rather than implying the
     // node recorded nothing. Absent keys also vanish through JSON.stringify.

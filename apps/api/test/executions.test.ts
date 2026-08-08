@@ -100,6 +100,66 @@ describe('node payloads on the detail response', () => {
     const d = await operator.inject({ method: 'GET', url: `/v1/executions/${id}` });
     expect(d.json<{ payloadsVisible: boolean }>().payloadsVisible).toBe(true);
   });
+
+  test('a viewer never receives a resume URL', async () => {
+    // POST /r/:resumeToken carries NO auth, so the URL IS the credential — anyone
+    // holding it can drive the run and write that node's output. A viewer is denied
+    // execution:run precisely so it cannot do that.
+    const wf = await publishedWorkflow();
+    const r = await auth.inject({ method: 'POST', url: `/v1/workflows/${wf}/execute`, payload: {} });
+    const id = r.json<{ executionId: string }>().executionId;
+    await pool.query(
+      `INSERT INTO execution_waits (workspace_id, execution_id, node_id, attempt, kind, status, resume_token)
+       VALUES ($3, $1, 't', 1, 'event', 'open', $2)`,
+      [id, 'resume-token-secret-abc', auth.workspaceId],
+    );
+
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    const asViewer = await viewer.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    expect(JSON.stringify(asViewer.json())).not.toContain('resume-token-secret-abc');
+    for (const w of asViewer.json<{ waits: Record<string, unknown>[] }>().waits) {
+      expect(Object.keys(w)).not.toContain('resumeUrl');
+    }
+
+    // An operator still gets it — the capability is gated, not removed.
+    const asOwner = await auth.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    const wait = asOwner.json<{ waits: { resumeUrl?: string }[] }>().waits.find((w) => w.resumeUrl);
+    expect(wait?.resumeUrl).toContain('resume-token-secret-abc');
+  });
+
+  test('revealing a resume URL is audited', async () => {
+    // The trigger-secret route audits every reveal on the grounds that handing out a
+    // secret transfers a capability. This one transfers the same kind.
+    const wf = await publishedWorkflow();
+    const r = await auth.inject({ method: 'POST', url: `/v1/workflows/${wf}/execute`, payload: {} });
+    const id = r.json<{ executionId: string }>().executionId;
+    await pool.query(
+      `INSERT INTO execution_waits (workspace_id, execution_id, node_id, attempt, kind, status, resume_token)
+       VALUES ($3, $1, 't', 1, 'event', 'open', $2)`,
+      [id, 'audited-token-xyz', auth.workspaceId],
+    );
+    await auth.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    const audit = await pool.query(
+      `SELECT action, target_id FROM audit_events WHERE action = 'execution_resume.reveal' AND target_id = $1`,
+      [id],
+    );
+    expect(audit.rowCount).toBeGreaterThanOrEqual(1);
+  });
+
+  test('an error payload is redacted for every role, not just for payload readers', async () => {
+    // errorJson goes to everyone: an http.request failure carries the provider's full
+    // response body, and an SSRF refusal carries the raw URL with its query string.
+    const wf = await publishedWorkflow();
+    const r = await auth.inject({ method: 'POST', url: `/v1/workflows/${wf}/execute`, payload: {} });
+    const id = r.json<{ executionId: string }>().executionId;
+    await pool.query(
+      `UPDATE execution_nodes SET status = 'FAILED', error_json = $2 WHERE execution_id = $1 AND node_id = 't'`,
+      [id, JSON.stringify({ code: 'http_error', details: { body: { access_token: 'leaked-abc-123' } } })],
+    );
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    const d = await viewer.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    expect(JSON.stringify(d.json())).not.toContain('leaked-abc-123');
+  });
 });
 
 describe('execute and inspect', () => {

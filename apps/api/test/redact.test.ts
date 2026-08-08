@@ -56,9 +56,41 @@ describe('redactSecrets', () => {
     expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
   });
 
-  test('stops at the depth cap instead of recursing forever', () => {
-    let deep: Record<string, unknown> = { token: 'leaf' };
+  test('blanks everything past the depth cap rather than returning it in the clear', () => {
+    // Returning the raw subtree at the cap would defeat the redaction: a secret at
+    // depth 9 would come back untouched, and ten levels is ordinary for a GraphQL or
+    // Google API response landing in output_json.
+    let deep: Record<string, unknown> = { token: 'sk-live-DEEP', apiKey: 'k-DEEP' };
     for (let i = 0; i < 40; i += 1) deep = { level: deep };
-    expect(() => redactSecrets(deep)).not.toThrow();
+    const out = redactSecrets(deep);
+    expect(JSON.stringify(out)).not.toContain('sk-live-DEEP');
+    expect(JSON.stringify(out)).not.toContain('k-DEEP');
+  });
+
+  test('a secret just below the cap is still blanked', () => {
+    let deep: Record<string, unknown> = { token: 'sk-live-9' };
+    for (let i = 0; i < 9; i += 1) deep = { level: deep };
+    expect(JSON.stringify(redactSecrets(deep))).not.toContain('sk-live-9');
+  });
+
+  test('covers the header names webhook providers actually invent', () => {
+    // The gateway stores every header it does not explicitly strip, and webhook.trigger
+    // returns that payload verbatim as its output_json — so an exhaustive list would
+    // always be one provider behind.
+    const headers = {
+      'x-telegram-bot-api-secret-token': 'a',
+      'x-goog-api-key': 'b',
+      'x-amz-security-token': 'c',
+      'x-hub-signature-256': 'd',
+      sessionToken: 'e',
+      webhook_secret: 'f',
+      privateKeyPem: 'g',
+      assertion: 'h',
+      credential: 'i',
+      auth: 'j',
+    };
+    for (const [key, value] of Object.entries(redactSecrets(headers) as Record<string, unknown>)) {
+      expect(value, key).toBe(REDACTED);
+    }
   });
 });

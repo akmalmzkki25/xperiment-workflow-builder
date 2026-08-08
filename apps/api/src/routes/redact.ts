@@ -6,12 +6,18 @@ export const REDACTED = '[redacted]';
  */
 const SECRET_KEY = new RegExp(
   '^(?:' +
-    'authorization|proxy-authorization|cookie|set-cookie|' +
+    'authorization|proxy-authorization|cookie|set-cookie|auth|bearer|' +
+    // Any x-*-token / x-*-key / x-*-secret / x-*-signature header. Webhook providers
+    // invent these freely — x-goog-api-key, x-amz-security-token,
+    // x-telegram-bot-api-secret-token — and the gateway stores every header it does not
+    // explicitly strip, so an exhaustive list would always be one provider behind.
+    'x-(?:[a-z0-9-]*-)?(?:token|key|secret|signature)(?:-[a-z0-9]+)*|' +
     'x-api-key|api[_-]?key|apikey|' +
-    'access[_-]?token|refresh[_-]?token|id[_-]?token|bot[_-]?token|' +
-    'server[_-]?key|secret[_-]?key|private[_-]?key|' +
-    'token|secret|client[_-]?secret|' +
-    'password|passwd|pwd|' +
+    '[a-z]*[_-]?(?:access|refresh|id|bot|session|resume)[_-]?token|' +
+    '(?:server|secret|private|public|signing|webhook)[_-]?key(?:[_-]?pem)?|' +
+    'token|secret|client[_-]?secret|webhook[_-]?secret|' +
+    'password|passwd|pwd|passphrase|' +
+    'assertion|credential|credentials|' +
     'connection[_-]?string|dsn|signature' +
     ')$',
   'i',
@@ -22,14 +28,21 @@ const MAX_DEPTH = 8;
 /**
  * Blanks the VALUE wherever the KEY looks like a credential.
  *
- * This is defence in depth, not a guarantee, and the distinction matters: a token
- * concatenated into a URL string, or one sitting under a key nobody thought to name,
- * passes straight through. The real protection is that decrypted connection payloads
- * are never persisted — they travel as `ctx.connection` and are dropped after the run,
- * so what lands in `input_json` is only what the author typed into a parameter.
+ * Defence in depth, not a guarantee, and the distinction matters. Known to pass through:
+ * a token concatenated into a URL string (`?api_key=…`), a credential sitting in an array
+ * element rather than an object value, and any key nobody thought to name.
+ *
+ * The one guarantee that IS load-bearing: a decrypted connection payload can never reach
+ * `input_json` or `output_json`. It travels as `ctx.connection` into `def.run()` and is
+ * never written by any `casNode` patch. What DOES land in `input_json` is not merely
+ * author-typed text — `resolveTemplate` returns whole evaluated values, so a parameter of
+ * `{{ trigger.body }}` writes the entire webhook payload there.
  */
 export function redactSecrets(value: unknown, depth = 0): unknown {
-  if (depth > MAX_DEPTH) return value;
+  // Blank, not pass through. Returning the raw subtree past the cap would defeat the
+  // redaction this function exists to perform — a secret at depth 9 would be in the
+  // clear, and ten levels is ordinary for a GraphQL or Google API response.
+  if (depth > MAX_DEPTH) return REDACTED;
   if (Array.isArray(value)) return value.map((v) => redactSecrets(v, depth + 1));
   if (value === null || typeof value !== 'object') return value;
 
