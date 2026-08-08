@@ -32,8 +32,17 @@ export function evaluate(ast: Ast, ctx: ExpressionContext): unknown {
       if (!fn) throw new ExpressionEvalError(`Unknown function '${ast.name}'`);
       return fn(ast.args.map((a) => evaluate(a, ctx)));
     }
-    case 'unary':
-      return !truthy(evaluate(ast.operand, ctx));
+    case 'unary': {
+      const v = evaluate(ast.operand, ctx);
+      if (ast.op === '!') return !truthy(v);
+      if (typeof v !== 'number') {
+        throw new ExpressionEvalError(`Unary '-' requires a number, got ${typeof v}`);
+      }
+      return finite(-v);
+    }
+    case 'cond':
+      // Only the taken branch is evaluated, so `x != null ? x.y : 'none'` is safe.
+      return truthy(evaluate(ast.test, ctx)) ? evaluate(ast.consequent, ctx) : evaluate(ast.alternate, ctx);
     case 'binary': {
       if (ast.op === '&&') {
         const l = evaluate(ast.left, ctx);
@@ -49,15 +58,63 @@ export function evaluate(ast: Ast, ctx: ExpressionContext): unknown {
       }
       const l = evaluate(ast.left, ctx);
       const r = evaluate(ast.right, ctx);
-      if (ast.op === '==') return l === r;
-      if (ast.op === '!=') return l !== r;
-      if (typeof l === 'number' && typeof r === 'number') return compare(ast.op, l, r);
-      if (typeof l === 'string' && typeof r === 'string') return compare(ast.op, l, r);
-      throw new ExpressionEvalError(
-        `Operator '${ast.op}' requires two numbers or two strings, got ${typeof l} and ${typeof r}`,
-      );
+      switch (ast.op) {
+        case '==':
+          return l === r;
+        case '!=':
+          return l !== r;
+        case '+':
+          // Two strings concatenate; two numbers add. A mixed pair throws rather than
+          // coercing, so there is exactly one story: convert it yourself.
+          if (typeof l === 'string' && typeof r === 'string') return l + r;
+          return arith('+', l, r);
+        case '-':
+        case '*':
+        case '/':
+        case '%':
+          return arith(ast.op, l, r);
+        default:
+          if (typeof l === 'number' && typeof r === 'number') return compare(ast.op, l, r);
+          if (typeof l === 'string' && typeof r === 'string') return compare(ast.op, l, r);
+          throw new ExpressionEvalError(
+            `Operator '${ast.op}' requires two numbers or two strings, got ${typeof l} and ${typeof r}`,
+          );
+      }
     }
   }
+}
+
+type ArithOp = '+' | '-' | '*' | '/' | '%';
+
+function arith(op: ArithOp, l: unknown, r: unknown): number {
+  if (typeof l !== 'number' || typeof r !== 'number') {
+    const shape = op === '+' ? 'two numbers or two strings' : 'two numbers';
+    throw new ExpressionEvalError(`Operator '${op}' requires ${shape}, got ${typeof l} and ${typeof r}`);
+  }
+  if ((op === '/' || op === '%') && r === 0) {
+    throw new ExpressionEvalError(op === '/' ? 'Division by zero' : 'Modulo by zero');
+  }
+  switch (op) {
+    case '+':
+      return finite(l + r);
+    case '-':
+      return finite(l - r);
+    case '*':
+      return finite(l * r);
+    case '/':
+      return finite(l / r);
+    case '%':
+      return finite(l % r);
+  }
+}
+
+/**
+ * Keeps NaN and +/-Infinity out of the value space. JSON.stringify(Infinity) is null,
+ * so a non-finite value would corrupt a stored output payload silently.
+ */
+function finite(n: number): number {
+  if (!Number.isFinite(n)) throw new ExpressionEvalError('Arithmetic overflow');
+  return n;
 }
 
 function compare(op: '<' | '<=' | '>' | '>=', l: number | string, r: number | string): boolean {

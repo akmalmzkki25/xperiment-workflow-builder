@@ -37,7 +37,9 @@ export const FUNCTIONS: Record<string, Fn> = {
   toNumber: (args) => {
     requireArity('toNumber', args, 1);
     const n = Number(args[0]);
-    if (Number.isNaN(n)) throw new ExpressionEvalError('toNumber() could not convert value to a number');
+    // Finite, not merely non-NaN: Number('1e999') is Infinity, and letting that through
+    // would reintroduce the value the arithmetic guards exist to keep out.
+    if (!Number.isFinite(n)) throw new ExpressionEvalError('toNumber() could not convert value to a finite number');
     return n;
   },
   toString: (args: unknown[]) => {

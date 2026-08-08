@@ -7,7 +7,33 @@ export interface Token {
   pos: number;
 }
 
-const PUNCT = ['==', '!=', '<=', '>=', '&&', '||', '??', '(', ')', '[', ']', '.', ',', '<', '>', '!'];
+// Two-character sequences are matched before single characters below, which is what
+// keeps '??' from being read as two '?' tokens.
+const PUNCT = [
+  '==',
+  '!=',
+  '<=',
+  '>=',
+  '&&',
+  '||',
+  '??',
+  '(',
+  ')',
+  '[',
+  ']',
+  '.',
+  ',',
+  '<',
+  '>',
+  '!',
+  '+',
+  '-',
+  '*',
+  '/',
+  '%',
+  '?',
+  ':',
+];
 
 export function tokenize(src: string): Token[] {
   const tokens: Token[] = [];

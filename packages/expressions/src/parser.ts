@@ -27,7 +27,7 @@ class Parser {
   }
 
   parse(): Ast {
-    const ast = this.nullish();
+    const ast = this.conditional();
     const t = this.peek();
     if (t.kind !== 'eof') throw new ExpressionParseError(`Unexpected '${t.value}'`, t.pos);
     return ast;
@@ -40,6 +40,16 @@ class Parser {
       left = { type: 'binary', op, left, right: nextLevel() };
     }
     return left;
+  }
+
+  /** Loosest level, and right-associative: `a ? b : c ? d : e` groups to the right. */
+  private conditional(): Ast {
+    const test = this.nullish();
+    if (!this.atPunct('?')) return test;
+    this.next();
+    const consequent = this.conditional();
+    this.expectPunct(':');
+    return { type: 'cond', test, consequent, alternate: this.conditional() };
   }
 
   private nullish(): Ast {
@@ -55,13 +65,23 @@ class Parser {
     return this.binaryLevel(['==', '!='], () => this.relational());
   }
   private relational(): Ast {
-    return this.binaryLevel(['<', '<=', '>', '>='], () => this.unary());
+    return this.binaryLevel(['<', '<=', '>', '>='], () => this.additive());
+  }
+  private additive(): Ast {
+    return this.binaryLevel(['+', '-'], () => this.multiplicative());
+  }
+  private multiplicative(): Ast {
+    return this.binaryLevel(['*', '/', '%'], () => this.unary());
   }
 
   private unary(): Ast {
     if (this.atPunct('!')) {
       this.next();
       return { type: 'unary', op: '!', operand: this.unary() };
+    }
+    if (this.atPunct('-')) {
+      this.next();
+      return { type: 'unary', op: '-', operand: this.unary() };
     }
     return this.primary();
   }
@@ -78,7 +98,8 @@ class Parser {
     }
     if (t.kind === 'punct' && t.value === '(') {
       this.next();
-      const inner = this.nullish();
+      // conditional(), not nullish(): a parenthesised ternary must parse.
+      const inner = this.conditional();
       this.expectPunct(')');
       return inner;
     }
@@ -99,10 +120,11 @@ class Parser {
         this.expectPunct('(');
         const args: Ast[] = [];
         if (!this.atPunct(')')) {
-          args.push(this.nullish());
+          // conditional() so a ternary can be passed as an argument.
+          args.push(this.conditional());
           while (this.atPunct(',')) {
             this.next();
-            args.push(this.nullish());
+            args.push(this.conditional());
           }
         }
         this.expectPunct(')');
@@ -127,10 +149,21 @@ class Parser {
       } else if (this.atPunct('[')) {
         this.next();
         const t = this.next();
-        if (t.kind !== 'string') throw new ExpressionParseError('Expected string key in brackets', t.pos);
-        this.assertAllowedIdent(t.value, t.pos);
+        if (t.kind === 'number') {
+          // Literal whole-number indices only. A dynamic index would put an Ast into a
+          // value position, and the closed value space is what lets an unknown function
+          // stay a *parse* error — which is what the IR validator relies on.
+          if (!/^[0-9]+$/.test(t.value)) {
+            throw new ExpressionParseError('Array index must be a whole number', t.pos);
+          }
+          parts.push(t.value);
+        } else if (t.kind === 'string') {
+          this.assertAllowedIdent(t.value, t.pos);
+          parts.push(t.value);
+        } else {
+          throw new ExpressionParseError('Expected a string key or a whole-number index in brackets', t.pos);
+        }
         this.expectPunct(']');
-        parts.push(t.value);
       } else {
         break;
       }

@@ -64,4 +64,75 @@ describe('evaluate', () => {
     expect(() => run('length(trigger.body.vip)')).toThrow(ExpressionEvalError);
     expect(() => run('lower()')).toThrow(ExpressionEvalError);
   });
+
+  test('arithmetic on two numbers', () => {
+    expect(run('2 + 3')).toBe(5);
+    expect(run('10 - 4')).toBe(6);
+    expect(run('3 * 4')).toBe(12);
+    expect(run('10 / 4')).toBe(2.5);
+    expect(run('10 % 3')).toBe(1);
+    // The motivating case: 11% VAT on an order total.
+    expect(run('trigger.body.total * 1.11')).toBeCloseTo(166.5, 10);
+  });
+
+  test('plus concatenates two strings and refuses mixed operands', () => {
+    expect(run("'a' + 'b'")).toBe('ab');
+    expect(run("trigger.body.name + '!'")).toBe('Budi!');
+    expect(() => run('trigger.body.name + 1')).toThrow(ExpressionEvalError);
+    expect(() => run('1 + trigger.body.name')).toThrow(ExpressionEvalError);
+  });
+
+  test('minus, times, divide and modulo require two numbers', () => {
+    expect(() => run("'a' - 'b'")).toThrow(ExpressionEvalError);
+    expect(() => run("'a' * 2")).toThrow(ExpressionEvalError);
+    expect(() => run('trigger.body.vip / 2')).toThrow(ExpressionEvalError);
+    expect(() => run('trigger.body.missing % 2')).toThrow(ExpressionEvalError);
+  });
+
+  test('division and modulo by zero throw rather than yielding Infinity or NaN', () => {
+    expect(() => run('1 / 0')).toThrow(ExpressionEvalError);
+    expect(() => run('0 / 0')).toThrow(ExpressionEvalError);
+    expect(() => run('1 % 0')).toThrow(ExpressionEvalError);
+  });
+
+  test('arithmetic overflow throws rather than yielding Infinity', () => {
+    // JSON.stringify(Infinity) is null, so a non-finite value would corrupt an
+    // output payload silently. It must never enter the value space.
+    const oneE308 = `1${'0'.repeat(308)}`;
+    expect(run(oneE308)).toBe(1e308);
+    expect(() => run(`${oneE308} * 10`)).toThrow(ExpressionEvalError);
+  });
+
+  test('modulo follows the dividend sign', () => {
+    expect(run('-7 % 3')).toBe(-1);
+    expect(run('7 % -3')).toBe(1);
+  });
+
+  test('unary minus negates numbers and refuses everything else', () => {
+    expect(run('-trigger.body.total')).toBe(-150);
+    expect(run('0 - -5')).toBe(5);
+    expect(() => run('-trigger.body.name')).toThrow(ExpressionEvalError);
+    expect(() => run('-trigger.body.vip')).toThrow(ExpressionEvalError);
+  });
+
+  test('ternary picks a branch by truthiness and evaluates only that branch', () => {
+    expect(run("trigger.body.vip ? 'gold' : 'basic'")).toBe('gold');
+    expect(run("nodes.check.output.exists ? 'yes' : 'no'")).toBe('no');
+    // The untaken branch is never evaluated, so this would-be type error is harmless.
+    expect(run('trigger.body.vip ? 1 : trigger.body.name - 1')).toBe(1);
+    expect(run('nodes.check.output.exists ? trigger.body.name - 1 : 2')).toBe(2);
+  });
+
+  test('numeric index reads an array element and is null out of range', () => {
+    expect(run('trigger.body.tags[0]')).toBe('a');
+    expect(run('trigger.body.tags[1]')).toBe('b');
+    expect(run('trigger.body.tags[9]')).toBeNull();
+    expect(run('length(trigger.body.tags[0])')).toBe(1);
+  });
+
+  test('toNumber refuses a value that is not finite', () => {
+    expect(() => run("toNumber('1e999')")).toThrow(ExpressionEvalError);
+    expect(() => run("toNumber('Infinity')")).toThrow(ExpressionEvalError);
+    expect(run("toNumber('42')")).toBe(42);
+  });
 });
