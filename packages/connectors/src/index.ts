@@ -15,6 +15,7 @@ export { coreFilter } from './core/filter.js';
 export { coreSort } from './core/sort.js';
 export { coreLimit } from './core/limit.js';
 export { coreAggregate, MAX_GROUPS } from './core/aggregate.js';
+export { coreSplitBatch, MAX_BATCHES } from './core/splitBatch.js';
 export { compareValues, readField, applyOp, FILTER_OPS, MAX_ITEMS, type FilterOp } from './core/compare.js';
 export { coreDelay } from './core/delay.js';
 export { coreWaitForEvent } from './core/waitForEvent.js';
