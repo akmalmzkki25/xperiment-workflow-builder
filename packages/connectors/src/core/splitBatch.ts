@@ -1,8 +1,12 @@
 import { z } from 'zod';
 import { NodeRunError, type ConnectorDefinition } from '../types.js';
-import { assertItems } from './compare.js';
+import { assertItems, assertOutputSize } from './compare.js';
 
-/** Keeps the emitted payload well inside the 256 KiB node cap. */
+/**
+ * Bounds the batch COUNT, not the payload — the payload is bounded by MAX_ITEMS times
+ * the item size, plus two bytes of brackets per batch. This node re-emits a full copy of
+ * its input, so `assertOutputSize` below is what actually holds it under the node cap.
+ */
 export const MAX_BATCHES = 1000;
 
 const paramsSchema = z
@@ -58,9 +62,11 @@ export const coreSplitBatch: ConnectorDefinition = {
     const batches: unknown[][] = [];
     for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size));
 
-    return {
-      output: { batches, batchCount: batches.length, itemCount: items.length, batchSize: size },
-      outputPort: batches.length === 0 ? 'empty' : 'main',
-    };
+    const output = { batches, batchCount: batches.length, itemCount: items.length, batchSize: size };
+    // This node re-emits a full copy of its input plus bracket overhead per batch, so an
+    // upstream list close to the cap lands over it. Fail with a code the author can map
+    // back to "your batch size was too small", not the DB layer's payload_too_large.
+    assertOutputSize('core.splitBatch', output);
+    return { output, outputPort: batches.length === 0 ? 'empty' : 'main' };
   },
 };
