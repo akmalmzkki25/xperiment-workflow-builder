@@ -14,6 +14,16 @@ import {
 } from 'reactflow';
 import { getBrowserClient, type ConnectorItem, type Finding } from '../../lib/api';
 import {
+  canRedo,
+  canUndo,
+  emptyHistory,
+  nodeChangeVerdict,
+  pushSnapshot,
+  redo,
+  undo,
+  type History,
+} from '../../lib/history';
+import {
   canvasToDefinition,
   definitionToCanvas,
   edgeId,
@@ -28,6 +38,7 @@ import { runStatusByNode } from '../../lib/runStatus';
 import { defaultParams } from '../../lib/schemaForm';
 import { useEditorStore } from '../../stores/editorStore';
 import { ActionBar } from './ActionBar';
+import { useEditorHotkeys } from './useEditorHotkeys';
 import { RunBanner } from './RunBanner';
 import { AiDock } from './AiDock';
 import { Canvas } from './Canvas';
@@ -36,6 +47,16 @@ import { Inspector } from './Inspector';
 import { NodeLibrary } from './NodeLibrary';
 
 type FlowNode = Node<{ ir: IRNodeData }>;
+/**
+ * One point on the undo trail.
+ *
+ * The arrays are stored by reference, not cloned: React Flow replaces them immutably
+ * on every change, so yesterday's array is still yesterday's canvas.
+ */
+interface CanvasSnapshot {
+  nodes: FlowNode[];
+  edges: Edge[];
+}
 
 const TERMINAL_RUN_STATUS = new Set(['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED']);
 /** An approval or a long timer never terminates; stop watching rather than poll forever. */
@@ -50,8 +71,27 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [runExecutionId, setRunExecutionId] = useState<string | null>(null);
   const [watchStartedAt, setWatchStartedAt] = useState<number | null>(null);
+  const [history, setHistory] = useState<History<CanvasSnapshot>>(emptyHistory<CanvasSnapshot>);
+  const [saveSignal, setSaveSignal] = useState(0);
   const initializedRef = useRef(false);
   const previousDefinitionRef = useRef<unknown>({});
+  /** True between a drag's first moved frame and its last, so one gesture is one entry. */
+  const draggingRef = useRef(false);
+
+  // Last COMMITTED canvas. Effects run after commit, so inside an event handler these
+  // hold the state as it was before the edit being handled — exactly what to snapshot.
+  const nodesRef = useRef<FlowNode[]>([]);
+  const edgesRef = useRef<Edge[]>([]);
+  const historyRef = useRef(history);
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+    historyRef.current = history;
+  });
+
+  const recordEdit = useCallback(() => {
+    setHistory((h) => pushSnapshot(h, { nodes: nodesRef.current, edges: edgesRef.current }));
+  }, []);
 
   const workflowQ = useQuery({
     queryKey: ['workflow', workflowId],
@@ -62,6 +102,12 @@ function EditorInner({ workflowId }: { workflowId: string }) {
 
   useEffect(() => {
     reset();
+    // The undo trail is per workflow. Without this it would survive a switch and let
+    // Ctrl+Z paste the previous workflow's canvas over this one. `initializedRef` is
+    // cleared for the same reason — otherwise the new workflow's draft never loads.
+    setHistory(emptyHistory<CanvasSnapshot>());
+    draggingRef.current = false;
+    initializedRef.current = false;
     return () => reset();
   }, [reset, workflowId]);
 
@@ -147,19 +193,60 @@ function EditorInner({ workflowId }: { workflowId: string }) {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      const verdict = nodeChangeVerdict(changes, draggingRef.current);
+      // Snapshot BEFORE applying, so undo restores the canvas as it stood.
+      if (verdict.push) recordEdit();
+      draggingRef.current = verdict.gesture;
       onNodesChangeBase(changes);
       if (changes.some((c) => c.type === 'position' || c.type === 'remove' || c.type === 'add')) markDirty();
       if (changes.some((c) => c.type === 'remove' && c.id === selectedNodeId)) select(null);
     },
-    [onNodesChangeBase, markDirty, select, selectedNodeId],
+    [onNodesChangeBase, markDirty, select, selectedNodeId, recordEdit],
   );
 
   const onEdgesChange = useCallback(
     (changes: Parameters<typeof onEdgesChangeBase>[0]) => {
+      if (changes.some((c) => c.type === 'remove' || c.type === 'add')) recordEdit();
       onEdgesChangeBase(changes);
       if (changes.some((c) => c.type === 'remove' || c.type === 'add')) markDirty();
     },
-    [onEdgesChangeBase, markDirty],
+    [onEdgesChangeBase, markDirty, recordEdit],
+  );
+
+  const applyStep = useCallback(
+    (step: { history: History<CanvasSnapshot>; restored: CanvasSnapshot } | null) => {
+      if (!step) return;
+      setHistory(step.history);
+      setNodes(step.restored.nodes);
+      setEdges(step.restored.edges);
+      // A selection pointing at a node this step removed would leave the Inspector
+      // rendering a node that is no longer on the canvas.
+      const current = useEditorStore.getState().selectedNodeId;
+      if (current && !step.restored.nodes.some((n) => n.id === current)) select(null);
+      markDirty();
+    },
+    [setNodes, setEdges, select, markDirty],
+  );
+
+  const onUndo = useCallback(() => {
+    applyStep(undo(historyRef.current, { nodes: nodesRef.current, edges: edgesRef.current }));
+  }, [applyStep]);
+
+  const onRedo = useCallback(() => {
+    applyStep(redo(historyRef.current, { nodes: nodesRef.current, edges: edgesRef.current }));
+  }, [applyStep]);
+
+  useEditorHotkeys(
+    useCallback(
+      (action) => {
+        if (action === 'undo') onUndo();
+        else if (action === 'redo') onRedo();
+        else if (action === 'save') setSaveSignal((n) => n + 1);
+        // The palette has no search field until B6; opening it is the useful half now.
+        else if (action === 'search') setLibraryOpen(true);
+      },
+      [onUndo, onRedo, setLibraryOpen],
+    ),
   );
 
   const onConnect = useCallback(
@@ -171,6 +258,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
         (e) => e.source === connection.source && (e.sourceHandle ?? 'main') === sourceHandle && e.target === connection.target,
       );
       if (duplicate) return;
+      recordEdit();
       setEdges((prev) => [
         ...prev,
         {
@@ -183,7 +271,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
       ]);
       markDirty();
     },
-    [edges, setEdges, markDirty],
+    [edges, setEdges, markDirty, recordEdit],
   );
 
   const addNodeFromItem = useCallback(
@@ -194,19 +282,21 @@ function EditorInner({ workflowId }: { workflowId: string }) {
       );
       const position = { x: 120 + nodes.length * 320, y: 160 + (nodes.length % 2) * 60 };
       const node = makeNode(item, id, position, defaultParams(item.paramsJsonSchema));
+      recordEdit();
       setNodes((prev) => [...prev, node as FlowNode]);
       select(id);
       markDirty();
     },
-    [nodes, setNodes, select, markDirty],
+    [nodes, setNodes, select, markDirty, recordEdit],
   );
 
   const updateIr = useCallback(
     (nodeId: string, patch: (ir: IRNodeData) => IRNodeData) => {
+      recordEdit();
       setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, data: { ir: patch(n.data.ir) } } : n)));
       markDirty();
     },
-    [setNodes, markDirty],
+    [setNodes, markDirty, recordEdit],
   );
 
   const onCommitParam = useCallback(
@@ -242,6 +332,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
 
   const onRename = useCallback(
     (oldId: string, newId: string) => {
+      recordEdit();
       setNodes((prev) =>
         prev.map((n) => (n.id === oldId ? { ...n, id: newId, data: { ir: { ...n.data.ir, id: newId } } } : n)),
       );
@@ -250,21 +341,24 @@ function EditorInner({ workflowId }: { workflowId: string }) {
       select(newId);
       markDirty();
     },
-    [setNodes, setEdges, select, markDirty],
+    [setNodes, setEdges, select, markDirty, recordEdit],
   );
 
   const onDelete = useCallback(
     (nodeId: string) => {
+      recordEdit();
       setNodes((prev) => prev.filter((n) => n.id !== nodeId));
       setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
       select(null);
       markDirty();
     },
-    [setNodes, setEdges, select, markDirty],
+    [setNodes, setEdges, select, markDirty, recordEdit],
   );
 
   const applyDefinition = useCallback(
     (ir: unknown) => {
+      // Applying an AI draft replaces the whole graph — the one edit most worth undoing.
+      recordEdit();
       const canvas = definitionToCanvas(ir);
       // Preserve the user's arrangement for any node the AI kept — the model's
       // IR usually omits metadata.layout, which would otherwise flatten the graph.
@@ -281,7 +375,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
       setAiOpen(false);
       if (canvas.nodes.length > 0) setTimeout(() => void flow.fitView({ padding: 0.3, maxZoom: 1 }), 80);
     },
-    [setNodes, setEdges, select, markDirty, flow],
+    [setNodes, setEdges, select, markDirty, flow, recordEdit],
   );
 
   if (workflowQ.isLoading || catalogQ.isLoading) {
@@ -311,6 +405,11 @@ function EditorInner({ workflowId }: { workflowId: string }) {
           findings={findings}
           setFindings={setFindings}
           nodeCount={nodes.length}
+          saveSignal={saveSignal}
+          canUndo={canUndo(history)}
+          canRedo={canRedo(history)}
+          onUndo={onUndo}
+          onRedo={onRedo}
           onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
           onToggleAi={() => setAiOpen((v) => !v)}
           onRunStarted={(executionId) => {

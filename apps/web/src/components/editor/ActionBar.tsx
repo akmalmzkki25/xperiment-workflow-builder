@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, getBrowserClient, type Finding, type TriggerView, type WorkflowDetail } from '../../lib/api';
 import { useEditorStore } from '../../stores/editorStore';
 import { LiveChip, StatusChip } from '../ui/StatusChip';
@@ -17,6 +17,12 @@ interface ActionBarProps {
   findings: Finding[];
   setFindings: (findings: Finding[]) => void;
   nodeCount: number;
+  /** Increments when Ctrl+S is pressed; the value itself carries no meaning. */
+  saveSignal: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onToggleLibrary: () => void;
   onToggleAi: () => void;
   onRunStarted: (executionId: string) => void;
@@ -33,6 +39,11 @@ export function ActionBar({
   findings,
   setFindings,
   nodeCount,
+  saveSignal,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onToggleLibrary,
   onToggleAi,
   onRunStarted,
@@ -150,6 +161,23 @@ export function ActionBar({
     deactivate.isPending ||
     run.isPending;
 
+  const triggerSave = useCallback(() => {
+    if (busy || !dirty || saveInFlight.current) return;
+    saveInFlight.current = true;
+    save.mutate();
+  }, [busy, dirty, save]);
+
+  // The keystroke has to go through the same guards as the button, so it reads the
+  // latest closure through a ref rather than sitting in the effect's dependencies —
+  // listing triggerSave there would re-fire the save every time `busy` flipped.
+  const triggerSaveRef = useRef(triggerSave);
+  useEffect(() => {
+    triggerSaveRef.current = triggerSave;
+  });
+  useEffect(() => {
+    if (saveSignal > 0) triggerSaveRef.current();
+  }, [saveSignal]);
+
   return (
     <>
       <div className="q-editor-head">
@@ -163,6 +191,26 @@ export function ActionBar({
           </span>
         ) : null}
         <span className="q-editor-head__spacer" />
+        <button
+          className="q-btn q-btn--ghost q-btn--sm"
+          disabled={!canUndo}
+          onClick={onUndo}
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo"
+          data-testid="action-undo"
+        >
+          ↶
+        </button>
+        <button
+          className="q-btn q-btn--ghost q-btn--sm"
+          disabled={!canRedo}
+          onClick={onRedo}
+          title="Redo (Ctrl+Shift+Z)"
+          aria-label="Redo"
+          data-testid="action-redo"
+        >
+          ↷
+        </button>
         <button className="q-btn q-btn--live q-btn--sm" onClick={onToggleAi} data-testid="ai-open">
           ✦ AI
         </button>
@@ -172,11 +220,8 @@ export function ActionBar({
         <button
           className="q-btn q-btn--sm"
           disabled={busy || !dirty}
-          onClick={() => {
-            if (saveInFlight.current) return;
-            saveInFlight.current = true;
-            save.mutate();
-          }}
+          onClick={triggerSave}
+          title="Save draft (Ctrl+S)"
           data-testid="action-save"
         >
           Save draft

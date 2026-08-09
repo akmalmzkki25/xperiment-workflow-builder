@@ -69,7 +69,18 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   await expect(page.getByTestId('node-shape_lead')).toBeVisible();
   await expect(page.locator('.react-flow__edge')).toHaveCount(1);
 
-  await page.getByTestId('action-save').click();
+  // Undo the rename with the button, redo it with the keyboard. The edge must survive
+  // both: a rename rewrites edge ids, so a history entry that snapshotted only nodes
+  // would come back with the edge pointing at a node that no longer exists.
+  await page.getByTestId('action-undo').click();
+  await expect(page.getByTestId('node-core_transform')).toBeVisible();
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(page.getByTestId('node-shape_lead')).toBeVisible();
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1);
+
+  // Ctrl+S runs the same guarded save the button does.
+  await page.keyboard.press('Control+s');
   await expect(page.getByTestId('editor-banner')).toContainText('Draft saved');
   await page.getByTestId('action-validate').click();
   await expect(page.getByTestId('editor-banner')).toContainText('Draft is valid');
@@ -104,7 +115,9 @@ test('a webhook fire appears in executions with a green timeline', async ({ page
   // The owner may run workflows, so payloads are offered — but only fetched when the
   // panel is actually opened. Asserting the body appears only after the click is what
   // proves the detail poll is not carrying it.
-  const panel = page.getByTestId('payload-shape_lead-1');
+  // webhook.trigger returns ctx.triggerBody as its output, so the posted name is what
+  // lands in this node's recorded payload.
+  const panel = page.getByTestId('payload-webhook_trigger-1');
   await expect(panel).toBeVisible();
   await expect(panel).not.toContainText('Budi');
   await panel.getByText('Data in and out').click();
