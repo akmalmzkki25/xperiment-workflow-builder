@@ -338,6 +338,10 @@ export class ApiClient {
     return this.request('GET', `/v1/workflows/${id}/triggers`);
   }
 
+  listTriggerSamples(id: string, nodeId: string): Promise<{ samples: unknown[] }> {
+    return this.request('GET', `/v1/workflows/${id}/triggers/${encodeURIComponent(nodeId)}/samples`);
+  }
+
   execute(id: string): Promise<{ executionId: string; status: string; created: boolean }> {
     return this.request('POST', `/v1/workflows/${id}/execute`);
   }

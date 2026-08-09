@@ -1,20 +1,37 @@
 'use client';
 
-import type { TriggerView } from '../../lib/api';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { getBrowserClient, type TriggerView } from '../../lib/api';
+import { expressionPaths } from '../../lib/samplePaths';
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   return (
     <button
       className="q-btn q-btn--ghost q-btn--sm"
       type="button"
-      onClick={() => void navigator.clipboard.writeText(value).catch(() => undefined)}
+      onClick={() => void navigator.clipboard?.writeText(value)?.catch(() => undefined)}
     >
       Copy {label}
     </button>
   );
 }
 
-export function TriggerPanel({ triggers, showSecrets }: { triggers: TriggerView[]; showSecrets: boolean }) {
+interface TriggerPanelProps {
+  workflowId: string;
+  triggers: TriggerView[];
+  showSecrets: boolean;
+  loading?: boolean;
+}
+
+export function TriggerPanel({ workflowId, triggers, showSecrets, loading }: TriggerPanelProps) {
+  if (loading) {
+    return (
+      <div className="q-trigger-panel" data-testid="trigger-panel">
+        <span className="q-field__hint">Loading triggers…</span>
+      </div>
+    );
+  }
   if (triggers.length === 0) return null;
   return (
     <div className="q-trigger-panel" data-testid="trigger-panel">
@@ -57,6 +74,7 @@ export function TriggerPanel({ triggers, showSecrets }: { triggers: TriggerView[
               ) : (
                 <p className="q-field__hint">Auth: none</p>
               )}
+              {t.testUrl ? <SampleViewer workflowId={workflowId} nodeId={t.nodeId} testUrl={t.testUrl} /> : null}
             </>
           ) : (
             <p className="q-field__hint">
@@ -66,5 +84,57 @@ export function TriggerPanel({ triggers, showSecrets }: { triggers: TriggerView[
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * Payloads this trigger has actually received, and the expression paths into them.
+ *
+ * Only test-mode runs are recorded, so the empty state has to say how to produce one —
+ * "no samples yet" beside a URL nobody told you to POST to is the support ticket this
+ * feature would otherwise generate.
+ */
+function SampleViewer({ workflowId, nodeId, testUrl }: { workflowId: string; nodeId: string; testUrl: string }) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({
+    queryKey: ['trigger-samples', workflowId, nodeId],
+    queryFn: () => getBrowserClient().listTriggerSamples(workflowId, nodeId),
+    enabled: open,
+  });
+  const samples = q.data?.samples ?? [];
+  const first = samples[0];
+
+  return (
+    <details
+      data-testid={`trigger-samples-${nodeId}`}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Sample payloads</summary>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+        {q.isPending && open ? <span className="q-field__hint">Loading…</span> : null}
+        {q.isError ? <span className="q-field__error">Could not load samples.</span> : null}
+        {q.data && samples.length === 0 ? (
+          <span className="q-field__hint" data-testid={`trigger-samples-empty-${nodeId}`}>
+            No sample payloads yet. POST to the test URL above and the body will appear here — production
+            fires are not recorded as samples.
+          </span>
+        ) : null}
+        {first !== undefined ? (
+          <>
+            <pre className="q-payload" data-testid={`trigger-sample-body-${nodeId}`}>
+              {JSON.stringify(first, null, 2)}
+            </pre>
+            <div className="q-inspector__section-title">Paths you can paste</div>
+            {expressionPaths(first).slice(0, 24).map((p) => (
+              <div key={p.path} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <code className="mono" style={{ flex: 1 }}>{`{{ ${p.path} }}`}</code>
+                <span className="q-field__hint">{p.preview}</span>
+                <CopyButton value={`{{ ${p.path} }}`} label="path" />
+              </div>
+            ))}
+          </>
+        ) : null}
+      </div>
+    </details>
   );
 }

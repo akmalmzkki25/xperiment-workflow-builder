@@ -92,6 +92,8 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
         },
         nodeIds: runnableNodeIds(ir),
         executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
+        // Which trigger node received this, so the sample viewer can scope to it.
+        triggerNodeId: trigger.nodeId,
       });
       if (result.outcome === 'quota_exceeded') {
         // Deliberately generic: an unauthenticated caller must not learn the

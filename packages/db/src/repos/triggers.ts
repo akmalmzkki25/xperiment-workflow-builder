@@ -143,14 +143,29 @@ export async function updateNextFireAt(db: Db, triggerId: string, nextFireAt: Da
   ]);
 }
 
-export async function recentTestTriggerPayloads(db: Db, workflowId: string, limit: number): Promise<unknown[]> {
+/**
+ * Recent test-mode payloads for ONE trigger node.
+ *
+ * Scoped by node as well as workflow: a workflow may hold several trigger nodes, and
+ * without the node predicate each one showed the others' payloads. Events recorded
+ * before node_id existed are NULL and therefore excluded — they cannot be attributed
+ * after the fact, and guessing would be worse than showing nothing.
+ *
+ * Only test-mode runs are recorded; production fires never become samples.
+ */
+export async function recentTestTriggerPayloads(
+  db: Db,
+  workflowId: string,
+  nodeId: string,
+  limit: number,
+): Promise<unknown[]> {
   const r = await db.query(
     `SELECT t.payload_json FROM trigger_events t
      JOIN executions e ON e.trigger_event_id = t.id
-     WHERE t.workflow_id = $1 AND e.mode = 'test'
+     WHERE t.workflow_id = $1 AND t.node_id = $2 AND e.mode = 'test'
      ORDER BY t.received_at DESC
-     LIMIT $2`,
-    [workflowId, limit],
+     LIMIT $3`,
+    [workflowId, nodeId, limit],
   );
   return (r.rows as { payload_json: unknown }[]).map((row) => row.payload_json);
 }

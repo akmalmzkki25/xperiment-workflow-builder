@@ -1,5 +1,5 @@
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createPool, runMigrations } from '@xperiment/db';
+import { createExecutionWithTrigger, createPool, runMigrations } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -235,5 +235,41 @@ describe('activation', () => {
     expect(missing.statusCode).toBe(404);
     const empty = await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/triggers/hook/samples` });
     expect(empty.json<{ samples: unknown[] }>().samples).toEqual([]);
+  });
+
+  test('a viewer cannot read sample payloads', async () => {
+    // A sample IS a node payload: it becomes trigger.body on every run. The same gate
+    // gets applied here as on the run timeline, or execution:read becomes a transitive
+    // read of whatever a provider posted.
+    const id = await publishedWorkflow(webhookIr());
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    const res = await viewer.inject({ method: 'GET', url: `/v1/workflows/${id}/triggers/hook/samples` });
+    expect(res.statusCode).toBe(403);
+  });
+
+  test('a secret-named header in a recorded body is redacted before it is shown', async () => {
+    const id = await publishedWorkflow(webhookIr());
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    const versionRow = await pool.query<{ id: string }>(
+      `SELECT active_version_id AS id FROM workflows WHERE id = $1`,
+      [id],
+    );
+    const execution = await createExecutionWithTrigger(pool, {
+      workflowId: id,
+      versionId: versionRow.rows[0]!.id,
+      idempotencyKey: 'redact-me',
+      payload: { body: { ok: true }, headers: { 'x-api-key': 'sk-live-should-not-appear' }, query: {} },
+      nodeIds: ['hook'],
+      executionTimeoutMs: 60_000,
+      triggerNodeId: 'hook',
+    });
+    const executionId = (execution as { execution: { id: string } }).execution.id;
+    await pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [executionId]);
+
+    const res = await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/triggers/hook/samples` });
+    const text = JSON.stringify(res.json());
+    expect(text).not.toContain('sk-live-should-not-appear');
+    expect(text).toContain('ok');
   });
 });

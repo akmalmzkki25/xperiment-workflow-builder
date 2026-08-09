@@ -119,6 +119,18 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   expect(url).toContain('/t/');
   webhookUrl = url ?? '';
 
+  // The panel used to live in component state, so a reload made an active workflow's
+  // endpoint vanish until you pressed Activate again. It now survives, behind one
+  // deliberate press — the GET writes an audit row per revealed secret, so it must not
+  // be something a tab does on its own.
+  await page.reload();
+  await expect(page.getByTestId('triggers-show')).toBeVisible();
+  await expect(page.getByTestId('trigger-panel')).toHaveCount(0);
+  await page.getByTestId('triggers-show').click();
+  await expect(page.getByTestId('trigger-url')).toContainText('/t/');
+  // The secret is NOT re-shown on a later visit, only the URL.
+  await expect(page.getByTestId('trigger-secret')).toHaveCount(0);
+
   // A finding that names a node is a way back to it. Add a node that needs a
   // connection and give it none, then validate.
   await page.getByTestId('lib-search').fill('whatsapp');

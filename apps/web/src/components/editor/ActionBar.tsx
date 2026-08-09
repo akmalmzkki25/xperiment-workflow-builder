@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, getBrowserClient, type Finding, type TriggerView, type WorkflowDetail } from '../../lib/api';
 import { useEditorStore } from '../../stores/editorStore';
@@ -54,11 +54,29 @@ export function ActionBar({
   const { dirty, clearDirtyUpTo } = useEditorStore();
   const [notice, setNotice] = useState<Notice>(null);
   const [conflict, setConflict] = useState(false);
-  const [triggers, setTriggers] = useState<TriggerView[] | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [secretsVisible, setSecretsVisible] = useState(false);
   const saveInFlight = useRef(false);
   /** A save asked for while something else was in flight, flushed when it clears. */
   const queuedSave = useRef(false);
+
+  /**
+   * Triggers survive a reload, but only behind a deliberate press.
+   *
+   * This GET writes one `trigger_secret.reveal` audit row per webhook trigger, so the
+   * usual TanStack defaults — refetch on mount, refetch on window focus — would fill
+   * the audit log with disclosures no human ever asked for. That log exists to record
+   * exactly this, so polling it into noise defeats the point.
+   */
+  const triggersQ = useQuery({
+    queryKey: ['triggers', workflow.id],
+    queryFn: () => getBrowserClient().listTriggers(workflow.id),
+    enabled: panelOpen && workflow.active,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+  });
 
   const refreshWorkflow = () =>
     Promise.all([
@@ -138,7 +156,10 @@ export function ActionBar({
   const activate = useMutation({
     mutationFn: () => getBrowserClient().activate(workflow.id),
     onSuccess: async (r) => {
-      setTriggers(r.triggers);
+      // Seed the cache instead of holding a second copy: activation already returned the
+      // triggers WITH their secrets, and refetching would only spend another audit row.
+      queryClient.setQueryData(['triggers', workflow.id], { triggers: r.triggers });
+      setPanelOpen(true);
       setSecretsVisible(true);
       setNotice({ kind: 'ok', text: 'Workflow activated' });
       await refreshWorkflow();
@@ -149,7 +170,8 @@ export function ActionBar({
   const deactivate = useMutation({
     mutationFn: () => getBrowserClient().deactivate(workflow.id),
     onSuccess: async () => {
-      setTriggers(null);
+      queryClient.removeQueries({ queryKey: ['triggers', workflow.id] });
+      setPanelOpen(false);
       setSecretsVisible(false);
       setNotice({ kind: 'ok', text: 'Workflow deactivated' });
       await refreshWorkflow();
@@ -325,7 +347,24 @@ export function ActionBar({
         </div>
       ) : null}
       <FindingsPanel findings={findings} />
-      {triggers ? <TriggerPanel triggers={triggers} showSecrets={secretsVisible} /> : null}
+      {workflow.active && !panelOpen ? (
+        <button
+          className="q-btn q-btn--ghost q-btn--sm"
+          style={{ alignSelf: 'flex-start' }}
+          onClick={() => setPanelOpen(true)}
+          data-testid="triggers-show"
+        >
+          Show trigger URLs
+        </button>
+      ) : null}
+      {workflow.active && panelOpen ? (
+        <TriggerPanel
+          workflowId={workflow.id}
+          triggers={triggersQ.data?.triggers ?? []}
+          showSecrets={secretsVisible}
+          loading={triggersQ.isPending}
+        />
+      ) : null}
     </>
   );
 }

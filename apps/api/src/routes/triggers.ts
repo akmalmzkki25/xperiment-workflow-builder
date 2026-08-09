@@ -18,6 +18,7 @@ import type { FastifyInstance } from 'fastify';
 import { hasPermission } from '../auth/permissions.js';
 import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { quotaBlocks } from './plan.js';
+import { redactSecrets } from './redact.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
@@ -165,11 +166,19 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
 
   app.get('/v1/workflows/:id/triggers/:nodeId/samples', async (req, reply) => {
     const ctx = authOf(req);
-    if (!requirePermission(reply, ctx, 'workflow:read')) return;
+    // Same gate as the node payloads on the run timeline, and for the same reason: a
+    // sample IS a node payload — it becomes trigger.body on every run. Whoever may
+    // start a run may see the data that ran; a viewer may not.
+    if (!requirePermission(reply, ctx, 'execution:run')) return;
     const { id, nodeId } = req.params as { id: string; nodeId: string };
     if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
     const rows = await listTriggers(deps.pool, id);
     if (!rows.some((t) => t.nodeId === nodeId)) return sendProblem(reply, 404, 'Trigger not found');
-    return { samples: await recentTestTriggerPayloads(deps.pool, id, 5) };
+    const samples = await recentTestTriggerPayloads(deps.pool, id, nodeId, 5);
+    // A webhook body is not author-typed text — it is whatever a provider sent, and
+    // providers put bearer tokens in headers the gateway does not strip and verify
+    // tokens in query strings. Redaction here is key-name based and therefore partial;
+    // it does not clean what is already at rest, only what is shown.
+    return { samples: samples.map(redactSecrets) };
   });
 }

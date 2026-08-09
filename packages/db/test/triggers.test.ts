@@ -185,11 +185,52 @@ describe('triggers repo', () => {
           payload: { n: i },
           nodeIds: ['t'],
           executionTimeoutMs: 60000,
+          triggerNodeId: 'hook',
         }),
       );
       await pool.query(`UPDATE executions SET mode = $1 WHERE id = $2`, [mode, execution.id]);
     }
-    const samples = await recentTestTriggerPayloads(pool, workflowId, 5);
+    const samples = await recentTestTriggerPayloads(pool, workflowId, 'hook', 5);
     expect(samples).toEqual([{ n: 2 }, { n: 0 }]);
+  });
+
+  test('samples are scoped to their trigger node, not just the workflow', async () => {
+    // A workflow may hold several trigger nodes. Without the node predicate each one
+    // showed the others' payloads — one webhook's data under another webhook's panel.
+    for (const [i, node] of [
+      [0, 'hook_a'],
+      [1, 'hook_b'],
+    ] as const) {
+      const execution = executionOf(
+        await createExecutionWithTrigger(pool, {
+          workflowId,
+          versionId,
+          idempotencyKey: `scoped-${i}`,
+          payload: { from: node },
+          nodeIds: ['t'],
+          executionTimeoutMs: 60000,
+          triggerNodeId: node,
+        }),
+      );
+      await pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [execution.id]);
+    }
+    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_a', 5)).toEqual([{ from: 'hook_a' }]);
+    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_b', 5)).toEqual([{ from: 'hook_b' }]);
+  });
+
+  test('an event recorded before node attribution existed is not offered as a sample', async () => {
+    const execution = executionOf(
+      await createExecutionWithTrigger(pool, {
+        workflowId,
+        versionId,
+        idempotencyKey: 'legacy',
+        payload: { legacy: true },
+        nodeIds: ['t'],
+        executionTimeoutMs: 60000,
+      }),
+    );
+    await pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [execution.id]);
+    // Guessing which node a NULL belongs to would be worse than showing nothing.
+    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_a', 5)).not.toContainEqual({ legacy: true });
   });
 });

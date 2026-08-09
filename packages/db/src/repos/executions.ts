@@ -125,15 +125,17 @@ export async function createExecutionWithTrigger(
     payload: unknown;
     nodeIds: string[];
     executionTimeoutMs: number;
+    /** The trigger node that received this event, so samples can be scoped to it. */
+    triggerNodeId?: string;
   },
 ): Promise<CreateExecutionResult> {
   return withTx<CreateExecutionResult>(pool, async (client) => {
     // workspace_id is inherited from the workflow row — tenancy by construction.
     const te = await client.query(
-      `INSERT INTO trigger_events (workspace_id, workflow_id, idempotency_key, payload_json)
-       SELECT w.workspace_id, w.id, $2, $3 FROM workflows w WHERE w.id = $1
+      `INSERT INTO trigger_events (workspace_id, workflow_id, idempotency_key, payload_json, node_id)
+       SELECT w.workspace_id, w.id, $2, $3, $4 FROM workflows w WHERE w.id = $1
        ON CONFLICT (workflow_id, idempotency_key) DO NOTHING RETURNING id, workspace_id`,
-      [args.workflowId, args.idempotencyKey, capJson(args.payload)],
+      [args.workflowId, args.idempotencyKey, capJson(args.payload), args.triggerNodeId ?? null],
     );
     let triggerEventId: string;
     let workspaceId: string;
