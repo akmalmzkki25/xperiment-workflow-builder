@@ -100,6 +100,16 @@ test('a webhook fire appears in executions with a green timeline', async ({ page
   await expect(page.getByTestId('exec-status')).toContainText('Succeeded', { timeout: 45_000 });
   await expect(page.getByTestId('timeline-node-webhook_trigger')).toContainText('Succeeded');
   await expect(page.getByTestId('timeline-node-shape_lead')).toContainText('Succeeded');
+
+  // The owner may run workflows, so payloads are offered — but only fetched when the
+  // panel is actually opened. Asserting the body appears only after the click is what
+  // proves the detail poll is not carrying it.
+  const panel = page.getByTestId('payload-shape_lead-1');
+  await expect(panel).toBeVisible();
+  await expect(panel).not.toContainText('Budi');
+  await panel.getByText('Data in and out').click();
+  await expect(panel).toContainText('Budi', { timeout: 15_000 });
+
   await page.screenshot({ path: `${ARTIFACTS}/03-execution-detail.png` });
 });
 

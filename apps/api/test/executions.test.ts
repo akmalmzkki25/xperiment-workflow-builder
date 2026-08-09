@@ -58,40 +58,48 @@ describe('node payloads on the detail response', () => {
     return executionId;
   }
 
-  test('a member who can run sees the recorded input and output', async () => {
+  test('the detail response never carries payloads, whatever the role', async () => {
+    // It has no row limit and the UI polls it every two seconds; carrying payloads there
+    // would re-read and re-serialise megabytes on a timer.
     const id = await executionWithPayload();
     const d = await auth.inject({ method: 'GET', url: `/v1/executions/${id}` });
-    const body = d.json<{ payloadsVisible: boolean; nodes: { nodeId: string; outputJson?: unknown }[] }>();
-    expect(body.payloadsVisible).toBe(true);
-    const node = body.nodes.find((n) => n.nodeId === 't')!;
-    expect(node.outputJson).toEqual({ status: 200, body: { ok: true } });
-  });
-
-  test('a secret-named parameter key is redacted on the way out', async () => {
-    const id = await executionWithPayload();
-    const d = await auth.inject({ method: 'GET', url: `/v1/executions/${id}` });
-    const node = d
-      .json<{ nodes: { nodeId: string; inputJson?: { headers?: { authorization?: string }; url?: string } }[] }>()
-      .nodes.find((n) => n.nodeId === 't')!;
-    expect(node.inputJson?.headers?.authorization).toBe('[redacted]');
-    // Only the credential-shaped key, not the whole object.
-    expect(node.inputJson?.url).toBe('https://api.test/v1');
-    expect(JSON.stringify(d.json())).not.toContain('sk-live-999');
-  });
-
-  test('a viewer gets payloadsVisible false and no payload keys at all', async () => {
-    // A viewer is a read-only observer. Handing it payloads would turn execution:read
-    // into a transitive read of anything an author typed into a parameter.
-    const id = await executionWithPayload();
-    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
-    const d = await viewer.inject({ method: 'GET', url: `/v1/executions/${id}` });
-    expect(d.statusCode).toBe(200);
     const body = d.json<{ payloadsVisible: boolean; nodes: Record<string, unknown>[] }>();
-    expect(body.payloadsVisible).toBe(false);
+    expect(body.payloadsVisible).toBe(true);
     for (const node of body.nodes) {
       expect(Object.keys(node)).not.toContain('inputJson');
       expect(Object.keys(node)).not.toContain('outputJson');
     }
+    expect(JSON.stringify(d.json())).not.toContain('sk-live-999');
+  });
+
+  test('a member who can run fetches one attempt payload on demand', async () => {
+    const id = await executionWithPayload();
+    const d = await auth.inject({ method: 'GET', url: `/v1/executions/${id}/nodes/t/1/payload` });
+    expect(d.statusCode).toBe(200);
+    expect(d.json<{ outputJson: unknown }>().outputJson).toEqual({ status: 200, body: { ok: true } });
+  });
+
+  test('a secret-named parameter key is redacted on the way out', async () => {
+    const id = await executionWithPayload();
+    const d = await auth.inject({ method: 'GET', url: `/v1/executions/${id}/nodes/t/1/payload` });
+    const input = d.json<{ inputJson: { headers?: { authorization?: string }; url?: string } }>().inputJson;
+    expect(input.headers?.authorization).toBe('[redacted]');
+    // Only the credential-shaped key, not the whole object.
+    expect(input.url).toBe('https://api.test/v1');
+    expect(JSON.stringify(d.json())).not.toContain('sk-live-999');
+  });
+
+  test('a viewer gets payloadsVisible false and is refused the payload route', async () => {
+    // A viewer is a read-only observer. Handing it payloads would turn execution:read
+    // into a transitive read of anything an author typed into a parameter.
+    const id = await executionWithPayload();
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    expect(viewer.inject).toBeDefined();
+    const detail = await viewer.inject({ method: 'GET', url: `/v1/executions/${id}` });
+    expect(detail.json<{ payloadsVisible: boolean }>().payloadsVisible).toBe(false);
+    const payload = await viewer.inject({ method: 'GET', url: `/v1/executions/${id}/nodes/t/1/payload` });
+    expect(payload.statusCode).toBe(403);
+    expect(JSON.stringify(payload.json())).not.toContain('sk-live-999');
   });
 
   test('an operator can see payloads, since it may start the run', async () => {
@@ -99,6 +107,24 @@ describe('node payloads on the detail response', () => {
     const operator = await addMemberWithRole(app, pool, auth.workspaceId, 'operator');
     const d = await operator.inject({ method: 'GET', url: `/v1/executions/${id}` });
     expect(d.json<{ payloadsVisible: boolean }>().payloadsVisible).toBe(true);
+    expect((await operator.inject({ method: 'GET', url: `/v1/executions/${id}/nodes/t/1/payload` })).statusCode).toBe(
+      200,
+    );
+  });
+
+  test('the payload route is scoped to the workspace and rejects a bad path', async () => {
+    const id = await executionWithPayload();
+    const stranger = await createAuthedUser(app);
+    // Another workspace's member must get 404, not another tenant's data.
+    const other = await stranger.inject({ method: 'GET', url: `/v1/executions/${id}/nodes/t/1/payload` });
+    expect(other.statusCode).toBe(404);
+    // A legal attempt number that this node never reached is a 404 …
+    expect((await auth.inject({ method: 'GET', url: `/v1/executions/${id}/nodes/t/9/payload` })).statusCode).toBe(404);
+    // … while a malformed path or an attempt outside the legal range is a 400.
+    expect((await auth.inject({ method: 'GET', url: `/v1/executions/not-a-uuid/nodes/t/1/payload` })).statusCode).toBe(
+      400,
+    );
+    expect((await auth.inject({ method: 'GET', url: `/v1/executions/${id}/nodes/t/999/payload` })).statusCode).toBe(400);
   });
 
   test('a viewer never receives a resume URL', async () => {

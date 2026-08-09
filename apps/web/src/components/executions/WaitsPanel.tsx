@@ -2,13 +2,8 @@
 
 import type { ExecutionWaitRow } from '../../lib/api';
 import { fmtJakarta } from '../../lib/format';
+import { waitDecisionLine, waitKindLabel } from '../../lib/waitLabel';
 import { StatusChip } from '../ui/StatusChip';
-
-const KIND_LABEL: Record<string, string> = {
-  timer: 'Waiting on a timer',
-  event: 'Waiting for an event',
-  approval: 'Waiting for an approval',
-};
 
 /**
  * Why a run is sitting still.
@@ -31,18 +26,15 @@ export function WaitsPanel({ waits }: { waits: ExecutionWaitRow[] }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
             <span className="mono">{wait.nodeId}</span>
             <StatusChip status={wait.status} />
-            <span className="q-field__hint">{KIND_LABEL[wait.kind] ?? wait.kind}</span>
+            <span className="q-field__hint">{waitKindLabel(wait.kind)}</span>
           </div>
           {wait.expiresAt ? (
             // Absolute Jakarta wall time, not "in 2 hours" off an arbitrary browser
             // clock — a viewer in another timezone would otherwise read it wrong.
             <span className="q-field__hint">Expires {fmtJakarta(wait.expiresAt)}</span>
           ) : null}
-          {wait.decision ? (
-            <span className="q-field__hint">
-              Decided {wait.decision}
-              {wait.resolvedBy ? ` by ${wait.resolvedBy}` : ''}
-            </span>
+          {waitDecisionLine(wait.decision, wait.resolvedBy) ? (
+            <span className="q-field__hint">{waitDecisionLine(wait.decision, wait.resolvedBy)}</span>
           ) : null}
           {wait.resumeUrl ? (
             <div className="q-banner q-banner--warn" data-testid={`wait-resume-${wait.nodeId}`}>

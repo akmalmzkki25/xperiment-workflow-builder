@@ -80,9 +80,12 @@ export interface ExecutionNodeRow {
   errorJson: unknown;
   startedAt: string | null;
   completedAt: string | null;
-  /** Present only when `payloadsVisible`. Expression-resolved parameters, secrets blanked. */
-  inputJson?: unknown;
-  outputJson?: unknown;
+}
+
+/** Fetched per attempt, on demand. Secrets are blanked server-side. */
+export interface NodePayload {
+  inputJson: unknown;
+  outputJson: unknown;
 }
 
 export interface ExecutionEventRow {
@@ -368,6 +371,17 @@ export class ApiClient {
 
   getExecution(id: string): Promise<ExecutionDetail> {
     return this.request('GET', `/v1/executions/${id}`);
+  }
+
+  /**
+   * One node attempt's payloads, fetched when a human opens a disclosure.
+   *
+   * Deliberately not part of getExecution: that response has no row limit and is polled
+   * every two seconds while a run is live, so carrying payloads there would re-read and
+   * re-serialise megabytes on a timer.
+   */
+  getNodePayload(executionId: string, nodeId: string, attempt: number): Promise<NodePayload> {
+    return this.request('GET', `/v1/executions/${executionId}/nodes/${encodeURIComponent(nodeId)}/${attempt}/payload`);
   }
 
   cancelExecution(id: string): Promise<{ status: string }> {

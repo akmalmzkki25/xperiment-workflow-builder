@@ -395,6 +395,30 @@ export interface WaitDetail {
   resolvedBy: string | null;
 }
 
+/**
+ * One node attempt's recorded payloads.
+ *
+ * Deliberately its own read rather than a field on the detail response: a payload is up
+ * to PAYLOAD_CAP_BYTES per column, the detail response has no row limit, and the UI polls
+ * it every two seconds while a run is live. Fetching one payload when a human opens one
+ * disclosure keeps the polled response small and bounds this one to a single row.
+ */
+export async function getNodePayload(
+  pool: pg.Pool,
+  args: { executionId: string; nodeId: string; attempt: number; workspaceId: string },
+): Promise<{ inputJson: unknown; outputJson: unknown } | null> {
+  const r = await pool.query(
+    `SELECT n.input_json, n.output_json
+     FROM execution_nodes n
+     JOIN executions e ON e.id = n.execution_id
+     WHERE n.execution_id = $1 AND n.node_id = $2 AND n.attempt = $3 AND e.workspace_id = $4`,
+    [args.executionId, args.nodeId, args.attempt, args.workspaceId],
+  );
+  if (!r.rowCount) return null;
+  const row = r.rows[0] as Record<string, unknown>;
+  return { inputJson: row['input_json'], outputJson: row['output_json'] };
+}
+
 export interface ExecutionDetailOptions {
   /**
    * Off by default, and that matters: this function is on the worker's hot path

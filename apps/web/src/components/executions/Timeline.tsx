@@ -1,26 +1,12 @@
-import type { ExecutionDetail, ExecutionNodeRow } from '../../lib/api';
+import type { ExecutionDetail } from '../../lib/api';
 import { fmtDuration, fmtTime, nodeLabel } from '../../lib/format';
+import { attemptError, attemptPortLabel, groupAttemptsByNode } from '../../lib/timeline';
 import { PayloadPanel } from '../ui/PayloadPanel';
 import { StatusChip } from '../ui/StatusChip';
 import { WaitsPanel } from './WaitsPanel';
 
-function groupByNode(nodes: ExecutionNodeRow[]): Map<string, ExecutionNodeRow[]> {
-  const map = new Map<string, ExecutionNodeRow[]>();
-  for (const row of nodes) {
-    map.set(row.nodeId, [...(map.get(row.nodeId) ?? []), row]);
-  }
-  return map;
-}
-
-function errorMessage(errorJson: unknown): string | null {
-  if (typeof errorJson !== 'object' || errorJson === null) return null;
-  const e = errorJson as { message?: string; code?: string };
-  if (!e.message && !e.code) return null;
-  return [e.code, e.message].filter(Boolean).join(': ');
-}
-
 export function Timeline({ detail }: { detail: ExecutionDetail }) {
-  const groups = groupByNode(detail.nodes);
+  const groups = groupAttemptsByNode(detail.nodes);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {[...groups.entries()].map(([nodeId, attempts]) => (
@@ -39,7 +25,8 @@ export function Timeline({ detail }: { detail: ExecutionDetail }) {
             ) : null}
           </strong>
           {attempts.map((attempt) => {
-            const error = errorMessage(attempt.errorJson);
+            const error = attemptError(attempt.errorJson);
+            const port = attemptPortLabel(attempt.outputPort);
             return (
               <div
                 key={attempt.attempt}
@@ -48,29 +35,14 @@ export function Timeline({ detail }: { detail: ExecutionDetail }) {
                 <span className="q-field__hint mono">#{attempt.attempt}</span>
                 <StatusChip status={attempt.status} testId={`timeline-status-${nodeId}-${attempt.attempt}`} />
                 <span className="q-field__hint">{fmtDuration(attempt.startedAt, attempt.completedAt)}</span>
-                {attempt.outputPort && attempt.outputPort !== 'main' ? (
-                  <span className="q-field__hint mono">→ {attempt.outputPort}</span>
-                ) : null}
+                {port ? <span className="q-field__hint mono">→ {port}</span> : null}
                 {error ? <span className="q-field__error">{error}</span> : null}
                 {detail.payloadsVisible ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 'var(--space-1)',
-                      width: '100%',
-                      marginTop: 'var(--space-1)',
-                    }}
-                  >
+                  <div style={{ width: '100%', marginTop: 'var(--space-1)' }}>
                     <PayloadPanel
-                      label="Input"
-                      value={attempt.inputJson}
-                      testId={`payload-in-${nodeId}-${attempt.attempt}`}
-                    />
-                    <PayloadPanel
-                      label="Output"
-                      value={attempt.outputJson}
-                      testId={`payload-out-${nodeId}-${attempt.attempt}`}
+                      executionId={detail.execution.id}
+                      nodeId={attempt.nodeId}
+                      attempt={attempt.attempt}
                     />
                   </div>
                 ) : null}

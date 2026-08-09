@@ -8,6 +8,7 @@ import {
   createExecutionWithTrigger,
   enqueueCompletionCallback,
   getExecutionDetail,
+  getNodePayload,
   getTriggerPayload,
   getVersion,
   getWorkflow,
@@ -99,7 +100,10 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
     // read of anything an author typed into a parameter. Same field-level shape as the
     // credential reveal on the triggers route.
     const canSeePayloads = hasPermission(ctx.role, 'execution:run');
-    const detail = await getExecutionDetail(deps.pool, id, ctx.workspaceId, { includePayloads: canSeePayloads });
+    // Payloads are NOT in this response. It has no row limit — a loop of 1000 iterations
+    // times 10 attempts is thousands of rows at up to 512 KiB each — and the UI polls it
+    // every two seconds while the run is live. They are fetched one at a time below.
+    const detail = await getExecutionDetail(deps.pool, id, ctx.workspaceId);
     if (!detail) return sendProblem(reply, 404, 'Execution not found');
     // Surface the resume URL for open event waits so an operator/external system
     // can discover the callback endpoint. Tokens are added deliberately here and
@@ -131,14 +135,35 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       // failure carries the provider's full response body, and an SSRF refusal carries
       // the raw URL including any query-string credential. Redact it regardless.
       errorJson: redactSecrets(n.errorJson),
-      ...(canSeePayloads
-        ? { inputJson: redactSecrets(n.inputJson), outputJson: redactSecrets(n.outputJson) }
-        : {}),
     }));
     // An explicit boolean, not the absence of a key: the UI has to be able to say
     // "payloads are visible to members who can run workflows" rather than implying the
     // node recorded nothing. Absent keys also vanish through JSON.stringify.
     return { ...detail, nodes, waits, payloadsVisible: canSeePayloads };
+  });
+
+  const payloadParams = z.object({
+    id: z.string().uuid(),
+    nodeId: z.string().min(1).max(128),
+    attempt: z.coerce.number().int().min(1).max(100),
+  });
+
+  app.get('/v1/executions/:id/nodes/:nodeId/:attempt/payload', async (req, reply) => {
+    const ctx = authOf(req);
+    // Whoever may START a run may see the data that ran. A viewer is a read-only
+    // observer, and handing it payloads would turn `execution:read` into a transitive
+    // read of anything an author typed into a parameter.
+    if (!requirePermission(reply, ctx, 'execution:run')) return;
+    const p = payloadParams.safeParse(req.params);
+    if (!p.success) return sendProblem(reply, 400, 'Invalid path', p.error.message);
+    const row = await getNodePayload(deps.pool, {
+      executionId: p.data.id,
+      nodeId: p.data.nodeId,
+      attempt: p.data.attempt,
+      workspaceId: ctx.workspaceId,
+    });
+    if (!row) return sendProblem(reply, 404, 'Node attempt not found');
+    return { inputJson: redactSecrets(row.inputJson), outputJson: redactSecrets(row.outputJson) };
   });
 
   const TERMINAL = ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED'];
