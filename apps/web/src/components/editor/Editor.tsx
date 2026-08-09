@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlowProvider,
   useEdgesState,
@@ -102,14 +102,20 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const nodesRef = useRef<FlowNode[]>([]);
   const edgesRef = useRef<Edge[]>([]);
   const historyRef = useRef(history);
-  useEffect(() => {
+  // Layout, not passive: a window-level keydown listener is outside React's event
+  // system, so React does not flush passive effects before it runs. Two undos landing
+  // in one task would otherwise both read the same pre-first-undo history and collapse
+  // into a single step.
+  useLayoutEffect(() => {
     nodesRef.current = nodes;
     edgesRef.current = edges;
     historyRef.current = history;
   });
 
   const recordEdit = useCallback(() => {
-    setHistory((h) => pushSnapshot(h, { nodes: nodesRef.current, edges: edgesRef.current }));
+    const snapshot = { nodes: nodesRef.current, edges: edgesRef.current };
+    historyRef.current = pushSnapshot(historyRef.current, snapshot);
+    setHistory(historyRef.current);
   }, []);
 
   const workflowQ = useQuery({
@@ -129,6 +135,22 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     initializedRef.current = false;
     return () => reset();
   }, [reset, workflowId]);
+
+  // React Flow only ends a drag on a pointerup the tab actually receives. Release the
+  // button over another application and no `dragging: false` change is ever emitted,
+  // leaving the gesture flag stuck — and the NEXT drag then records no history entry
+  // at all. Clearing it on pointerup and on blur closes that window.
+  useEffect(() => {
+    const clear = () => {
+      draggingRef.current = false;
+    };
+    window.addEventListener('pointerup', clear);
+    window.addEventListener('blur', clear);
+    return () => {
+      window.removeEventListener('pointerup', clear);
+      window.removeEventListener('blur', clear);
+    };
+  }, []);
 
   const flow = useReactFlow();
 
@@ -220,6 +242,11 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const applyStep = useCallback(
     (step: { history: History<CanvasSnapshot>; restored: CanvasSnapshot } | null) => {
       if (!step) return;
+      // Advance the ref here too: a second Ctrl+Z arriving in the same task would
+      // otherwise read the pre-undo history and undo the same step twice.
+      historyRef.current = step.history;
+      nodesRef.current = step.restored.nodes;
+      edgesRef.current = step.restored.edges;
       setHistory(step.history);
       setNodes(step.restored.nodes);
       setEdges(step.restored.edges);
@@ -269,12 +296,21 @@ function EditorInner({ workflowId }: { workflowId: string }) {
 
   const onPaste = useCallback(() => appendPaste(clipRef.current), [appendPaste]);
 
-  /** Duplicate is copy-then-paste that deliberately does NOT disturb the clipboard. */
-  const onDuplicate = useCallback(() => {
-    appendPaste(
-      copySelection(nodesRef.current.map(toEditorNode), edgesRef.current.map(toEditorEdge), selectionIds()),
-    );
-  }, [appendPaste, selectionIds]);
+  /**
+   * Duplicate is copy-then-paste that deliberately does NOT disturb the clipboard.
+   *
+   * `ids` is explicit for the Inspector's button, which must duplicate the node it is
+   * showing. React Flow's marquee selection and the store's single selection drift
+   * apart — box-selecting other nodes leaves the Inspector on the original — so a
+   * button that fell back to the selection would silently copy something else.
+   */
+  const onDuplicate = useCallback(
+    (nodeId?: string) => {
+      const ids = nodeId ? [nodeId] : selectionIds();
+      appendPaste(copySelection(nodesRef.current.map(toEditorNode), edgesRef.current.map(toEditorEdge), ids));
+    },
+    [appendPaste, selectionIds],
+  );
 
   const onTidy = useCallback(() => {
     const layout = autoLayout(
@@ -317,7 +353,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
         else if (action === 'save') setSaveSignal((n) => n + 1);
         else if (action === 'copy') onCopy();
         else if (action === 'paste') onPaste();
-        else if (action === 'duplicate') onDuplicate();
+        else if (action === 'duplicate') onDuplicate();  // keyboard acts on the selection
         else if (action === 'search') {
           setLibraryOpen(true);
           setSearchSignal((n) => n + 1);

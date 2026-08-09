@@ -16,7 +16,8 @@ interface InspectorProps {
   onCommitParam: (nodeId: string, name: string, value: unknown) => void;
   onConnectionRef: (nodeId: string, ref: string | undefined) => void;
   onDelete: (nodeId: string) => void;
-  onDuplicate: () => void;
+  /** Takes the id: the Inspector must duplicate what it is showing, not the selection. */
+  onDuplicate: (nodeId: string) => void;
 }
 
 export function Inspector({
@@ -119,7 +120,7 @@ export function Inspector({
       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
         <button
           className="q-btn q-btn--ghost q-btn--sm"
-          onClick={onDuplicate}
+          onClick={() => onDuplicate(ir.id)}
           title="Duplicate (Ctrl+D)"
           data-testid="node-duplicate"
         >

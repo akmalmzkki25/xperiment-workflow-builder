@@ -91,9 +91,17 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
 
   // Duplicate the transform, then undo it — the copy must get its own id, and the
   // canvas must come back to two nodes rather than keeping a half-applied paste.
+  //
+  // The Inspector's button duplicates the node it is SHOWING: it passes ir.id rather
+  // than falling back to React Flow's own selection, which drifts from the Inspector's
+  // once a marquee is drawn. That drift is NOT exercised here — Playwright's modifier
+  // handling would not reproduce React Flow's multi-select, so this covers the plain
+  // path only and the reasoning lives in Editor.tsx.
+  await page.getByTestId('canvas').click({ position: { x: 20, y: 20 } });
   await page.getByTestId('node-shape_lead').click();
   await page.getByTestId('node-duplicate').click();
   await expect(page.getByTestId('node-shape_lead_2')).toBeVisible();
+  await expect(page.getByTestId('node-webhook_trigger_2')).toHaveCount(0);
   await page.getByTestId('action-undo').click();
   await expect(page.getByTestId('node-shape_lead_2')).toHaveCount(0);
   await expect(page.getByTestId('node-shape_lead')).toBeVisible();

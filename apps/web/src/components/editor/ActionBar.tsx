@@ -57,6 +57,8 @@ export function ActionBar({
   const [triggers, setTriggers] = useState<TriggerView[] | null>(null);
   const [secretsVisible, setSecretsVisible] = useState(false);
   const saveInFlight = useRef(false);
+  /** A save asked for while something else was in flight, flushed when it clears. */
+  const queuedSave = useRef(false);
 
   const refreshWorkflow = () =>
     Promise.all([
@@ -164,7 +166,14 @@ export function ActionBar({
     run.isPending;
 
   const triggerSave = useCallback(() => {
-    if (busy || !dirty || saveInFlight.current) return;
+    if (!dirty) return;
+    // Queue rather than drop. Pressing Ctrl+S right after clicking Validate or Publish
+    // is a completely ordinary sequence, and swallowing it left the user believing the
+    // draft was saved when nothing had even been attempted.
+    if (busy || saveInFlight.current) {
+      queuedSave.current = true;
+      return;
+    }
     saveInFlight.current = true;
     save.mutate();
   }, [busy, dirty, save]);
@@ -176,6 +185,14 @@ export function ActionBar({
   useEffect(() => {
     triggerSaveRef.current = triggerSave;
   });
+
+  // Flush a queued save once the other mutation finishes.
+  useEffect(() => {
+    if (busy || !queuedSave.current) return;
+    queuedSave.current = false;
+    triggerSaveRef.current();
+  }, [busy]);
+
   useEffect(() => {
     if (saveSignal > 0) triggerSaveRef.current();
   }, [saveSignal]);
