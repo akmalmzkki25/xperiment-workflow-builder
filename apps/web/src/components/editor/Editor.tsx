@@ -15,6 +15,7 @@ import {
 import { getBrowserClient, type ConnectorItem, type Finding } from '../../lib/api';
 import { autoLayout } from '../../lib/autoLayout';
 import { copySelection, pasteCanvas, type Clip } from '../../lib/clipboard';
+import { groupFindingsByNode } from '../../lib/findings';
 import {
   canRedo,
   canUndo,
@@ -153,14 +154,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     [catalogQ.data],
   );
 
-  const findingsByNode = useMemo(() => {
-    const map = new Map<string, Finding[]>();
-    for (const finding of findings) {
-      const key = finding.nodeId ?? '';
-      map.set(key, [...(map.get(key) ?? []), finding]);
-    }
-    return map;
-  }, [findings]);
+  const findingsByNode = useMemo(() => groupFindingsByNode(findings), [findings]);
 
   // The SAME query key the execution detail page owns. TanStack dedupes by key, so there
   // is exactly one poller and one cache entry — one truth — and navigating from here to

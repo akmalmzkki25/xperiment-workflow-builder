@@ -79,6 +79,8 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   await expect(page.getByTestId('node-shape_lead')).toBeVisible();
   await expect(page.locator('.react-flow__edge')).toHaveCount(1);
 
+  await expect(page.locator('.react-flow__minimap')).toBeVisible();
+
   // '/' opens the palette AND lands the caret in its search box — the drawer is
   // mounted by the same keystroke, so focusing has to survive that mount.
   await page.getByTestId('canvas').click({ position: { x: 20, y: 20 } });
@@ -86,18 +88,6 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   await expect(page.getByTestId('lib-search')).toBeFocused();
   await page.keyboard.type('transform');
   await expect(page.getByTestId('lib-search')).toHaveValue('transform');
-
-  // Tidy is a destructive-looking action, so it must be undoable like any other edit.
-  // Read the canvas transform rather than a bounding box: Tidy calls fitView, which
-  // moves the viewport, so screen coordinates would differ even on a perfect undo.
-  const canvasPos = () =>
-    page.evaluate(() => (document.querySelector('[data-id="shape_lead"]') as HTMLElement | null)?.style.transform ?? '');
-  const beforeTidy = await canvasPos();
-  expect(beforeTidy).not.toBe('');
-  await page.getByTestId('action-tidy').click();
-  await expect.poll(canvasPos).not.toBe(beforeTidy);
-  await page.getByTestId('action-undo').click();
-  await expect.poll(canvasPos).toBe(beforeTidy);
 
   // Duplicate the transform, then undo it — the copy must get its own id, and the
   // canvas must come back to two nodes rather than keeping a half-applied paste.
@@ -120,6 +110,36 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   const url = await page.getByTestId('trigger-url').textContent();
   expect(url).toContain('/t/');
   webhookUrl = url ?? '';
+
+  // A finding that names a node is a way back to it. Add a node that needs a
+  // connection and give it none, then validate.
+  await page.getByTestId('lib-search').fill('whatsapp');
+  await page.getByTestId('lib-item-whatsapp.sendMessage').click();
+  // Validate reads the SAVED draft, not the live canvas — an unsaved node is invisible
+  // to it, which is why this save is load-bearing rather than tidiness.
+  await page.getByTestId('action-save').click();
+  await expect(page.getByTestId('editor-banner')).toContainText('Draft saved');
+  await page.getByTestId('action-validate').click();
+  await expect(page.getByTestId('findings-panel')).toBeVisible();
+  const finding = page.getByTestId('finding-whatsapp_sendMessage').first();
+  await expect(finding).toBeVisible();
+  await page.getByTestId('node-webhook_trigger').click();
+  await finding.click();
+  await expect(page.getByTestId('node-id-input')).toHaveValue('whatsapp_sendMessage');
+
+  // Tidy last: it calls fitView, and a node that lands under the bottom-right minimap
+  // cannot be clicked afterwards — the minimap is an overlay panel and swallows the
+  // pointer, which is standard behaviour but makes ordering here load-bearing.
+  // Read the canvas transform rather than a bounding box: fitView moves the viewport,
+  // so screen coordinates would differ even after a perfect undo.
+  const canvasPos = () =>
+    page.evaluate(() => (document.querySelector('[data-id="shape_lead"]') as HTMLElement | null)?.style.transform ?? '');
+  const beforeTidy = await canvasPos();
+  expect(beforeTidy).not.toBe('');
+  await page.getByTestId('action-tidy').click();
+  await expect.poll(canvasPos).not.toBe(beforeTidy);
+  await page.getByTestId('action-undo').click();
+  await expect.poll(canvasPos).toBe(beforeTidy);
 
   await page.screenshot({ path: `${ARTIFACTS}/02-editor-1440.png` });
   await page.setViewportSize({ width: 1280, height: 800 });

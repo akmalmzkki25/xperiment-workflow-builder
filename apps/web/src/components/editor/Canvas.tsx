@@ -4,6 +4,7 @@ import ReactFlow, {
   Background,
   BackgroundVariant,
   Controls,
+  MiniMap,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -45,6 +46,11 @@ export function Canvas({ nodes, edges, onNodesChange, onEdgesChange, onConnect, 
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="#d8d2c2" />
         <Controls showInteractive={false} />
+        {/* MiniMap ships inside `reactflow` itself — @reactflow/minimap is its own
+            dependency, so importing that specifier directly would be a phantom
+            dependency under pnpm. Hidden under 1100px by CSS: it would cover a
+            third of a narrow canvas to show a map of what is already on screen. */}
+        <MiniMap className="q-minimap" pannable zoomable maskColor="rgba(24, 22, 18, 0.08)" ariaLabel="Canvas minimap" />
       </ReactFlow>
     </div>
   );

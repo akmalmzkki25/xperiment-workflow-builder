@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ConnectorItem } from '../../lib/api';
+import { filterCatalog } from '../../lib/catalogSearch';
 import { NODE_GLYPHS } from './XperimentNode';
 
 const GROUPS: { kind: ConnectorItem['kind']; title: string }[] = [
@@ -22,8 +23,7 @@ export function NodeLibrary({
 }) {
   const [search, setSearch] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const q = search.trim().toLowerCase();
-  const visible = q ? items.filter((i) => i.type.toLowerCase().includes(q)) : items;
+  const visible = filterCatalog(items, search);
 
   // Also fires on mount, which is the case that matters: '/' opens the drawer and
   // focuses in one press, and this component did not exist when the key was pressed.

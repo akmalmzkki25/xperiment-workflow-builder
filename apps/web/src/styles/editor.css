@@ -331,6 +331,51 @@
   padding: var(--space-1) var(--space-2);
 }
 
+/* The library ships a hardcoded white minimap background; override it so the map
+   belongs to the same surface as the canvas rather than glowing on top of it. */
+.q-minimap.react-flow__minimap {
+  background-color: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-node);
+}
+
+/* Node fill in CSS rather than the nodeColor prop, so the map follows the dark
+   theme — a prop would be a fixed string evaluated once in JavaScript. */
+.q-minimap .react-flow__minimap-node {
+  fill: var(--border-strong);
+  stroke: var(--border-default);
+}
+
+/* Below this width the map would cover a third of the canvas to show a picture of
+   what is already on screen. */
+@media (max-width: 1100px) {
+  .q-minimap.react-flow__minimap {
+    display: none;
+  }
+}
+
+/* A finding that names a node is a button; strip the chrome so it still reads as a
+   row, and keep a real hover and focus state so it is discoverable. */
+.q-findings__row--link {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+
+.q-findings__row--link:hover {
+  background: color-mix(in oklab, var(--color-jade) 10%, transparent);
+}
+
+.q-findings__row--link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 /* Loop container — a frame body nodes sit inside, not another box in the chain. */
 .q-loop {
   position: relative;
