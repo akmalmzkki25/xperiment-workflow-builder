@@ -23,6 +23,7 @@ interface ActionBarProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  onTidy: () => void;
   onToggleLibrary: () => void;
   onToggleAi: () => void;
   onRunStarted: (executionId: string) => void;
@@ -44,6 +45,7 @@ export function ActionBar({
   canRedo,
   onUndo,
   onRedo,
+  onTidy,
   onToggleLibrary,
   onToggleAi,
   onRunStarted,
@@ -210,6 +212,15 @@ export function ActionBar({
           data-testid="action-redo"
         >
           ↷
+        </button>
+        <button
+          className="q-btn q-btn--ghost q-btn--sm"
+          disabled={nodeCount === 0}
+          onClick={onTidy}
+          title="Arrange the canvas — undoable"
+          data-testid="action-tidy"
+        >
+          Tidy
         </button>
         <button className="q-btn q-btn--live q-btn--sm" onClick={onToggleAi} data-testid="ai-open">
           ✦ AI

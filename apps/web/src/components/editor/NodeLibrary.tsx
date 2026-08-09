@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ConnectorItem } from '../../lib/api';
 import { NODE_GLYPHS } from './XperimentNode';
 
@@ -13,17 +13,28 @@ const GROUPS: { kind: ConnectorItem['kind']; title: string }[] = [
 export function NodeLibrary({
   items,
   onAdd,
+  focusSignal,
 }: {
   items: ConnectorItem[];
   onAdd: (item: ConnectorItem) => void;
+  /** Increments when '/' is pressed; the value itself carries no meaning. */
+  focusSignal: number;
 }) {
   const [search, setSearch] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
   const q = search.trim().toLowerCase();
   const visible = q ? items.filter((i) => i.type.toLowerCase().includes(q)) : items;
+
+  // Also fires on mount, which is the case that matters: '/' opens the drawer and
+  // focuses in one press, and this component did not exist when the key was pressed.
+  useEffect(() => {
+    if (focusSignal > 0) inputRef.current?.focus();
+  }, [focusSignal]);
 
   return (
     <aside className="q-library" data-testid="node-library">
       <input
+        ref={inputRef}
         className="q-input"
         placeholder="Search nodes…"
         value={search}

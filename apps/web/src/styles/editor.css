@@ -334,6 +334,12 @@
 /* Loop container — a frame body nodes sit inside, not another box in the chain. */
 .q-loop {
   position: relative;
+  /* Fill the React Flow wrapper so Tidy can size the frame: `node.style` lands on
+     .react-flow__node, and without this the dashed frame would stay content-sized
+     and ignore the width and height the layout computed for it. With no style set
+     the wrapper is auto-sized and the floors below still decide. */
+  width: 100%;
+  height: 100%;
   min-width: 320px;
   min-height: 200px;
   padding: var(--space-3) var(--space-4) var(--space-4);

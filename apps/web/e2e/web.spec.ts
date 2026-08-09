@@ -79,6 +79,26 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   await expect(page.getByTestId('node-shape_lead')).toBeVisible();
   await expect(page.locator('.react-flow__edge')).toHaveCount(1);
 
+  // '/' opens the palette AND lands the caret in its search box — the drawer is
+  // mounted by the same keystroke, so focusing has to survive that mount.
+  await page.getByTestId('canvas').click({ position: { x: 20, y: 20 } });
+  await page.keyboard.press('/');
+  await expect(page.getByTestId('lib-search')).toBeFocused();
+  await page.keyboard.type('transform');
+  await expect(page.getByTestId('lib-search')).toHaveValue('transform');
+
+  // Tidy is a destructive-looking action, so it must be undoable like any other edit.
+  // Read the canvas transform rather than a bounding box: Tidy calls fitView, which
+  // moves the viewport, so screen coordinates would differ even on a perfect undo.
+  const canvasPos = () =>
+    page.evaluate(() => (document.querySelector('[data-id="shape_lead"]') as HTMLElement | null)?.style.transform ?? '');
+  const beforeTidy = await canvasPos();
+  expect(beforeTidy).not.toBe('');
+  await page.getByTestId('action-tidy').click();
+  await expect.poll(canvasPos).not.toBe(beforeTidy);
+  await page.getByTestId('action-undo').click();
+  await expect.poll(canvasPos).toBe(beforeTidy);
+
   // Duplicate the transform, then undo it — the copy must get its own id, and the
   // canvas must come back to two nodes rather than keeping a half-applied paste.
   await page.getByTestId('node-shape_lead').click();

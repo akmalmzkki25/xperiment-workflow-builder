@@ -13,6 +13,7 @@ import {
   type NodeChange,
 } from 'reactflow';
 import { getBrowserClient, type ConnectorItem, type Finding } from '../../lib/api';
+import { autoLayout } from '../../lib/autoLayout';
 import { copySelection, pasteCanvas, type Clip } from '../../lib/clipboard';
 import {
   canRedo,
@@ -87,6 +88,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const [watchStartedAt, setWatchStartedAt] = useState<number | null>(null);
   const [history, setHistory] = useState<History<CanvasSnapshot>>(emptyHistory<CanvasSnapshot>);
   const [saveSignal, setSaveSignal] = useState(0);
+  const [searchSignal, setSearchSignal] = useState(0);
   const initializedRef = useRef(false);
   const previousDefinitionRef = useRef<unknown>({});
   /** True between a drag's first moved frame and its last, so one gesture is one entry. */
@@ -280,6 +282,31 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     );
   }, [appendPaste, selectionIds]);
 
+  const onTidy = useCallback(() => {
+    const layout = autoLayout(
+      nodesRef.current.map((node) => ({
+        id: node.id,
+        isContainer: node.type === 'xperimentLoop',
+        parentNode: node.parentNode,
+      })),
+      edgesRef.current.map((edge) => ({ source: edge.source, target: edge.target })),
+    );
+    recordEdit();
+    setNodes((prev) =>
+      prev.map((node) => {
+        const position = layout.positions.get(node.id) ?? node.position;
+        const size = layout.sizes.get(node.id);
+        // Frame size is a style, never IR: toEditorNode keeps only id, type, position,
+        // data, parentNode and extent, so `style` cannot reach the saved definition.
+        return size
+          ? { ...node, position, style: { ...node.style, width: size.width, height: size.height } }
+          : { ...node, position };
+      }),
+    );
+    markDirty();
+    setTimeout(() => void flow.fitView({ padding: 0.2, maxZoom: 1 }), 60);
+  }, [setNodes, markDirty, recordEdit, flow]);
+
   const onUndo = useCallback(() => {
     applyStep(undo(historyRef.current, { nodes: nodesRef.current, edges: edgesRef.current }));
   }, [applyStep]);
@@ -297,8 +324,10 @@ function EditorInner({ workflowId }: { workflowId: string }) {
         else if (action === 'copy') onCopy();
         else if (action === 'paste') onPaste();
         else if (action === 'duplicate') onDuplicate();
-        // The palette has no search field until B6; opening it is the useful half now.
-        else if (action === 'search') setLibraryOpen(true);
+        else if (action === 'search') {
+          setLibraryOpen(true);
+          setSearchSignal((n) => n + 1);
+        }
       },
       [onUndo, onRedo, onCopy, onPaste, onDuplicate, setLibraryOpen],
     ),
@@ -465,6 +494,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
           canRedo={canRedo(history)}
           onUndo={onUndo}
           onRedo={onRedo}
+          onTidy={onTidy}
           onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
           onToggleAi={() => setAiOpen((v) => !v)}
           onRunStarted={(executionId) => {
@@ -484,7 +514,9 @@ function EditorInner({ workflowId }: { workflowId: string }) {
           />
         ) : null}
         <div className="q-editor">
-          {libraryOpen ? <NodeLibrary items={catalogQ.data?.items ?? []} onAdd={addNodeFromItem} /> : null}
+          {libraryOpen ? (
+            <NodeLibrary items={catalogQ.data?.items ?? []} onAdd={addNodeFromItem} focusSignal={searchSignal} />
+          ) : null}
           <Canvas
             nodes={nodes}
             edges={edges}
