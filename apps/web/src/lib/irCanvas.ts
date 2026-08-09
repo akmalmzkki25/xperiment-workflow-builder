@@ -3,6 +3,8 @@
  * React Flow canvas state. Kept UI-free so it can be unit-tested.
  */
 
+import { frameSizes } from './autoLayout';
+
 export interface IRNodeData {
   id: string;
   kind: 'trigger' | 'action' | 'logic';
@@ -25,6 +27,11 @@ export interface EditorNode {
   /** React Flow parenting — the canvas form of `ir.scope.loopId`. */
   parentNode?: string | undefined;
   extent?: 'parent' | undefined;
+  /**
+   * Frame size for a loop container. Presentation only — `toEditorNode` drops it, so
+   * it can never reach the saved definition.
+   */
+  style?: { width: number; height: number } | undefined;
 }
 
 export const LOOP_TYPE = 'core.loop';
@@ -100,6 +107,22 @@ export function definitionToCanvas(definition: unknown): { nodes: EditorNode[]; 
         ...(ir.scope ? { parentNode: ir.scope.loopId, extent: 'parent' as const } : {}),
       };
     });
+  // Frame sizes are style, so they were never saved. Recompute them from where the
+  // body already sits, or a reloaded loop shrinks to its CSS floor and leaves its own
+  // nodes rendering outside it.
+  const frames = frameSizes(
+    nodes.map((n) => ({
+      id: n.id,
+      isContainer: n.type === 'xperimentLoop',
+      parentNode: n.parentNode,
+      position: n.position,
+    })),
+  );
+  for (const node of nodes) {
+    const size = frames.get(node.id);
+    if (size) node.style = size;
+  }
+
   const rawEdges = Array.isArray(def.edges) ? def.edges : [];
   const edges = rawEdges
     .filter(

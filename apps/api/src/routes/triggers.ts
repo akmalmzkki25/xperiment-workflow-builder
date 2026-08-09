@@ -179,6 +179,9 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     // providers put bearer tokens in headers the gateway does not strip and verify
     // tokens in query strings. Redaction here is key-name based and therefore partial;
     // it does not clean what is already at rest, only what is shown.
-    return { samples: samples.map(redactSecrets) };
+    // Wrapped, not point-free: Array.map calls back with (value, index), and
+    // redactSecrets' second parameter is its recursion depth. Passing it bare made
+    // sample N start N levels into an 8-level budget and blank its own tail.
+    return { samples: samples.map((sample) => redactSecrets(sample)) };
   });
 }

@@ -224,6 +224,42 @@ function layoutGroup(
   return { width: Math.max(x - opts.colGap, opts.nodeWidth), height: tallest };
 }
 
+/**
+ * Frame size for every container, derived from where its body already sits.
+ *
+ * Needed because a frame's size is a style, not IR, so it does not survive a save. On
+ * reload the frame would fall back to its CSS floor while the body kept the positions
+ * a larger frame was laid out for — nodes rendering outside their own container.
+ * Recomputing from the saved positions restores the frame without persisting anything.
+ */
+export function frameSizes(
+  nodes: readonly { id: string; isContainer: boolean; parentNode?: string | undefined; position: { x: number; y: number } }[],
+  options: Partial<LayoutOptions> = {},
+): Map<string, { width: number; height: number }> {
+  const opts = { ...DEFAULT_LAYOUT, ...options };
+  const sizes = new Map<string, { width: number; height: number }>();
+  const containers = nodes.filter((n) => n.isContainer);
+  if (containers.length === 0) return sizes;
+
+  // Innermost first: a nested frame contributes its own size to its parent's extent.
+  const group = resolveGroups(nodes);
+  const ordered = [...containers].sort(
+    (a, b) => containerDepth(b.id, group) - containerDepth(a.id, group) || (a.id < b.id ? -1 : 1),
+  );
+  for (const container of ordered) {
+    const children = nodes.filter((n) => group.get(n.id) === container.id);
+    let right = opts.nodeWidth;
+    let bottom = opts.nodeHeight;
+    for (const child of children) {
+      const own = sizes.get(child.id);
+      right = Math.max(right, child.position.x + (own?.width ?? opts.nodeWidth));
+      bottom = Math.max(bottom, child.position.y + (own?.height ?? opts.nodeHeight));
+    }
+    sizes.set(container.id, { width: right + opts.padX, height: bottom + opts.padY / 2 });
+  }
+  return sizes;
+}
+
 export function autoLayout(
   nodes: readonly LayoutNode[],
   edges: readonly LayoutEdge[],

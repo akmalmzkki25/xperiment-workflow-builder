@@ -272,4 +272,38 @@ describe('activation', () => {
     expect(text).not.toContain('sk-live-should-not-appear');
     expect(text).toContain('ok');
   });
+
+  test('every sample is redacted from the same depth, not from its list position', async () => {
+    // samples.map(redactSecrets) fed the ARRAY INDEX in as the recursion depth, so the
+    // fifth sample started five levels into an eight-level budget and blanked its own
+    // tail. One sample per test could never see it — the index was always zero.
+    const id = await publishedWorkflow(webhookIr());
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    const versionRow = await pool.query<{ id: string }>(
+      `SELECT active_version_id AS id FROM workflows WHERE id = $1`,
+      [id],
+    );
+    const deep = { body: { a: { b: { c: { d: { leaf: 'visible-leaf' } } } } }, headers: {}, query: {} };
+    for (let i = 0; i < 4; i += 1) {
+      const created = await createExecutionWithTrigger(pool, {
+        workflowId: id,
+        versionId: versionRow.rows[0]!.id,
+        idempotencyKey: `depth-${i}`,
+        payload: deep,
+        nodeIds: ['hook'],
+        executionTimeoutMs: 60_000,
+        triggerNodeId: 'hook',
+      });
+      const executionId = (created as { execution: { id: string } }).execution.id;
+      await pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [executionId]);
+    }
+
+    const res = await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/triggers/hook/samples` });
+    const samples = res.json<{ samples: unknown[] }>().samples;
+    expect(samples).toHaveLength(4);
+    // Identical payloads must redact identically however far down the list they sit.
+    const rendered = samples.map((s) => JSON.stringify(s));
+    expect(new Set(rendered).size).toBe(1);
+    expect(rendered[0]).toContain('visible-leaf');
+  });
 });
