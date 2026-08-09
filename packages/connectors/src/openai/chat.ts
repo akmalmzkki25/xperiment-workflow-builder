@@ -24,6 +24,12 @@ export const openaiChat: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'write',
   outputPorts: ['main'],
+  display: {
+    displayName: 'OpenAI chat',
+    description: 'Generate text with an OpenAI chat model.',
+    category: 'AI',
+    glyph: '✧',
+  },
   paramsSchema,
   requiresConnection: 'openai',
   async run(ctx) {

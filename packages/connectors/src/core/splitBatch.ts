@@ -41,6 +41,12 @@ export const coreSplitBatch: ConnectorDefinition = {
   // `empty` mirrors core.loop firing `done` on an empty list, rather than silently
   // doing nothing and leaving the graph with no active port.
   outputPorts: ['main', 'empty'],
+  display: {
+    displayName: 'Split into batches',
+    description: 'Cut a long list into fixed-size batches.',
+    category: 'Data',
+    glyph: '⧉',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

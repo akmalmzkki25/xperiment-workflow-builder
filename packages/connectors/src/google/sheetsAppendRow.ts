@@ -21,6 +21,12 @@ export const sheetsAppendRow: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'write',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Append sheet row',
+    description: 'Add a row to the bottom of a Google Sheet.',
+    category: 'Integrations',
+    glyph: '⊞',
+  },
   paramsSchema,
   requiresConnection: 'googleSheets',
   async run(ctx) {

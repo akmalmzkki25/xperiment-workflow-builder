@@ -19,6 +19,12 @@ export const sheetsGetRows: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'read',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Read sheet rows',
+    description: 'Read a range of rows from a Google Sheet.',
+    category: 'Integrations',
+    glyph: '▦',
+  },
   paramsSchema,
   requiresConnection: 'googleSheets',
   async run(ctx) {

@@ -16,6 +16,12 @@ export const coreSort: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Sort list',
+    description: 'Order a list by a field, ascending or descending.',
+    category: 'Data',
+    glyph: '↕',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

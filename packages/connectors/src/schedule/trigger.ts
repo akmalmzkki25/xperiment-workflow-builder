@@ -37,6 +37,12 @@ export const scheduleTrigger: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'On a schedule',
+    description: 'Start the workflow on a cron schedule in your timezone.',
+    category: 'Triggers',
+    glyph: '⏰',
+  },
   paramsSchema,
   async run(ctx) {
     return { output: ctx.triggerBody ?? null };

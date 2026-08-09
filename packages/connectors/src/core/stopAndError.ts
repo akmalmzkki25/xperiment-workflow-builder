@@ -25,6 +25,12 @@ export const coreStopAndError: ConnectorDefinition = {
    * costs no change to packages/ir.
    */
   outputPorts: [],
+  display: {
+    displayName: 'Stop with an error',
+    description: 'End the run immediately and mark it failed.',
+    category: 'Logic',
+    glyph: '⛔',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

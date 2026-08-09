@@ -46,6 +46,12 @@ export const coreMerge: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Merge branches',
+    description: 'Combine the output of several branches into one.',
+    category: 'Logic',
+    glyph: '⋈',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

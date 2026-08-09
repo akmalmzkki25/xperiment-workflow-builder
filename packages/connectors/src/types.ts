@@ -44,12 +44,35 @@ export class NodeRunError extends Error {
   }
 }
 
+/** What a human is shown for this connector, in the palette and on the canvas. */
+export interface ConnectorDisplay {
+  /** Title case, no dots — 'Send WhatsApp message', not 'whatsapp.sendMessage'. */
+  displayName: string;
+  /** One sentence, plain language: what it does and when you would reach for it. */
+  description: string;
+  /** Palette grouping. */
+  category: 'Triggers' | 'Logic' | 'Data' | 'Messaging' | 'AI' | 'Integrations';
+  /** A single character drawn on the node. */
+  glyph: string;
+  docsUrl?: string;
+}
+
 export interface ConnectorDefinition {
   type: string;
   kind: NodeKind;
   operationVersion: string;
   defaultEffectClass: EffectClass;
   outputPorts: string[];
+  /**
+   * Required, and nested under one key on purpose.
+   *
+   * Required because TypeScript is the only thing that will actually enforce it: an
+   * optional side table rots silently, and this repo already proved that — NODE_GLYPHS
+   * covered 10 of 26 connectors precisely because nothing made the other 16 fail.
+   * Nested so a connector that forgets it is ONE compile error in one obvious place,
+   * rather than four.
+   */
+  display: ConnectorDisplay;
   paramsSchema: z.ZodTypeAny;
   /** connector_key of the connection this node type needs (e.g. 'postgres'). */
   requiresConnection?: string;

@@ -7,6 +7,12 @@ export const manualTrigger: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Manual start',
+    description: 'Start the workflow yourself, from the editor or the API.',
+    category: 'Triggers',
+    glyph: '▷',
+  },
   paramsSchema: z.object({}).strict(),
   async run(ctx) {
     return { output: ctx.triggerBody ?? null };

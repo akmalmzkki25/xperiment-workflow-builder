@@ -14,6 +14,12 @@ export const webhookTrigger: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'On a webhook',
+    description: 'Start the workflow when something POSTs to its URL.',
+    category: 'Triggers',
+    glyph: '⚡',
+  },
   paramsSchema,
   async run(ctx) {
     return { output: ctx.triggerBody ?? null };

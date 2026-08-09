@@ -19,6 +19,12 @@ export function createHttpRequest(cfg: { allowPrivateIps: boolean }): ConnectorD
     operationVersion: '0.1.0',
     defaultEffectClass: 'write',
     outputPorts: ['main'],
+    display: {
+      displayName: 'HTTP request',
+      description: 'Call any HTTP API and use its response.',
+      category: 'Integrations',
+      glyph: '⇄',
+    },
     paramsSchema,
     async run(ctx) {
       const parsed = paramsSchema.safeParse(ctx.parameters);

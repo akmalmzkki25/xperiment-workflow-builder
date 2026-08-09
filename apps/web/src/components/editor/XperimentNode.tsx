@@ -6,18 +6,13 @@ import type { IRNodeData } from '../../lib/irCanvas';
 import { deriveFields, nodeReadiness, type NodeReadiness } from '../../lib/schemaForm';
 import { useEditorContext } from './EditorContext';
 
-export const NODE_GLYPHS: Record<string, string> = {
-  'manual.trigger': '▷',
-  'webhook.trigger': '⚡',
-  'schedule.trigger': '⏰',
-  'core.transform': 'ƒ',
-  'core.if': '⑂',
-  'http.request': '⇄',
-  'postgres.query': '▤',
-  'telegram.sendMessage': '✈',
-  'openai.chat': '✦',
-  'gemini.generate': '✦',
-};
+/**
+ * Shown when the catalog has not loaded, or for a node type the server does not know.
+ *
+ * The glyph itself now travels with the connector. The hand-written table that used to
+ * live here covered 10 of 26 types — an optional side table with no way to fail.
+ */
+export const FALLBACK_GLYPH = '▣';
 
 const READINESS_LABEL: Record<NodeReadiness, string> = {
   ready: 'Ready',
@@ -54,12 +49,12 @@ export function XperimentNode({ data, selected }: NodeProps<{ ir: IRNodeData }>)
       ) : null}
       <div className="q-node__head">
         <span className="q-node__glyph" aria-hidden>
-          {NODE_GLYPHS[ir.type] ?? '▣'}
+          {item?.glyph ?? FALLBACK_GLYPH}
         </span>
         <span className="q-node__title">{ir.id}</span>
       </div>
-      <span className="q-node__sub">
-        {ir.type} · v{ir.operationVersion}
+      <span className="q-node__sub" title={item?.description}>
+        {item?.displayName ?? ir.type} · v{ir.operationVersion}
       </span>
       <div className="q-node__badges">
         <span className={`q-node__badge q-node__badge--${readiness}`} data-testid={`readiness-${ir.id}`}>

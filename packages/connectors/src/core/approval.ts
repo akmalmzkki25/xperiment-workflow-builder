@@ -16,6 +16,12 @@ export const coreApproval: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['approved', 'rejected'],
+  display: {
+    displayName: 'Wait for approval',
+    description: 'Pause the run until a person approves or rejects it.',
+    category: 'Logic',
+    glyph: '✋',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

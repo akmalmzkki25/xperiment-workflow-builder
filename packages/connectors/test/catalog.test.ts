@@ -44,6 +44,44 @@ describe('connectorCatalog', () => {
     expect(byType.get('core.if')?.outputPorts).toEqual(['true', 'false']);
   });
 
+  test('every connector carries a display name, description, category and glyph', () => {
+    for (const item of items) {
+      expect(item.displayName.length, item.type).toBeGreaterThan(0);
+      expect(item.description.length, item.type).toBeGreaterThan(0);
+      expect(item.category.length, item.type).toBeGreaterThan(0);
+      // One character on the node, not a word.
+      expect([...item.glyph], item.type).toHaveLength(1);
+    }
+  });
+
+  test('a display name never repeats the raw type', () => {
+    // 'whatsapp.sendMessage' in the palette is the thing this replaces.
+    for (const item of items) expect(item.displayName, item.type).not.toBe(item.type);
+  });
+
+  test('no two connectors share a display name', () => {
+    const names = items.map((i) => i.displayName);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  test('a description reads as a sentence, not a label', () => {
+    for (const item of items) {
+      expect(item.description.endsWith('.'), item.type).toBe(true);
+      expect(item.description.length, item.type).toBeGreaterThan(20);
+    }
+  });
+
+  test('every category is one the palette knows how to group', () => {
+    const known = new Set(['Triggers', 'Logic', 'Data', 'Messaging', 'AI', 'Integrations']);
+    for (const item of items) expect(known.has(item.category), `${item.type}: ${item.category}`).toBe(true);
+  });
+
+  test('docsUrl, where present, is an https URL', () => {
+    for (const item of items) {
+      if (item.docsUrl !== undefined) expect(item.docsUrl.startsWith('https://'), item.type).toBe(true);
+    }
+  });
+
   test('approval node exposes approved/rejected ports', () => {
     expect(byType.get('core.approval')?.outputPorts).toEqual(['approved', 'rejected']);
     expect(byType.get('core.delay')?.requiresConnection).toBeUndefined();

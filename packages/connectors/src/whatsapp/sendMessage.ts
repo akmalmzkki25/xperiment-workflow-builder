@@ -30,6 +30,12 @@ export const whatsappSendMessage: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'write',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Send WhatsApp message',
+    description: 'Send a WhatsApp message through the Cloud API.',
+    category: 'Messaging',
+    glyph: '⌬',
+  },
   paramsSchema,
   requiresConnection: 'whatsapp',
   async run(ctx) {

@@ -7,6 +7,8 @@ export interface CatalogEntry {
   operationVersion: string;
   outputPorts: string[];
   requiresConnection?: string;
+  /** Optional so an older catalog still satisfies this shape. */
+  description?: string;
   paramsJsonSchema: unknown;
 }
 
@@ -46,6 +48,10 @@ export function buildSystemPrompt(catalog: CatalogEntry[], connections: Connecti
       kind: c.kind,
       operationVersion: c.operationVersion,
       outputPorts: c.outputPorts,
+      // A sentence of what the node does. The model was previously choosing between
+      // twenty-six dotted identifiers and a JSON Schema, with nothing saying what any
+      // of them were for.
+      ...(c.description ? { description: c.description } : {}),
       ...(c.requiresConnection ? { requiresConnection: c.requiresConnection } : {}),
       parameters: c.paramsJsonSchema,
     })),

@@ -60,6 +60,12 @@ export function createEmailSend(deps: EmailDeps = {}): ConnectorDefinition {
     operationVersion: '0.1.0',
     defaultEffectClass: 'write',
     outputPorts: ['main'],
+    display: {
+      displayName: 'Send email',
+      description: 'Send an email through your own SMTP server.',
+      category: 'Messaging',
+      glyph: '✉',
+    },
     paramsSchema,
     requiresConnection: 'smtp',
     async run(ctx) {

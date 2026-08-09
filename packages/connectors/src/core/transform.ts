@@ -9,6 +9,12 @@ export const coreTransform: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Build fields',
+    description: 'Assemble a new object from expressions.',
+    category: 'Data',
+    glyph: 'ƒ',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

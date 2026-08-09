@@ -9,6 +9,12 @@ export const coreIf: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['true', 'false'],
+  display: {
+    displayName: 'Branch',
+    description: 'Send the run down one of two paths based on a condition.',
+    category: 'Logic',
+    glyph: '⑂',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

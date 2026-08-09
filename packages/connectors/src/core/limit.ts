@@ -16,6 +16,12 @@ export const coreLimit: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Limit',
+    description: 'Take the first or last few items of a list.',
+    category: 'Data',
+    glyph: '⇥',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

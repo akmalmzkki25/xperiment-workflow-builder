@@ -17,6 +17,12 @@ export const postgresQuery: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'read',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Postgres query',
+    description: 'Run a parameterised SQL query against Postgres.',
+    category: 'Integrations',
+    glyph: '▤',
+  },
   paramsSchema,
   requiresConnection: 'postgres',
   async run(ctx) {

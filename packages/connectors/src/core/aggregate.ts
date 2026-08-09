@@ -87,6 +87,12 @@ export const coreAggregate: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Aggregate',
+    description: 'Sum, average, count, min or max a list, optionally grouped by a field.',
+    category: 'Data',
+    glyph: 'Σ',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

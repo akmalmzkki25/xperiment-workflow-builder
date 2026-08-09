@@ -71,7 +71,8 @@
 
 .q-library__item {
   display: flex;
-  align-items: center;
+  /* Two lines now — a name and a sentence — so the glyph sits at the top. */
+  align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);
@@ -90,6 +91,7 @@
 .q-library__glyph {
   width: 24px;
   height: 24px;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
   border-radius: 6px;
@@ -97,9 +99,23 @@
   font-size: 13px;
 }
 
+.q-library__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .q-library__type {
-  font-family: var(--font-mono);
-  font-size: var(--text-mono);
+  /* A human name now, so it stops being monospaced. */
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.q-library__desc {
+  font-size: var(--text-mono-sub);
+  line-height: 1.4;
+  color: var(--text-secondary);
 }
 
 /* ---------- Node card ---------- */

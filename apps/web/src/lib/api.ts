@@ -7,6 +7,18 @@ export interface ConnectorItem {
   defaultEffectClass: 'pure' | 'read' | 'write';
   outputPorts: string[];
   requiresConnection?: string;
+  /**
+   * Display metadata, read as OPTIONAL on purpose.
+   *
+   * The server always sends it, but a web build deployed ahead of the API would
+   * otherwise render blanks where a node label belongs. Every consumer falls back
+   * to the raw type.
+   */
+  displayName?: string;
+  description?: string;
+  category?: string;
+  glyph?: string;
+  docsUrl?: string;
   paramsJsonSchema: unknown;
 }
 

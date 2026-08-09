@@ -21,6 +21,12 @@ export const coreFilter: ConnectorDefinition = {
   // `empty` is what makes filter composable. Without it every author writes a core.if
   // on length(...) == 0 immediately downstream.
   outputPorts: ['main', 'empty'],
+  display: {
+    displayName: 'Filter list',
+    description: 'Keep only the list items that match a condition.',
+    category: 'Data',
+    glyph: '⌗',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

@@ -23,6 +23,12 @@ export const geminiGenerate: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'write',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Gemini',
+    description: 'Generate text with Google Gemini.',
+    category: 'AI',
+    glyph: '✦',
+  },
   paramsSchema,
   requiresConnection: 'gemini',
   async run(ctx) {

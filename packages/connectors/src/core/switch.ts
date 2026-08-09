@@ -78,6 +78,12 @@ export const coreSwitch: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: PORTS,
+  display: {
+    displayName: 'Switch',
+    description: 'Route the run to one of several paths by matching a value.',
+    category: 'Logic',
+    glyph: '⌥',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

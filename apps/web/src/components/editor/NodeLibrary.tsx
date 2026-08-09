@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ConnectorItem } from '../../lib/api';
 import { filterCatalog } from '../../lib/catalogSearch';
-import { NODE_GLYPHS } from './XperimentNode';
+import { FALLBACK_GLYPH } from './XperimentNode';
 
 const GROUPS: { kind: ConnectorItem['kind']; title: string }[] = [
   { kind: 'trigger', title: 'Triggers' },
@@ -56,9 +56,12 @@ export function NodeLibrary({
                 data-testid={`lib-item-${item.type}`}
               >
                 <span className="q-library__glyph" aria-hidden>
-                  {NODE_GLYPHS[item.type] ?? '▣'}
+                  {item.glyph ?? FALLBACK_GLYPH}
                 </span>
-                <span className="q-library__type">{item.type}</span>
+                <span className="q-library__label">
+                  <span className="q-library__type">{item.displayName ?? item.type}</span>
+                  {item.description ? <span className="q-library__desc">{item.description}</span> : null}
+                </span>
               </button>
             ))}
           </div>

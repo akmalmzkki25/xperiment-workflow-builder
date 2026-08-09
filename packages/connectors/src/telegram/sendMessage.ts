@@ -18,6 +18,12 @@ export const telegramSendMessage: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'write',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Send Telegram message',
+    description: 'Send a message to a Telegram chat from your bot.',
+    category: 'Messaging',
+    glyph: '✈',
+  },
   paramsSchema,
   requiresConnection: 'telegram',
   async run(ctx) {

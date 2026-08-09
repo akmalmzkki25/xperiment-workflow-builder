@@ -22,6 +22,12 @@ export const coreLoop: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['item', 'done'],
+  display: {
+    displayName: 'Loop over items',
+    description: 'Run the nodes inside once for each item in a list.',
+    category: 'Logic',
+    glyph: '↻',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);

@@ -10,6 +10,12 @@ export const coreWaitForEvent: ConnectorDefinition = {
   operationVersion: '0.1.0',
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
+  display: {
+    displayName: 'Wait for event',
+    description: 'Pause until an external event resumes the run.',
+    category: 'Logic',
+    glyph: '⏸',
+  },
   paramsSchema,
   async run(ctx) {
     const parsed = paramsSchema.safeParse(ctx.parameters);
