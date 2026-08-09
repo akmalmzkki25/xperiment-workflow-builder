@@ -32,9 +32,9 @@ export const whatsappSendMessage: ConnectorDefinition = {
   outputPorts: ['main'],
   display: {
     displayName: 'Send WhatsApp message',
-    description: 'Send a WhatsApp message through the Cloud API.',
+    description: 'Send a WhatsApp message to a phone number — either free text, or a pre-approved template, but not both.',
     category: 'Messaging',
-    glyph: '⌬',
+    glyph: '☏',
   },
   paramsSchema,
   requiresConnection: 'whatsapp',

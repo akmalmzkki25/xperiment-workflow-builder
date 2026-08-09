@@ -97,6 +97,10 @@
   border-radius: 6px;
   background: var(--surface-sunken);
   font-size: 13px;
+  /* Named explicitly: the UI font covers almost none of these code points, so without
+     this every glyph came from a different per-character browser fallback and the set
+     had no consistent weight or baseline. */
+  font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', var(--font-ui);
 }
 
 .q-library__label {

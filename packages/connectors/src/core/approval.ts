@@ -18,7 +18,7 @@ export const coreApproval: ConnectorDefinition = {
   outputPorts: ['approved', 'rejected'],
   display: {
     displayName: 'Wait for approval',
-    description: 'Pause the run until a person approves or rejects it.',
+    description: 'Pause until someone approves or rejects, then continue down that path — or take the fallback you set if nobody answers in time.',
     category: 'Logic',
     glyph: '✋',
   },

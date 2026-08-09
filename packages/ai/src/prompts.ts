@@ -39,7 +39,9 @@ Rules:
 - Every workflow needs exactly one trigger-kind node, listed in entrypoints.
 - String parameters may contain expressions like {{ trigger.body.field }}, {{ nodes.<id>.output }}, or {{ execution.id }}. Roots are: trigger, nodes, execution.
 - Nodes whose catalog entry has requiresConnection MUST set connectionRef to a listed connection id of the matching connectorKey. Never invent a connection id.
-- core.if has output ports "true" and "false"; all other nodes output on "main".`;
+- Read each node's outputPorts from the catalog and use only those names. They are NOT all "main": core.if is true/false, core.switch is case1..caseN plus default, core.filter is main/empty, core.approval is approved/rejected, core.loop is item/done, and core.stopAndError has none at all.
+- The catalog's parameter schema cannot express cross-field rules, so obey these: whatsapp.sendMessage needs exactly one of text or templateName; email.send needs text or html; core.switch needs an explicit "equals" on every case; core.aggregate must not be given a field when the operation is count.
+- Nodes that work on a list (core.filter, core.sort, core.limit, core.aggregate, core.splitBatch, core.loop) need their items parameter pointed at upstream output with an expression, even though the schema marks it optional.`;
 
 export function buildSystemPrompt(catalog: CatalogEntry[], connections: ConnectionSummary[]): string {
   const catalogJson = JSON.stringify(

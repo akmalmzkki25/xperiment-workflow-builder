@@ -10,8 +10,8 @@ export const coreTransform: ConnectorDefinition = {
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
   display: {
-    displayName: 'Build fields',
-    description: 'Assemble a new object from expressions.',
+    displayName: 'Build a record',
+    description: 'Make a new record with the fields and values you choose.',
     category: 'Data',
     glyph: 'ƒ',
   },

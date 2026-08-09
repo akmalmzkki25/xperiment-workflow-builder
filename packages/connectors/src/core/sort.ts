@@ -18,7 +18,7 @@ export const coreSort: ConnectorDefinition = {
   outputPorts: ['main'],
   display: {
     displayName: 'Sort list',
-    description: 'Order a list by a field, ascending or descending.',
+    description: 'Order a list by a field, ascending or descending, with any items missing that field always at the end.',
     category: 'Data',
     glyph: '↕',
   },

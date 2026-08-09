@@ -13,7 +13,7 @@ export const coreIf: ConnectorDefinition = {
     displayName: 'Branch',
     description: 'Send the run down one of two paths based on a condition.',
     category: 'Logic',
-    glyph: '⑂',
+    glyph: '⇉',
   },
   paramsSchema,
   async run(ctx) {

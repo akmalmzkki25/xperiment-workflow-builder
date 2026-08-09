@@ -39,7 +39,7 @@ export const scheduleTrigger: ConnectorDefinition = {
   outputPorts: ['main'],
   display: {
     displayName: 'On a schedule',
-    description: 'Start the workflow on a cron schedule in your timezone.',
+    description: 'Start the workflow automatically on a repeating schedule, in Jakarta time unless you choose another timezone.',
     category: 'Triggers',
     glyph: '⏰',
   },

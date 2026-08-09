@@ -88,8 +88,8 @@ export const coreAggregate: ConnectorDefinition = {
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
   display: {
-    displayName: 'Aggregate',
-    description: 'Sum, average, count, min or max a list, optionally grouped by a field.',
+    displayName: 'Summarise list',
+    description: 'Count, total, average, or find the smallest or largest value in a list — one answer, or one per group when you set a group field.',
     category: 'Data',
     glyph: 'Σ',
   },

@@ -25,7 +25,7 @@ export const openaiChat: ConnectorDefinition = {
   defaultEffectClass: 'write',
   outputPorts: ['main'],
   display: {
-    displayName: 'OpenAI chat',
+    displayName: 'Ask OpenAI',
     description: 'Generate text with an OpenAI chat model.',
     category: 'AI',
     glyph: '✧',

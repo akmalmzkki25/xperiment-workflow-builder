@@ -16,7 +16,7 @@ export const webhookTrigger: ConnectorDefinition = {
   outputPorts: ['main'],
   display: {
     displayName: 'On a webhook',
-    description: 'Start the workflow when something POSTs to its URL.',
+    description: 'Start the workflow when another app sends data to this workflow’s web address.',
     category: 'Triggers',
     glyph: '⚡',
   },

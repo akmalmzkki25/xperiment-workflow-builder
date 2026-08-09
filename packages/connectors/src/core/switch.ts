@@ -79,8 +79,8 @@ export const coreSwitch: ConnectorDefinition = {
   defaultEffectClass: 'pure',
   outputPorts: PORTS,
   display: {
-    displayName: 'Switch',
-    description: 'Route the run to one of several paths by matching a value.',
+    displayName: 'Route by value',
+    description: 'Compare one value against a list of cases and send the run out of case1, case2 and so on, or out of default when nothing matches.',
     category: 'Logic',
     glyph: '⌥',
   },

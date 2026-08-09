@@ -43,7 +43,7 @@ export const coreSplitBatch: ConnectorDefinition = {
   outputPorts: ['main', 'empty'],
   display: {
     displayName: 'Split into batches',
-    description: 'Cut a long list into fixed-size batches.',
+    description: 'Split a list into fixed-size chunks and hand them all back at once, ready to feed into a loop.',
     category: 'Data',
     glyph: '⧉',
   },

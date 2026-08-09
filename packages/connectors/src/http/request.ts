@@ -21,7 +21,7 @@ export function createHttpRequest(cfg: { allowPrivateIps: boolean }): ConnectorD
     outputPorts: ['main'],
     display: {
       displayName: 'HTTP request',
-      description: 'Call any HTTP API and use its response.',
+      description: 'Call a public HTTP API and pass its response on — any non-2xx status fails the node.',
       category: 'Integrations',
       glyph: '⇄',
     },

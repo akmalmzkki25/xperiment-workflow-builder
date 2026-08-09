@@ -19,7 +19,7 @@ export const postgresQuery: ConnectorDefinition = {
   outputPorts: ['main'],
   display: {
     displayName: 'Postgres query',
-    description: 'Run a parameterised SQL query against Postgres.',
+    description: 'Run a SQL statement against a PostgreSQL database, filling in values through safe placeholders.',
     category: 'Integrations',
     glyph: '▤',
   },

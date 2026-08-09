@@ -21,7 +21,7 @@ export const sheetsGetRows: ConnectorDefinition = {
   outputPorts: ['main'],
   display: {
     displayName: 'Read sheet rows',
-    description: 'Read a range of rows from a Google Sheet.',
+    description: 'Read a block of cells from a Google Sheet as rows of raw cell values, header row included.',
     category: 'Integrations',
     glyph: '▦',
   },

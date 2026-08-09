@@ -89,8 +89,8 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   await page.keyboard.type('transform');
   await expect(page.getByTestId('lib-search')).toHaveValue('transform');
   // The palette reads as a product now, not as a list of dotted identifiers.
-  await expect(page.getByTestId('lib-item-core.transform')).toContainText('Build fields');
-  await expect(page.getByTestId('lib-item-core.transform')).toContainText('Assemble a new object');
+  await expect(page.getByTestId('lib-item-core.transform')).toContainText('Build a record');
+  await expect(page.getByTestId('lib-item-core.transform')).toContainText('fields and values you choose');
 
   // Duplicate the transform, then undo it — the copy must get its own id, and the
   // canvas must come back to two nodes rather than keeping a half-applied paste.

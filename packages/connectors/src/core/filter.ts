@@ -23,7 +23,7 @@ export const coreFilter: ConnectorDefinition = {
   outputPorts: ['main', 'empty'],
   display: {
     displayName: 'Filter list',
-    description: 'Keep only the list items that match a condition.',
+    description: 'Keep only the items of a list that match a condition, and route an empty result out of its own port.',
     category: 'Data',
     glyph: '⌗',
   },

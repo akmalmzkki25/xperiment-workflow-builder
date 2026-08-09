@@ -24,7 +24,7 @@ export const geminiGenerate: ConnectorDefinition = {
   defaultEffectClass: 'write',
   outputPorts: ['main'],
   display: {
-    displayName: 'Gemini',
+    displayName: 'Ask Gemini',
     description: 'Generate text with Google Gemini.',
     category: 'AI',
     glyph: '✦',

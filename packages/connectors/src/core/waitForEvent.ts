@@ -11,8 +11,9 @@ export const coreWaitForEvent: ConnectorDefinition = {
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
   display: {
-    displayName: 'Wait for event',
-    description: 'Pause until an external event resumes the run.',
+    displayName: 'Wait for a callback',
+    description:
+      'Pause the run until an outside system calls back with this node’s one-time resume link, or the timeout you set runs out.',
     category: 'Logic',
     glyph: '⏸',
   },

@@ -48,8 +48,8 @@ export const coreMerge: ConnectorDefinition = {
   outputPorts: ['main'],
   display: {
     displayName: 'Merge branches',
-    description: 'Combine the output of several branches into one.',
-    category: 'Logic',
+    description: 'Combine two or more branch outputs that you list yourself — stack them, join them on a shared field, or take the first that produced a value.',
+    category: 'Data',
     glyph: '⋈',
   },
   paramsSchema,

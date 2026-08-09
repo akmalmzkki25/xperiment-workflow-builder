@@ -62,7 +62,7 @@ export function createEmailSend(deps: EmailDeps = {}): ConnectorDefinition {
     outputPorts: ['main'],
     display: {
       displayName: 'Send email',
-      description: 'Send an email through your own SMTP server.',
+      description: 'Send an email with text or HTML content through your connected email account.',
       category: 'Messaging',
       glyph: '✉',
     },

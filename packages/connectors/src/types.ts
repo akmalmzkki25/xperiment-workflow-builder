@@ -50,7 +50,11 @@ export interface ConnectorDisplay {
   displayName: string;
   /** One sentence, plain language: what it does and when you would reach for it. */
   description: string;
-  /** Palette grouping. */
+  /**
+   * A coarse subject label, searchable in the palette.
+   *
+   * NOT what the palette groups by — that is `kind`, into Triggers/Logic/Actions.
+   */
   category: 'Triggers' | 'Logic' | 'Data' | 'Messaging' | 'AI' | 'Integrations';
   /** A single character drawn on the node. */
   glyph: string;

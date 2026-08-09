@@ -24,7 +24,7 @@ export const coreLoop: ConnectorDefinition = {
   outputPorts: ['item', 'done'],
   display: {
     displayName: 'Loop over items',
-    description: 'Run the nodes inside once for each item in a list.',
+    description: 'Run the nodes inside once for each item in a list, up to the iteration limit you set (100 by default).',
     category: 'Logic',
     glyph: '↻',
   },

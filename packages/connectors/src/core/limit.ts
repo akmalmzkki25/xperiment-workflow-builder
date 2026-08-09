@@ -17,8 +17,8 @@ export const coreLimit: ConnectorDefinition = {
   defaultEffectClass: 'pure',
   outputPorts: ['main'],
   display: {
-    displayName: 'Limit',
-    description: 'Take the first or last few items of a list.',
+    displayName: 'Take first items',
+    description: 'Take a fixed number of items from the start of a list, optionally skipping some first.',
     category: 'Data',
     glyph: '⇥',
   },
