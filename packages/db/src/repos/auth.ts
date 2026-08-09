@@ -1,9 +1,23 @@
 import { resolveLimits } from '@xperiment/plans';
 import type pg from 'pg';
 import { type Db } from '../pool.js';
-import { withTx } from '../tx.js';
+import { ADVISORY_LOCK_TIMEOUT_MS, withTx } from '../tx.js';
 import { appendAuditEvent, type AuditActor } from './audit.js';
 import { getWorkspacePlan } from './entitlements.js';
+
+/**
+ * Serialize every role change in one workspace.
+ *
+ * `SET LOCAL` so the bound dies with the transaction and cannot follow the connection
+ * back into the pool. Bounded at all because the pool now caps statements at 30s: an
+ * unbounded advisory wait would be cancelled as 57014, which is indistinguishable from
+ * an operator cancelling the query and is therefore not safe to retry. `lock_timeout`
+ * raises 55P03 instead, which means exactly one thing, and withTx retries it.
+ */
+async function lockWorkspaceRoles(client: pg.PoolClient, workspaceId: string): Promise<void> {
+  await client.query(`SET LOCAL lock_timeout = ${ADVISORY_LOCK_TIMEOUT_MS}`);
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`workspace_role:${workspaceId}`]);
+}
 
 export type Role = 'viewer' | 'builder' | 'operator' | 'billing' | 'admin' | 'owner';
 
@@ -227,7 +241,7 @@ export async function acceptInvite(
     const row = invite.rows[0] as { id: string; workspace_id: string; role: Role };
     const workspaceId = row.workspace_id;
 
-    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`workspace_role:${workspaceId}`]);
+    await lockWorkspaceRoles(client, workspaceId);
 
     // Re-joining an existing membership consumes no seat, so only count the new ones.
     const already = await client.query(
@@ -372,7 +386,7 @@ export async function updateMemberRole(
   args: { workspaceId: string; userId: string; role: Role; actor: AuditActor },
 ): Promise<UpdateMemberRoleResult> {
   return withTx(pool, async (client) => {
-    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`workspace_role:${args.workspaceId}`]);
+    await lockWorkspaceRoles(client, args.workspaceId);
     const current = await client.query(
       `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE`,
       [args.workspaceId, args.userId],

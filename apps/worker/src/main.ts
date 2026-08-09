@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createDefaultRegistry } from '@xperiment/connectors';
-import {
+import { assertBootSafe,
   createKeyProviderFromEnv,
   createPool,
   createSecretVault,
@@ -23,6 +23,7 @@ import { runCallback, type CallbackDeps } from './callback.js';
 import { runNodeTask, type WorkerDeps } from './runTask.js';
 
 const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
+assertBootSafe();
 const pool = createPool();
 await runMigrations(pool);
 

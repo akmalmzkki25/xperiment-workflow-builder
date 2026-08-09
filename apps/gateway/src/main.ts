@@ -1,4 +1,4 @@
-import {
+import { assertBootSafe,
   createKeyProviderFromEnv,
   createPool,
   createSecretVault,
@@ -9,6 +9,7 @@ import {
 import { createQueues, createRedisConnection, startOutboxPublisher } from '@xperiment/queue';
 import { buildGateway } from './server.js';
 
+assertBootSafe();
 const pool = createPool();
 await runMigrations(pool);
 

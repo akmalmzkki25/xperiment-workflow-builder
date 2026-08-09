@@ -1,7 +1,11 @@
 import { createDefaultRegistry } from '@xperiment/connectors';
-import { createKeyProviderFromEnv, createPool, runMigrations } from '@xperiment/db';
+import { assertBootSafe, createKeyProviderFromEnv, createPool, runMigrations } from '@xperiment/db';
 import { createQueues, createRedisConnection, startOutboxPublisher } from '@xperiment/queue';
 import { buildServer } from './server.js';
+
+// Before anything opens a socket: a production deployment that inherited the committed
+// development credentials would otherwise start perfectly and serve an empty database.
+assertBootSafe();
 
 const pool = createPool();
 await runMigrations(pool);

@@ -1,4 +1,14 @@
-export { createPool, DEFAULT_DATABASE_URL, DEFAULT_WORKSPACE_ID, type Db } from './pool.js';
+export {
+  createPool,
+  DEFAULT_DATABASE_URL,
+  DEFAULT_STATEMENT_TIMEOUT_MS,
+  DEFAULT_WORKSPACE_ID,
+  resolveDatabaseUrl,
+  usesDevelopmentDefaults,
+  type Db,
+  type PoolOptions,
+} from './pool.js';
+export { assertBootSafe, bootProblems, DEFAULT_REDIS_URL, type BootProblem } from './bootCheck.js';
 export { runMigrations } from './migrate.js';
 export { withTx } from './tx.js';
 export * from './repos/workflows.js';

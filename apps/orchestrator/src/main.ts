@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { createPool, runMigrations } from '@xperiment/db';
+import { assertBootSafe, createPool, runMigrations } from '@xperiment/db';
 import {
   createQueues,
   createRedisConnection,
@@ -17,6 +17,7 @@ import { handleNodeCompleted } from './handlers/nodeCompleted.js';
 import { handleWatchdog } from './handlers/watchdog.js';
 
 const logger = pino({ level: process.env['LOG_LEVEL'] ?? 'info' });
+assertBootSafe();
 const pool = createPool();
 await runMigrations(pool);
 

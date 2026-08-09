@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createPool, DEFAULT_WORKSPACE_ID, runMigrations } from '../src/index.js';
+import { MIGRATION_LOCK_KEY } from '../src/migrate.js';
 
 let pool: Pool;
 
@@ -16,6 +17,41 @@ describe('runMigrations', () => {
     await runMigrations(pool); // first run may or may not apply depending on db state
     const second = await runMigrations(pool);
     expect(second).toEqual([]); // nothing new on re-run
+  });
+
+  test('five concurrent boots all succeed instead of racing the DDL', async () => {
+    // Five services call this at once with no coordination. Unserialised they collide
+    // on the schema_migrations primary key and the loser crashes on a conflict that
+    // says nothing about what happened.
+    const results = await Promise.all(Array.from({ length: 5 }, () => runMigrations(pool)));
+    for (const applied of results) expect(applied).toEqual([]);
+  });
+
+  test('the migration lock is released, not leaked onto a pooled connection', async () => {
+    // A leaked session lock would be invisible until the NEXT boot, which would then
+    // wait on it forever.
+    await runMigrations(pool);
+    const probe = await pool.connect();
+    try {
+      const r = await probe.query<{ got: boolean }>('SELECT pg_try_advisory_lock($1) AS got', [MIGRATION_LOCK_KEY]);
+      expect(r.rows[0]!.got).toBe(true);
+      await probe.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
+    } finally {
+      probe.release();
+    }
+  });
+
+  test('the un-capped statement_timeout does not follow the connection back to the pool', async () => {
+    // The lock client sets statement_timeout to 0. Returning it to the pool would hand
+    // the next borrower a connection with no timeout at all.
+    await runMigrations(pool);
+    const borrowed = await pool.connect();
+    try {
+      const r = await borrowed.query<{ statement_timeout: string }>('SHOW statement_timeout');
+      expect(r.rows[0]!.statement_timeout).not.toBe('0');
+    } finally {
+      borrowed.release();
+    }
   });
 
   test('creates all phase-0 tables', async () => {
