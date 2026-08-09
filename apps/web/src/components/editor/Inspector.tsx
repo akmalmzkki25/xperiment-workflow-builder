@@ -16,9 +16,18 @@ interface InspectorProps {
   onCommitParam: (nodeId: string, name: string, value: unknown) => void;
   onConnectionRef: (nodeId: string, ref: string | undefined) => void;
   onDelete: (nodeId: string) => void;
+  onDuplicate: () => void;
 }
 
-export function Inspector({ ir, allNodeIds, onRename, onCommitParam, onConnectionRef, onDelete }: InspectorProps) {
+export function Inspector({
+  ir,
+  allNodeIds,
+  onRename,
+  onCommitParam,
+  onConnectionRef,
+  onDelete,
+  onDuplicate,
+}: InspectorProps) {
   const { catalogByType, connections } = useEditorContext();
   const item = catalogByType.get(ir.type);
   const fields = useMemo(() => (item ? deriveFields(item.paramsJsonSchema) : []), [item]);
@@ -107,9 +116,19 @@ export function Inspector({ ir, allNodeIds, onRename, onCommitParam, onConnectio
         />
       </div>
 
-      <button className="q-btn q-btn--danger q-btn--sm" onClick={() => onDelete(ir.id)} data-testid="node-delete">
-        Delete node
-      </button>
+      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <button
+          className="q-btn q-btn--ghost q-btn--sm"
+          onClick={onDuplicate}
+          title="Duplicate (Ctrl+D)"
+          data-testid="node-duplicate"
+        >
+          Duplicate
+        </button>
+        <button className="q-btn q-btn--danger q-btn--sm" onClick={() => onDelete(ir.id)} data-testid="node-delete">
+          Delete node
+        </button>
+      </div>
     </aside>
   );
 }

@@ -13,6 +13,7 @@ import {
   type NodeChange,
 } from 'reactflow';
 import { getBrowserClient, type ConnectorItem, type Finding } from '../../lib/api';
+import { copySelection, pasteCanvas, type Clip } from '../../lib/clipboard';
 import {
   canRedo,
   canUndo,
@@ -58,6 +59,19 @@ interface CanvasSnapshot {
   edges: Edge[];
 }
 
+/** React Flow leaves the handles nullable; the IR does not. */
+function toEditorEdge(e: Edge): EditorEdge {
+  return {
+    id: e.id,
+    source: e.source,
+    sourceHandle: e.sourceHandle ?? 'main',
+    target: e.target,
+    targetHandle: e.targetHandle ?? 'input',
+  };
+}
+
+/** Far enough that a pasted copy is visibly its own node, near enough to stay in view. */
+const PASTE_OFFSET = { x: 48, y: 48 };
 const TERMINAL_RUN_STATUS = new Set(['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELED']);
 /** An approval or a long timer never terminates; stop watching rather than poll forever. */
 const WATCH_DEADLINE_MS = 10 * 60 * 1000;
@@ -77,6 +91,8 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const previousDefinitionRef = useRef<unknown>({});
   /** True between a drag's first moved frame and its last, so one gesture is one entry. */
   const draggingRef = useRef(false);
+  /** Canvas-local clipboard. Not the OS one — see lib/clipboard.ts for why. */
+  const clipRef = useRef<Clip>({ nodes: [], edges: [] });
 
   // Last COMMITTED canvas. Effects run after commit, so inside an event handler these
   // hold the state as it was before the edit being handled — exactly what to snapshot.
@@ -178,15 +194,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
       workflowId,
       name: workflowQ.data?.name ?? 'Workflow',
       nodes: nodes.map(toEditorNode),
-      edges: edges.map(
-        (e): EditorEdge => ({
-          id: e.id,
-          source: e.source,
-          sourceHandle: e.sourceHandle ?? 'main',
-          target: e.target,
-          targetHandle: e.targetHandle ?? 'input',
-        }),
-      ),
+      edges: edges.map(toEditorEdge),
       previous: previousDefinitionRef.current,
     });
   }, [workflowId, workflowQ.data, nodes, edges]);
@@ -228,6 +236,50 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     [setNodes, setEdges, select, markDirty],
   );
 
+  /**
+   * Nodes the clipboard should act on.
+   *
+   * React Flow's own `selected` flag first, so a shift-drag marquee copies everything it
+   * caught; the store's single selection is the fallback for a plain click.
+   */
+  const selectionIds = useCallback((): string[] => {
+    const marked = nodesRef.current.filter((n) => n.selected).map((n) => n.id);
+    if (marked.length > 0) return marked;
+    const one = useEditorStore.getState().selectedNodeId;
+    return one ? [one] : [];
+  }, []);
+
+  const appendPaste = useCallback(
+    (clip: Clip) => {
+      if (clip.nodes.length === 0) return;
+      const pasted = pasteCanvas(clip, nodesRef.current.map((n) => n.id), PASTE_OFFSET);
+      recordEdit();
+      // Deselect the originals so the new copies are what a follow-up paste or drag acts on.
+      setNodes((prev) => [
+        ...prev.map((n) => (n.selected ? { ...n, selected: false } : n)),
+        ...(pasted.nodes.map((n) => ({ ...n, selected: true })) as FlowNode[]),
+      ]);
+      setEdges((prev) => [...prev, ...(pasted.edges as Edge[])]);
+      const first = pasted.nodes[0];
+      if (first) select(first.id);
+      markDirty();
+    },
+    [setNodes, setEdges, select, markDirty, recordEdit],
+  );
+
+  const onCopy = useCallback(() => {
+    clipRef.current = copySelection(nodesRef.current.map(toEditorNode), edgesRef.current.map(toEditorEdge), selectionIds());
+  }, [selectionIds]);
+
+  const onPaste = useCallback(() => appendPaste(clipRef.current), [appendPaste]);
+
+  /** Duplicate is copy-then-paste that deliberately does NOT disturb the clipboard. */
+  const onDuplicate = useCallback(() => {
+    appendPaste(
+      copySelection(nodesRef.current.map(toEditorNode), edgesRef.current.map(toEditorEdge), selectionIds()),
+    );
+  }, [appendPaste, selectionIds]);
+
   const onUndo = useCallback(() => {
     applyStep(undo(historyRef.current, { nodes: nodesRef.current, edges: edgesRef.current }));
   }, [applyStep]);
@@ -242,10 +294,13 @@ function EditorInner({ workflowId }: { workflowId: string }) {
         if (action === 'undo') onUndo();
         else if (action === 'redo') onRedo();
         else if (action === 'save') setSaveSignal((n) => n + 1);
+        else if (action === 'copy') onCopy();
+        else if (action === 'paste') onPaste();
+        else if (action === 'duplicate') onDuplicate();
         // The palette has no search field until B6; opening it is the useful half now.
         else if (action === 'search') setLibraryOpen(true);
       },
-      [onUndo, onRedo, setLibraryOpen],
+      [onUndo, onRedo, onCopy, onPaste, onDuplicate, setLibraryOpen],
     ),
   );
 
@@ -447,6 +502,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
               onCommitParam={onCommitParam}
               onConnectionRef={onConnectionRef}
               onDelete={onDelete}
+              onDuplicate={onDuplicate}
             />
           ) : null}
           <AiDock

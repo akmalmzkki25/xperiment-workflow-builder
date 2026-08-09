@@ -79,6 +79,15 @@ test('builds, publishes and activates a webhook workflow on the canvas', async (
   await expect(page.getByTestId('node-shape_lead')).toBeVisible();
   await expect(page.locator('.react-flow__edge')).toHaveCount(1);
 
+  // Duplicate the transform, then undo it — the copy must get its own id, and the
+  // canvas must come back to two nodes rather than keeping a half-applied paste.
+  await page.getByTestId('node-shape_lead').click();
+  await page.getByTestId('node-duplicate').click();
+  await expect(page.getByTestId('node-shape_lead_2')).toBeVisible();
+  await page.getByTestId('action-undo').click();
+  await expect(page.getByTestId('node-shape_lead_2')).toHaveCount(0);
+  await expect(page.getByTestId('node-shape_lead')).toBeVisible();
+
   // Ctrl+S runs the same guarded save the button does.
   await page.keyboard.press('Control+s');
   await expect(page.getByTestId('editor-banner')).toContainText('Draft saved');

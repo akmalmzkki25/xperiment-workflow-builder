@@ -42,6 +42,20 @@ describe('resolveHotkey', () => {
     expect(inField(press('y', { ctrlKey: true }))).toBeNull();
   });
 
+  test('Ctrl+C, Ctrl+V and Ctrl+D drive the canvas clipboard', () => {
+    expect(onCanvas(press('c', { ctrlKey: true }))).toBe('copy');
+    expect(onCanvas(press('v', { metaKey: true }))).toBe('paste');
+    expect(onCanvas(press('d', { ctrlKey: true }))).toBe('duplicate');
+  });
+
+  test('the clipboard keys belong to the text field when one has focus', () => {
+    // Hijacking Ctrl+C while someone is copying a token out of a parameter field
+    // would be the single most infuriating thing this file could do.
+    expect(inField(press('c', { ctrlKey: true }))).toBeNull();
+    expect(inField(press('v', { ctrlKey: true }))).toBeNull();
+    expect(inField(press('d', { ctrlKey: true }))).toBeNull();
+  });
+
   test('slash focuses the palette search only outside a text field', () => {
     expect(onCanvas(press('/'))).toBe('search');
     expect(inField(press('/'))).toBeNull();

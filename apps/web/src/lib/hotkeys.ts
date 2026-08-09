@@ -5,7 +5,7 @@
  * decides what a keystroke MEANS lives here.
  */
 
-export type HotkeyAction = 'save' | 'undo' | 'redo' | 'search';
+export type HotkeyAction = 'save' | 'undo' | 'redo' | 'search' | 'copy' | 'paste' | 'duplicate';
 
 export interface KeyEvent {
   key: string;
@@ -41,6 +41,9 @@ export function resolveHotkey(e: KeyEvent, inTextField: boolean): HotkeyAction |
 
   if (mod && key === 'z') return e.shiftKey ? 'redo' : 'undo';
   if (mod && key === 'y') return 'redo';
+  if (mod && !e.shiftKey && key === 'c') return 'copy';
+  if (mod && !e.shiftKey && key === 'v') return 'paste';
+  if (mod && !e.shiftKey && key === 'd') return 'duplicate';
   if (!mod && !e.shiftKey && e.key === '/') return 'search';
 
   // Delete and Backspace belong to React Flow's deleteKeyCode. Claiming them here
