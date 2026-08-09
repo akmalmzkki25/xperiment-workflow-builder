@@ -30,8 +30,11 @@ export interface BootProblem {
 
 function isLocalHost(url: string): boolean {
   try {
-    const host = new URL(url).hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    // Lowercased and de-bracketed: WHATWG only normalises the host for "special"
+    // schemes, and postgresql:// is not one — so `LOCALHOST` stays uppercase and an
+    // IPv6 loopback arrives as `[::1]`. Both slipped straight past a bare comparison.
+    const host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.startsWith('127.');
   } catch {
     // An unparseable URL is its own problem, reported by the caller.
     return false;
@@ -62,6 +65,8 @@ export function bootProblems(env: BootCheckEnv): BootProblem[] {
     problems.push({ variable: 'REDIS_URL', detail: 'unset, so the committed development Redis would be used' });
   } else if (redisUrl === DEFAULT_REDIS_URL) {
     problems.push({ variable: 'REDIS_URL', detail: 'is the committed development credential' });
+  } else if (isLocalHost(redisUrl)) {
+    problems.push({ variable: 'REDIS_URL', detail: 'points at localhost' });
   }
 
   // Envelope encryption needs a key from somewhere. Without either, the vault would

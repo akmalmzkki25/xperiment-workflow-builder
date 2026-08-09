@@ -8,19 +8,29 @@ const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations
 /** Arbitrary but fixed: the ASCII bytes of 'xperiment'. Every service must agree on it. */
 export const MIGRATION_LOCK_KEY = 0x716c6970;
 
-async function applyMigrations(pool: pg.Pool, dir: string): Promise<string[]> {
-  await pool.query(
+/**
+ * Runs on the LOCK client, deliberately.
+ *
+ * Not on borrowed pool clients: those carry the pool's 30s statement_timeout in their
+ * startup packet, and a migration is exactly the statement allowed to take longer than
+ * that. An index build on a table with real volume would be cancelled as 57014, the
+ * boot would crash, and the restart would run the same statement under the same cap —
+ * a crash loop with no configuration that could break it. The lock client already has
+ * the timeout disabled, and migrations are serialised anyway, so there is nothing to
+ * gain from a second connection.
+ */
+async function applyMigrations(client: pg.PoolClient, dir: string): Promise<string[]> {
+  await client.query(
     `CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
   );
   const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
-  const appliedRes = await pool.query<{ id: string }>(`SELECT id FROM schema_migrations`);
+  const appliedRes = await client.query<{ id: string }>(`SELECT id FROM schema_migrations`);
   const applied = new Set(appliedRes.rows.map((r) => r.id));
   const newlyApplied: string[] = [];
 
   for (const file of files) {
     if (applied.has(file)) continue;
     const sql = await readFile(join(dir, file), 'utf8');
-    const client = await pool.connect();
     try {
       await client.query('BEGIN');
       await client.query(sql);
@@ -30,8 +40,6 @@ async function applyMigrations(pool: pg.Pool, dir: string): Promise<string[]> {
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});
       throw new Error(`Migration ${file} failed: ${(e as Error).message}`);
-    } finally {
-      client.release();
     }
   }
   return newlyApplied;
@@ -63,7 +71,7 @@ export async function runMigrations(pool: pg.Pool, dir: string = MIGRATIONS_DIR)
   try {
     await lock.query('SET statement_timeout = 0');
     await lock.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
-    return await applyMigrations(pool, dir);
+    return await applyMigrations(lock, dir);
   } finally {
     await lock.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]).catch(() => {});
     // Destroy, do not return: this connection has un-capped session state on it.

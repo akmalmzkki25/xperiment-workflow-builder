@@ -24,7 +24,7 @@ export const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
 export interface PoolOptions {
   statementTimeoutMs?: number;
   max?: number;
-  /** Called on a pool-level error. Defaults to swallowing it — see below. */
+  /** Called on a pool-level error. Defaults to a process warning, never to silence. */
   onError?: (error: Error) => void;
 }
 
@@ -52,8 +52,18 @@ export function createPool(databaseUrl?: string, options: PoolOptions = {}): pg.
     max: options.max ?? 10,
     statement_timeout: options.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS,
   });
-  // Default to swallowing rather than rethrowing: pg has already removed the broken
-  // client from the pool by the time this fires, and the next query gets a fresh one.
-  pool.on('error', (error) => options.onError?.(error instanceof Error ? error : new Error(String(error))));
+  pool.on('error', (raw) => {
+    const error = raw instanceof Error ? raw : new Error(String(raw));
+    if (options.onError) {
+      options.onError(error);
+      return;
+    }
+    // NOT silence. Catching the event stops the crash, but a caller that passes no
+    // handler would otherwise turn a Postgres failover from something loud into
+    // something invisible — which is a worse trade than the crash it replaced.
+    // emitWarning rather than a logger: this package has none, and stderr is the one
+    // channel every service already has.
+    process.emitWarning(`database pool error: ${error.message}`, 'XperimentPoolError');
+  });
   return pool;
 }

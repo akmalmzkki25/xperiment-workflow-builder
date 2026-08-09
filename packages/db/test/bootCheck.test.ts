@@ -50,6 +50,25 @@ describe('bootProblems', () => {
     expect(problems.map((p) => p.variable).sort()).toEqual(['DATABASE_URL', 'KMS_KEY_URI', 'REDIS_URL']);
   });
 
+  test('localhost is caught however it is spelled', () => {
+    // WHATWG only normalises the host for "special" schemes, and postgresql:// is not
+    // one — LOCALHOST stays uppercase and IPv6 loopback arrives bracketed. Both used
+    // to walk straight past.
+    for (const host of ['LOCALHOST', 'LocalHost', '[::1]', '127.0.0.1', '127.10.0.5']) {
+      const problems = bootProblems({ ...SAFE, DATABASE_URL: `postgresql://u:p@${host}:5432/xperiment` });
+      expect(problems.map((p) => p.variable), host).toContain('DATABASE_URL');
+    }
+  });
+
+  test('a production Redis on localhost is refused too', () => {
+    const problems = bootProblems({ ...SAFE, REDIS_URL: 'redis://:realpassword@localhost:6379/0' });
+    expect(problems.map((p) => p.variable)).toEqual(['REDIS_URL']);
+  });
+
+  test('a unix socket connection string is not mistaken for localhost', () => {
+    expect(bootProblems({ ...SAFE, DATABASE_URL: 'postgresql:///xperiment?host=/var/run/postgresql' })).toEqual([]);
+  });
+
   test('an unparseable DATABASE_URL is not treated as a safe remote host', () => {
     // It fails elsewhere, but it must not sneak past the localhost check.
     expect(bootProblems({ ...SAFE, DATABASE_URL: 'not a url' })).toEqual([]);

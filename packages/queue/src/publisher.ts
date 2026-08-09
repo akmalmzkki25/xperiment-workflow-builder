@@ -1,4 +1,4 @@
-import { fetchUnpublished, markPublished } from '@xperiment/db';
+import { claimOutbox, deadLetterOutbox, markPublished, MAX_PUBLISH_ATTEMPTS, releaseOutbox } from '@xperiment/db';
 import { type JobsOptions, Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -64,20 +64,38 @@ export function startOutboxPublisher(opts: {
     if (running || stopped) return;
     running = true;
     try {
-      const rows = await fetchUnpublished(opts.pool, 50);
+      const rows = await claimOutbox(opts.pool, 50);
       const publishedIds: string[] = [];
       for (const row of rows) {
         const key = EVENT_TO_QUEUE[row.eventType];
         if (!key) {
-          log('outbox.unknown_event_type', { eventType: row.eventType, id: row.id });
+          // No queue will ever accept this. Leaving it unpublished meant five
+          // processes re-read and re-logged it every 250ms forever, and it held a
+          // slot in every batch because the claim is ordered by age.
+          await deadLetterOutbox(opts.pool, row, `no queue is mapped to event type '${row.eventType}'`);
+          log('outbox.dead_lettered', { eventType: row.eventType, id: row.id, reason: 'unknown_event_type' });
           continue;
         }
-        const payload = row.payload as Record<string, unknown>;
-        await opts.queues[key].add(row.eventType, payload, {
-          jobId: jobIdFor(row.eventType, payload),
-          ...(row.delayMs > 0 ? { delay: row.delayMs } : {}),
-        });
-        publishedIds.push(row.id);
+        try {
+          const payload = row.payload as Record<string, unknown>;
+          await opts.queues[key].add(row.eventType, payload, {
+            jobId: jobIdFor(row.eventType, payload),
+            ...(row.delayMs > 0 ? { delay: row.delayMs } : {}),
+          });
+          publishedIds.push(row.id);
+        } catch (e) {
+          // Per row, not per batch. A throw here used to unwind past markPublished,
+          // so every row already on the queue kept published_at NULL and was
+          // published again on the next tick.
+          const message = (e as Error).message;
+          if (row.attempts >= MAX_PUBLISH_ATTEMPTS) {
+            await deadLetterOutbox(opts.pool, row, message);
+            log('outbox.dead_lettered', { eventType: row.eventType, id: row.id, attempts: row.attempts });
+          } else {
+            await releaseOutbox(opts.pool, row.id, message);
+            log('outbox.publish_failed', { id: row.id, attempts: row.attempts, error: message });
+          }
+        }
       }
       await markPublished(opts.pool, publishedIds);
       if (publishedIds.length > 0) log('outbox.published', { count: publishedIds.length });

@@ -1,4 +1,4 @@
-import { createPool, insertOutbox, runMigrations } from '@xperiment/db';
+import { createPool, insertOutbox, listDeadLetters, runMigrations } from '@xperiment/db';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import {
@@ -27,6 +27,7 @@ afterAll(async () => {
   await pool.end();
 });
 beforeEach(async () => {
+  await pool.query(`DELETE FROM outbox_dead_letters`);
   await pool.query(`TRUNCATE task_outbox`);
   for (const q of Object.values(queues)) await q.obliterate({ force: true });
 });
@@ -76,7 +77,9 @@ describe('startOutboxPublisher', () => {
     }
   });
 
-  test('unknown event type is logged and left unpublished', async () => {
+  test('an event type with no queue is dead-lettered rather than retried forever', async () => {
+    // It used to be logged and left in place, so five processes re-read and re-logged
+    // it every 250ms and it held a slot in every batch, for as long as the table lived.
     await pool.query(
       `INSERT INTO task_outbox (event_type, payload_json, delay_ms) VALUES ('bogus.event', '{}'::jsonb, 0)`,
     );
@@ -84,15 +87,43 @@ describe('startOutboxPublisher', () => {
     const publisher = startOutboxPublisher({ pool, queues, intervalMs: 50, log: (msg) => logged.push(msg) });
     try {
       await new Promise((r) => setTimeout(r, 400));
-      expect(logged).toContain('outbox.unknown_event_type');
+      expect(logged).toContain('outbox.dead_lettered');
       const remaining = await pool.query(`SELECT count(*)::int AS c FROM task_outbox WHERE published_at IS NULL`);
-      expect((remaining.rows[0] as { c: number }).c).toBe(1); // bogus row never marked
+      expect((remaining.rows[0] as { c: number }).c).toBe(0);
+      const dead = await listDeadLetters(pool);
+      expect(dead.map((d) => d.eventType)).toContain('bogus.event');
     } finally {
       await publisher.stop();
     }
   });
 
-  test('publish errors are caught, logged, and the loop keeps running', async () => {
+  test('one failing row does not strand the rows published beside it', async () => {
+    // markPublished sat after the loop, so a throw unwound past it and every row
+    // already on the queue kept published_at NULL and was published again next tick.
+    await insertOutbox(pool, { eventType: 'execution.requested', payload: { executionId: 'E-bad' } });
+    await insertOutbox(pool, { eventType: 'node.task', payload: { executionId: 'E-ok', nodeId: 'n', attempt: 1 } });
+    const partlyThrowing = {
+      ...queues,
+      executionRequested: {
+        add: async () => {
+          throw new Error('redis down');
+        },
+      },
+    } as unknown as typeof queues;
+    const publisher = startOutboxPublisher({ pool, queues: partlyThrowing, intervalMs: 50 });
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      expect(await queues.nodeTask.getJob('node-task_E-ok_n_1')).toBeDefined();
+      const stranded = await pool.query<{ c: number }>(
+        `SELECT count(*)::int AS c FROM task_outbox WHERE published_at IS NULL AND event_type = 'node.task'`,
+      );
+      expect(stranded.rows[0]!.c).toBe(0);
+    } finally {
+      await publisher.stop();
+    }
+  });
+
+  test('a persistently failing row is retried, then given up on rather than retried forever', async () => {
     await insertOutbox(pool, { eventType: 'execution.requested', payload: { executionId: 'E-err' } });
     const throwingQueues = {
       ...queues,
@@ -110,10 +141,25 @@ describe('startOutboxPublisher', () => {
       log: (msg) => logged.push(msg),
     });
     try {
-      await new Promise((r) => setTimeout(r, 400));
-      expect(logged).toContain('outbox.publish_error');
-      const remaining = await pool.query(`SELECT count(*)::int AS c FROM task_outbox WHERE published_at IS NULL`);
-      expect((remaining.rows[0] as { c: number }).c).toBe(1); // row stays for a later retry
+      // One tick: the row is released for another go, with the reason recorded.
+      await new Promise((r) => setTimeout(r, 120));
+      const mid = await pool.query<{ c: number; last_error: string | null }>(
+        `SELECT count(*)::int AS c, max(last_error) AS last_error FROM task_outbox WHERE published_at IS NULL`,
+      );
+      expect(mid.rows[0]!.c).toBe(1);
+      expect(mid.rows[0]!.last_error).toContain('redis down');
+      expect(logged).toContain('outbox.publish_failed');
+
+      // Left alone it used to retry forever. Past the attempt cap it now stops.
+      await new Promise((r) => setTimeout(r, 600));
+      const after = await pool.query<{ c: number }>(
+        `SELECT count(*)::int AS c FROM task_outbox WHERE published_at IS NULL`,
+      );
+      expect(after.rows[0]!.c).toBe(0);
+      const dead = await listDeadLetters(pool);
+      expect(dead).toHaveLength(1);
+      expect(dead[0]!.lastError).toContain('redis down');
+      expect(dead[0]!.attempts).toBeGreaterThanOrEqual(5);
     } finally {
       await publisher.stop();
     }
