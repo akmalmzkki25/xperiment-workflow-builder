@@ -79,7 +79,7 @@ export function startOutboxPublisher(opts: {
         try {
           const payload = row.payload as Record<string, unknown>;
           await opts.queues[key].add(row.eventType, payload, {
-            jobId: jobIdFor(row.eventType, payload),
+            jobId: jobIdFor(row.eventType, payload, row.replaySeq),
             ...(row.delayMs > 0 ? { delay: row.delayMs } : {}),
           });
           publishedIds.push(row.id);

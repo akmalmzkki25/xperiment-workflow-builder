@@ -8,6 +8,13 @@ export interface OutboxRow {
   delayMs: number;
   /** Claim count, incremented at lease time so a repeatedly failing row can be seen. */
   attempts: number;
+  /**
+   * How many times this work has been replayed out of the dead-letter table.
+   *
+   * Zero for an original. Non-zero rows must publish under a different BullMQ job id
+   * than the original, or the replay is silently deduplicated away.
+   */
+  replaySeq: number;
 }
 
 export interface DeadLetterRow {
@@ -49,6 +56,7 @@ function toRow(row: Record<string, unknown>): OutboxRow {
     payload: row['payload_json'],
     delayMs: Number(row['delay_ms']),
     attempts: Number(row['attempts']),
+    replaySeq: Number(row['replay_seq']),
   };
 }
 
@@ -61,7 +69,7 @@ function toRow(row: Record<string, unknown>): OutboxRow {
  */
 export async function fetchUnpublished(db: Db, limit: number): Promise<OutboxRow[]> {
   const r = await db.query(
-    `SELECT id, event_type, payload_json, delay_ms, attempts FROM task_outbox
+    `SELECT id, event_type, payload_json, delay_ms, attempts, replay_seq FROM task_outbox
      WHERE published_at IS NULL ORDER BY created_at LIMIT $1`,
     [limit],
   );
@@ -76,9 +84,14 @@ export async function fetchUnpublished(db: Db, limit: number): Promise<OutboxRow
  * other four step over rows already being claimed rather than queue behind them.
  *
  * A claim older than the lease is reclaimable, which is what recovers rows from a
- * publisher that died holding them. That makes delivery at-least-once — safe here
- * because every job carries a deterministic BullMQ jobId, so a redelivery of the same
- * work is deduplicated rather than run twice.
+ * publisher that died holding them. That makes delivery at-least-once, which is safe
+ * because every job carries a deterministic BullMQ jobId and a redelivery is
+ * deduplicated rather than run twice — but only for as long as the completed job
+ * still exists in Redis. Dedup is keyed on the job hash, and `removeOnComplete`
+ * deletes it after an hour. The 60s lease and the five-attempt cap put the worst-case
+ * redelivery at about five minutes, comfortably inside that window; anything that
+ * could republish the same work an hour later must NOT rely on this, which is why
+ * dead-letter replay carries its own sequence.
  */
 export async function claimOutbox(pool: pg.Pool, limit: number, leaseMs: number = LEASE_MS): Promise<OutboxRow[]> {
   const r = await pool.query(
@@ -91,7 +104,7 @@ export async function claimOutbox(pool: pg.Pool, limit: number, leaseMs: number 
        FOR UPDATE SKIP LOCKED
        LIMIT $1
      )
-     RETURNING id, event_type, payload_json, delay_ms, attempts`,
+     RETURNING id, event_type, payload_json, delay_ms, attempts, replay_seq`,
     [limit, leaseMs],
   );
   return (r.rows as Record<string, unknown>[]).map(toRow);
@@ -123,9 +136,9 @@ export async function deadLetterOutbox(pool: pg.Pool, row: OutboxRow, error: str
   try {
     await client.query('BEGIN');
     await client.query(
-      `INSERT INTO outbox_dead_letters (outbox_id, event_type, payload_json, attempts, last_error)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [row.id, row.eventType, JSON.stringify(row.payload), row.attempts, error.slice(0, 2000)],
+      `INSERT INTO outbox_dead_letters (outbox_id, event_type, payload_json, attempts, last_error, replay_seq)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [row.id, row.eventType, JSON.stringify(row.payload), row.attempts, error.slice(0, 2000), row.replaySeq],
     );
     await client.query(`DELETE FROM task_outbox WHERE id = $1`, [row.id]);
     await client.query('COMMIT');
@@ -159,6 +172,12 @@ export async function listDeadLetters(db: Db, limit = 100): Promise<DeadLetterRo
  *
  * Never resurrects the original: the record of the failure has to survive the fix, and
  * a replay that reuses the id would erase the evidence that it ever went wrong.
+ *
+ * `replay_seq` advances so the republished work publishes under a different BullMQ job
+ * id. Without it the replay reproduced the original id exactly, and BullMQ deduplicates
+ * silently — within the hour that the completed job survives in Redis, the replay was
+ * swallowed and the work never ran, with no error anywhere. Whether a replay did
+ * anything depended on how long the operator had waited.
  */
 export async function replayDeadLetter(pool: pg.Pool, id: string): Promise<boolean> {
   const client = await pool.connect();
@@ -167,17 +186,18 @@ export async function replayDeadLetter(pool: pg.Pool, id: string): Promise<boole
     const found = await client.query(
       `UPDATE outbox_dead_letters SET replayed_at = now()
        WHERE id = $1 AND replayed_at IS NULL
-       RETURNING event_type, payload_json`,
+       RETURNING event_type, payload_json, replay_seq`,
       [id],
     );
     if (found.rowCount === 0) {
       await client.query('ROLLBACK');
       return false;
     }
-    const row = found.rows[0] as { event_type: string; payload_json: unknown };
-    await client.query(`INSERT INTO task_outbox (event_type, payload_json) VALUES ($1, $2)`, [
+    const row = found.rows[0] as { event_type: string; payload_json: unknown; replay_seq: number };
+    await client.query(`INSERT INTO task_outbox (event_type, payload_json, replay_seq) VALUES ($1, $2, $3)`, [
       row.event_type,
       JSON.stringify(row.payload_json),
+      Number(row.replay_seq) + 1,
     ]);
     await client.query('COMMIT');
     return true;

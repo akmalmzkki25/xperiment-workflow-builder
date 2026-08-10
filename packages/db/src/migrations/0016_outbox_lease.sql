@@ -12,8 +12,9 @@ BEGIN;
 ALTER TABLE task_outbox ADD COLUMN claimed_at TIMESTAMPTZ;
 ALTER TABLE task_outbox ADD COLUMN last_error TEXT;
 
--- Serves the claim predicate directly: unpublished rows, oldest first, with the
--- lease column available so a stale claim is visible without a heap fetch.
+-- Serves the claim predicate: unpublished rows, oldest first.
+-- (The trailing claimed_at was a mistake, corrected in 0017 — FOR UPDATE has to pin
+-- the heap tuple, so no index-only scan is possible and the column never helps.)
 DROP INDEX IF EXISTS idx_task_outbox_unpublished;
 CREATE INDEX idx_task_outbox_claimable
   ON task_outbox (created_at, claimed_at)

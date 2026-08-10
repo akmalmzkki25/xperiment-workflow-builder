@@ -113,6 +113,9 @@ describe('dead letters', () => {
     // A fresh row: replaying must not resurrect the id, or the evidence disappears.
     expect(pending[0]!.id).not.toBe(row!.id);
     expect(pending[0]!.attempts).toBe(0);
+    // And it must publish under a DIFFERENT BullMQ job id than the original, or the
+    // replay is silently deduplicated away and never runs.
+    expect(pending[0]!.replaySeq).toBe(1);
     // And it is no longer offered as an open dead letter.
     expect(await listDeadLetters(pool)).toHaveLength(0);
   });
@@ -129,6 +132,18 @@ describe('dead letters', () => {
 
   test('replaying an unknown id is false, not a throw', async () => {
     expect(await replayDeadLetter(pool, '00000000-0000-0000-0000-000000000000')).toBe(false);
+  });
+
+  test('the replay sequence keeps advancing if the work dies again', async () => {
+    // Second replay must not collide with the first replay's job id either.
+    await seed(1);
+    for (const expected of [1, 2, 3]) {
+      const [row] = await claimOutbox(pool, 10, 0);
+      await deadLetterOutbox(pool, row!, 'boom');
+      const [dead] = await listDeadLetters(pool);
+      expect(await replayDeadLetter(pool, dead!.id)).toBe(true);
+      expect((await fetchUnpublished(pool, 10))[0]!.replaySeq).toBe(expected);
+    }
   });
 });
 

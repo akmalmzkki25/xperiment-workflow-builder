@@ -41,6 +41,17 @@ describe('jobIdFor', () => {
     expect(jobIdFor('alert.notify', { eventId: 'EV' })).toBe('alert_EV');
     expect(() => jobIdFor('bogus.event', {})).toThrow();
   });
+
+  test('a replayed row gets a different id, because BullMQ dedupes silently', () => {
+    // A second add with an existing id returns the existing job and never throws, so a
+    // replay reusing the original id simply does not run — for as long as the completed
+    // job survives in Redis, and then suddenly does. Zero leaves originals untouched.
+    expect(jobIdFor('node.task', { executionId: 'E', nodeId: 'n', attempt: 2 }, 0)).toBe('node-task_E_n_2');
+    expect(jobIdFor('node.task', { executionId: 'E', nodeId: 'n', attempt: 2 }, 1)).toBe('node-task_E_n_2_r1');
+    expect(jobIdFor('node.task', { executionId: 'E', nodeId: 'n', attempt: 2 }, 2)).toBe('node-task_E_n_2_r2');
+    // Still no ':' — BullMQ rejects it as the Redis key delimiter.
+    expect(jobIdFor('alert.notify', { eventId: 'EV' }, 3)).not.toContain(':');
+  });
 });
 
 describe('startOutboxPublisher', () => {
