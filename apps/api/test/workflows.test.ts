@@ -47,6 +47,29 @@ describe('workflow routes', () => {
     expect(r.json()).toEqual({ status: 'ok' });
   });
 
+  test('readyz reports the dependencies it actually checked', async () => {
+    // healthz asks "is the process alive" and must stay dependency-free; readyz asks
+    // "can it do its job" and is what a load balancer should read.
+    const r = await app.inject({ method: 'GET', url: '/v1/readyz' });
+    expect(r.statusCode).toBe(200);
+    const body = r.json<{ status: string; checks: { name: string; ok: boolean }[] }>();
+    expect(body.status).toBe('ok');
+    expect(body.checks.map((c) => c.name)).toContain('postgres');
+  });
+
+  test('both probes are reachable without a bearer token', async () => {
+    // A load balancer has no credentials. Anything that 401s here is not a probe.
+    for (const url of ['/v1/healthz', '/v1/readyz']) {
+      expect((await app.inject({ method: 'GET', url })).statusCode, url).toBe(200);
+    }
+  });
+
+  test('readyz never returns a connection string', async () => {
+    const body = (await app.inject({ method: 'GET', url: '/v1/readyz' })).body;
+    expect(body).not.toContain('postgresql://');
+    expect(body).not.toContain('postgrespw');
+  });
+
   test('create workflow returns 201 and generated x-request-id', async () => {
     const r = await auth.inject({ method: 'POST', url: '/v1/workflows', payload: { name: 'Lead' } });
     expect(r.statusCode).toBe(201);

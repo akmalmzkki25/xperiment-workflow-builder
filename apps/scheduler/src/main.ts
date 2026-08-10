@@ -1,5 +1,11 @@
-import { createServer } from 'node:http';
-import { assertBootSafe, createPool, runMigrations } from '@xperiment/db';
+import { assertBootSafe, createPool, outboxHealth, runMigrations } from '@xperiment/db';
+import {
+  createMetrics,
+  createReadiness,
+  postgresDependency,
+  redisDependency,
+  startAdminServer,
+} from '@xperiment/observability';
 import { createQueues, createRedisConnection, startOutboxPublisher } from '@xperiment/queue';
 import { pino } from 'pino';
 import { runAlertSweep } from './alertSweep.js';
@@ -34,11 +40,33 @@ const timer = setInterval(() => {
     });
 }, intervalMs);
 
-const health = createServer((_req, res) => {
-  res.setHeader('content-type', 'application/json');
-  res.end(JSON.stringify({ status: 'ok' }));
+const metrics = createMetrics({
+  serviceName: 'scheduler',
+  // Outbox health is exported from here ONLY. All five services run a publisher, so
+  // five exporters of the same series would multiply every reading by five.
+  gauges: [
+    { name: 'xperiment_outbox_pending', help: 'Outbox rows not yet published', collect: async () => (await outboxHealth(pool)).pending },
+    {
+      name: 'xperiment_outbox_struggling',
+      help: 'Outbox rows past the publish attempt cap',
+      collect: async () => (await outboxHealth(pool)).struggling,
+    },
+    {
+      name: 'xperiment_outbox_dead',
+      help: 'Dead-lettered outbox rows awaiting a replay',
+      collect: async () => (await outboxHealth(pool)).dead,
+    },
+  ],
 });
-health.listen(Number(process.env['SCHEDULER_PORT'] ?? 3004), () => logger.info('scheduler healthz listening'));
+
+const admin = await startAdminServer({
+  port: Number(process.env['SCHEDULER_PORT'] ?? 3004),
+  serviceName: 'scheduler',
+  readiness: createReadiness([postgresDependency(pool), redisDependency(connection, true)]),
+  metrics,
+  metricsToken: process.env['METRICS_TOKEN'],
+  log: (msg, extra) => logger.info(extra ?? {}, msg),
+});
 
 async function shutdown(): Promise<void> {
   logger.info('shutting down');
@@ -46,7 +74,7 @@ async function shutdown(): Promise<void> {
   await publisher.stop();
   for (const q of Object.values(queues)) await q.close();
   connection.disconnect();
-  health.close();
+  await admin.close();
   await pool.end();
   process.exit(0);
 }

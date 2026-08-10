@@ -2,7 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { sendProblem } from '../problem.js';
 
 const WINDOW_MS = 60_000;
-const EXEMPT = new Set(['/v1/healthz', '/v1/openapi.json']);
+// Probes must never be rate limited, or a busy workspace makes its own service look
+// down. Readiness is cached and single-flighted, so it cannot be used as an amplifier.
+const EXEMPT = new Set(['/v1/healthz', '/v1/readyz', '/v1/openapi.json']);
 
 interface Bucket {
   count: number;

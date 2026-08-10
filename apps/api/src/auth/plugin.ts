@@ -40,6 +40,9 @@ export function requirePermission(reply: FastifyReply, ctx: AuthContext, permiss
 
 const EXEMPT = new Set([
   '/v1/healthz',
+  // A load balancer has no bearer token. Readiness reports dependency names and
+  // up/down only — never a connection string, never a count of anything.
+  '/v1/readyz',
   '/v1/openapi.json',
   '/v1/auth/register',
   '/v1/auth/login',

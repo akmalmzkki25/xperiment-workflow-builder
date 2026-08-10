@@ -17,6 +17,7 @@
     "@xperiment/engine-core": "workspace:*",
     "@xperiment/expressions": "workspace:*",
     "@xperiment/ir": "workspace:*",
+    "@xperiment/observability": "workspace:*",
     "@xperiment/queue": "workspace:*",
     "bullmq": "^5.8.0",
     "pino": "^9.0.0"

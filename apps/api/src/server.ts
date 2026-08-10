@@ -139,7 +139,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerRateLimit(app, {
     perMinute: deps.rateLimitPerMinute ?? Number(process.env['RATE_LIMIT_PER_MIN'] ?? 600),
   });
-  registerHealthRoutes(app);
+  // Postgres only: Redis is non-critical for the API, so probing it could never change
+  // the verdict, and threading a handle through ServerDeps would touch every one of the
+  // ~40 places the test suite builds a server.
+  registerHealthRoutes(app, { pool: deps.pool });
   registerOpenapiRoutes(app);
   registerAuthRoutes(app, resolvedDeps);
   registerMfaRoutes(app, resolvedDeps);

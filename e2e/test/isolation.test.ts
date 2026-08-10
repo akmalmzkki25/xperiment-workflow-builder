@@ -66,8 +66,8 @@ beforeAll(async () => {
   await waitForPortsFree();
   services = [spawnService('@xperiment/api'), spawnService('@xperiment/orchestrator'), spawnService('@xperiment/worker')];
   await waitForHealthz(`${API_URL}/v1/healthz`);
-  await waitForHealthz('http://127.0.0.1:3101');
-  await waitForHealthz('http://127.0.0.1:3102');
+  await waitForHealthz('http://127.0.0.1:3101/healthz');
+  await waitForHealthz('http://127.0.0.1:3102/healthz');
 }, 120000);
 
 afterAll(async () => {

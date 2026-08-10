@@ -108,10 +108,10 @@ beforeAll(async () => {
     spawnService('@xperiment/scheduler'),
   ];
   await waitForHealthz(`${API_URL}/v1/healthz`);
-  await waitForHealthz('http://127.0.0.1:3101');
-  await waitForHealthz('http://127.0.0.1:3102');
+  await waitForHealthz('http://127.0.0.1:3101/healthz');
+  await waitForHealthz('http://127.0.0.1:3102/healthz');
   await waitForHealthz(`${GATEWAY_URL}/healthz`);
-  await waitForHealthz('http://127.0.0.1:3104');
+  await waitForHealthz('http://127.0.0.1:3104/healthz');
 }, 120000);
 
 afterAll(async () => {

@@ -104,6 +104,28 @@ function sign(secret: string, body: string): string {
   return 'sha256=' + createHmac('sha256', secret).update(Buffer.from(body)).digest('hex');
 }
 
+describe('gateway probes', () => {
+  test('healthz is alive without consulting anything', async () => {
+    const r = await app.inject({ method: 'GET', url: '/healthz' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ status: 'ok' });
+  });
+
+  test('readyz names the dependency it checked', async () => {
+    const r = await app.inject({ method: 'GET', url: '/readyz' });
+    expect(r.statusCode).toBe(200);
+    const body = r.json<{ status: string; checks: { name: string }[] }>();
+    expect(body.status).toBe('ok');
+    // Postgres is critical here: a gateway that cannot record a trigger event must
+    // stop being sent webhooks rather than accept and drop them.
+    expect(body.checks.map((c) => c.name)).toEqual(['postgres']);
+  });
+
+  test('an unknown path is still a 404 on the public surface', async () => {
+    expect((await app.inject({ method: 'GET', url: '/nonsense' })).statusCode).toBe(404);
+  });
+});
+
 describe('gateway envelope-encrypted trigger secrets', () => {
   test('a token webhook authenticates against a v1 secret, and a wrong one is refused', async () => {
     const { routeKey, secret } = await seedHook('token', { envelope: true });

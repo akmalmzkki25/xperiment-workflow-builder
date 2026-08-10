@@ -10,6 +10,7 @@ import {
   type SecretVault,
 } from '@xperiment/db';
 import { runnableNodeIds, workflowIrSchema } from '@xperiment/ir';
+import { createReadiness, postgresDependency } from '@xperiment/observability';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { extractDedupKey, sanitizeHeaders, verifyHmac, verifyToken } from './verify.js';
@@ -33,7 +34,17 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
     done(null, payload);
   });
 
+  // Liveness: touches nothing, so a database blip cannot restart the fleet.
   app.get('/healthz', async () => ({ status: 'ok' }));
+
+  // Readiness: Postgres is critical here — a gateway that cannot write a trigger event
+  // must stop being sent webhooks rather than accept and drop them.
+  const readiness = createReadiness([postgresDependency(deps.pool)]);
+  app.get('/readyz', async (_req, reply) => {
+    const report = await readiness();
+    if (report.status === 'down') reply.status(503);
+    return report;
+  });
 
   const handle =
     (mode: 'production' | 'test') =>

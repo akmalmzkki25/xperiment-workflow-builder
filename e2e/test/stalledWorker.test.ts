@@ -50,8 +50,8 @@ beforeAll(async () => {
   orchProc = spawnService('@xperiment/orchestrator');
   workerProc = spawnService('@xperiment/worker');
   await waitForHealthz(`${API_URL}/v1/healthz`);
-  await waitForHealthz('http://127.0.0.1:3101');
-  await waitForHealthz('http://127.0.0.1:3102');
+  await waitForHealthz('http://127.0.0.1:3101/healthz');
+  await waitForHealthz('http://127.0.0.1:3102/healthz');
 }, 120000);
 
 afterAll(async () => {
@@ -80,7 +80,7 @@ describe('worker crash recovery', () => {
     killService(workerProc);
     await new Promise((r) => setTimeout(r, 1500));
     workerProc = spawnService('@xperiment/worker');
-    await waitForHealthz('http://127.0.0.1:3102');
+    await waitForHealthz('http://127.0.0.1:3102/healthz');
 
     // The invariant that matters for at-least-once + CAS: no duplicate committed
     // SUCCEEDED rows for the same (node, attempt), even across redelivery.

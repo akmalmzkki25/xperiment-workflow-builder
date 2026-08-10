@@ -1,5 +1,11 @@
-import { createServer } from 'node:http';
 import { assertBootSafe, createPool, runMigrations } from '@xperiment/db';
+import {
+  createMetrics,
+  createReadiness,
+  postgresDependency,
+  redisDependency,
+  startAdminServer,
+} from '@xperiment/observability';
 import {
   createQueues,
   createRedisConnection,
@@ -50,11 +56,31 @@ for (const w of workers) {
   w.on('failed', (job, err) => logger.error({ jobId: job?.id, err: err.message }, 'orchestrator job failed'));
 }
 
-const health = createServer((_req, res) => {
-  res.setHeader('content-type', 'application/json');
-  res.end(JSON.stringify({ status: 'ok' }));
+const metrics = createMetrics({
+  serviceName: 'orchestrator',
+  // Queue depth belongs to exactly one exporter. Five services publishing the same
+  // series would make every rate() over it five times the truth.
+  gauges: [
+    {
+      name: 'xperiment_queue_depth',
+      help: 'Jobs waiting across all Xperiment queues',
+      collect: async () => {
+        const counts = await Promise.all(Object.values(queues).map((q) => q.getWaitingCount()));
+        return counts.reduce((a, b) => a + b, 0);
+      },
+    },
+  ],
 });
-health.listen(Number(process.env['ORCH_PORT'] ?? 3001), () => logger.info('orchestrator healthz listening'));
+
+const admin = await startAdminServer({
+  port: Number(process.env['ORCH_PORT'] ?? 3001),
+  serviceName: 'orchestrator',
+  // Redis is CRITICAL here: without it the orchestrator does nothing at all.
+  readiness: createReadiness([postgresDependency(pool), redisDependency(connection, true)]),
+  metrics,
+  metricsToken: process.env['METRICS_TOKEN'],
+  log: (msg, extra) => logger.info(extra ?? {}, msg),
+});
 
 async function shutdown(): Promise<void> {
   logger.info('shutting down');
@@ -62,7 +88,7 @@ async function shutdown(): Promise<void> {
   await publisher.stop();
   for (const q of Object.values(queues)) await q.close();
   connection.disconnect();
-  health.close();
+  await admin.close();
   await pool.end();
   process.exit(0);
 }
