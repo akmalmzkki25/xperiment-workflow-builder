@@ -41,6 +41,31 @@ To run one service on its own:
 pnpm --filter @xperiment/api dev
 ```
 
+### Without a Node toolchain
+
+Everything, in containers:
+
+```bash
+docker compose --profile app up -d --build
+```
+
+`docker compose up -d` without the profile still starts only Postgres and Redis,
+because that is what `pnpm dev` and both e2e helpers assume.
+
+The image ships TypeScript source and runs it with `tsx`. That is deliberate:
+`tsconfig.base.json` sets `noEmit` and sixteen of eighteen manifests point `main`
+at a `.ts` file, so adding a compile step for containers alone would create a
+second code path that only containers take. `apps/web` is the one exception —
+Next has a real build.
+
+Use this to run the stack, not to write code: the containers have no live reload
+and rebuild on every source change. `NEXT_PUBLIC_API_URL` is inlined into the
+client bundle at build time, so serving the web app from a different hostname
+needs a rebuild, not a restart.
+
+Postgres now keeps a named volume, so `docker compose down` no longer discards
+the database. `docker compose down -v` still wipes it.
+
 Create, publish, and run a workflow:
 
 ```bash

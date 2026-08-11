@@ -1,0 +1,13 @@
+# Keeps the build context small, which matters because the Dockerfile copies it whole.
+node_modules
+**/node_modules
+.git
+.env
+.next
+**/.next
+coverage
+**/coverage
+**/*.tsbuildinfo
+test-results
+playwright-report
+docs

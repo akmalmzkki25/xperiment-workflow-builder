@@ -1,3 +1,40 @@
+# `docker compose up -d` still starts ONLY postgres and redis. That is what the README,
+# `pnpm dev` and both e2e helpers assume, and changing it would break all three.
+#
+# The application services sit behind the `app` profile:
+#
+#   docker compose --profile app up -d --build
+#
+# Use that when you want the stack without a Node toolchain. Use `pnpm dev` when you are
+# writing code — the containers have no live reload and rebuild on every source change.
+
+x-app-env: &app-env
+  # Container-to-container names, not localhost: inside the network `postgres` and `redis`
+  # resolve to the service, and localhost resolves to the container itself.
+  DATABASE_URL: postgresql://postgres:dev_password_change_me@postgres:5432/xperiment
+  REDIS_URL: redis://:dev_password_change_me@redis:6379/0
+  GATEWAY_URL: http://gateway:3003
+  XPERIMENT_API_URL: http://api:3000
+  APP_URL: http://localhost:3005
+  TRIGGER_SECRET_KEY: xperiment-dev-trigger-secret-change-me
+  CREDENTIALS_SECRET_KEY: xperiment-dev-credentials-secret-change-me
+  # Deliberately not production: `assertBootSafe` refuses a production boot on the
+  # committed development credentials above, so every service would fail to start.
+  NODE_ENV: development
+
+x-app: &app
+  profiles: ["app"]
+  build:
+    context: .
+    target: backend
+  environment: *app-env
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,6 +44,11 @@ services:
       POSTGRES_DB: xperiment
     ports:
       - "5432:5432"
+    # Named volume so a `docker compose down` no longer discards the database. Losing a
+    # seeded demo workspace every time the stack stops is exactly the friction `xperiment seed`
+    # exists to remove. `docker compose down -v` still wipes it.
+    volumes:
+      - xperiment-postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
@@ -22,3 +64,47 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
+
+  api:
+    <<: *app
+    command: ["pnpm", "--filter", "@xperiment/api", "start"]
+    ports:
+      - "3000:3000"
+  orchestrator:
+    <<: *app
+    command: ["pnpm", "--filter", "@xperiment/orchestrator", "start"]
+    ports:
+      - "3001:3001"
+  worker:
+    <<: *app
+    command: ["pnpm", "--filter", "@xperiment/worker", "start"]
+    ports:
+      - "3002:3002"
+  gateway:
+    <<: *app
+    command: ["pnpm", "--filter", "@xperiment/gateway", "start"]
+    ports:
+      - "3003:3003"
+  scheduler:
+    <<: *app
+    command: ["pnpm", "--filter", "@xperiment/scheduler", "start"]
+    ports:
+      - "3004:3004"
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      target: web
+      args:
+        # Inlined into the client bundle at build time, so this is the URL a BROWSER on
+        # the host uses — not the in-network name the server-side services use.
+        NEXT_PUBLIC_API_URL: http://localhost:3000
+    environment: *app-env
+    depends_on:
+      - api
+    ports:
+      - "3005:3005"
+    restart: unless-stopped
+
+volumes:
+  xperiment-postgres:
