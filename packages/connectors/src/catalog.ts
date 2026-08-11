@@ -1,5 +1,6 @@
 import type { EffectClass, NodeKind } from '@xperiment/ir';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { CONNECTION_PAYLOAD_SCHEMAS } from './payloads.js';
 import type { ConnectorRegistry } from './registry.js';
 
 export interface ConnectorCatalogItem {
@@ -39,5 +40,32 @@ export function connectorCatalog(registry: ConnectorRegistry): ConnectorCatalogI
     glyph: def.display.glyph,
     ...(def.display.docsUrl ? { docsUrl: def.display.docsUrl } : {}),
     paramsJsonSchema: zodToJsonSchema(def.paramsSchema, { target: 'jsonSchema7', $refStrategy: 'none' }),
+  }));
+}
+
+export interface ConnectionSchemaItem {
+  connectorKey: string;
+  /** Draft-7 JSON Schema of the connection payload, for schema-driven forms. */
+  payloadJsonSchema: unknown;
+}
+
+/**
+ * The payload shape each connection type accepts, served from the same object that
+ * validates it.
+ *
+ * The web form used to carry a hand-written copy of this, whose own docblock conceded it
+ * would drift. It drifts in exactly one direction that matters: a field added on the
+ * server is invisible in the form, so the connection saves without it and fails at the
+ * first run with a validation error nobody can trace to a missing input.
+ *
+ * Caveat worth knowing before relying on this: `zodToJsonSchema` silently drops
+ * `.refine()`. None of these schemas use one today, and a future refine would be a
+ * cross-field rule the form could not render anyway — but it would vanish here without
+ * a word.
+ */
+export function connectionSchemas(): ConnectionSchemaItem[] {
+  return Object.entries(CONNECTION_PAYLOAD_SCHEMAS).map(([connectorKey, schema]) => ({
+    connectorKey,
+    payloadJsonSchema: zodToJsonSchema(schema, { target: 'jsonSchema7', $refStrategy: 'none' }),
   }));
 }
