@@ -6,6 +6,7 @@ import {
   deleteConnection,
   getConnectionWithPayload,
   listConnections,
+  replaceConnectionPayload,
   withTx,
 } from '@xperiment/db';
 import type { FastifyInstance } from 'fastify';
@@ -18,6 +19,17 @@ const createSchema = z
   .object({
     connectorKey: z.string().min(1),
     name: z.string().min(1).max(200),
+    payload: z.unknown(),
+  })
+  .strict();
+
+/**
+ * No `connectorKey`. It is read from the stored row, so a caller cannot repoint an
+ * existing connection at a different connector while published nodes still name it.
+ */
+const rotateSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
     payload: z.unknown(),
   })
   .strict();
@@ -62,6 +74,53 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ResolvedSer
     // SEC-004: credential metadata is shared by role — viewers/operators/billing cannot list.
     if (!requirePermission(reply, authOf(req), 'connection:read')) return;
     return { items: await listConnections(deps.pool, authOf(req).workspaceId) };
+  });
+
+  app.put('/v1/connections/:id', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'connection:write')) return;
+    const { id } = req.params as { id: string };
+    const parsed = rotateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
+
+    // Read first so the connector key comes from the row, never from the caller. Letting
+    // it change would leave published nodes pointing at a connection whose payload no
+    // longer matches the connector they call.
+    const existing = await getConnectionWithPayload(deps.pool, id, ctx.workspaceId);
+    if (!existing) return sendProblem(reply, 404, 'Connection not found');
+
+    const schema = CONNECTION_PAYLOAD_SCHEMAS[existing.connectorKey as ConnectorKey];
+    if (!schema) return sendProblem(reply, 400, 'Unknown connector key');
+    // Whole replacement, validated in full. The stored payload is write-only and never
+    // returned, so a form cannot prefill it — a merge would let someone submit only the
+    // token they came to rotate and keep stale values for everything else, and the
+    // mismatch would surface as a failed production run rather than a failed save.
+    const payload = schema.safeParse(parsed.data.payload);
+    if (!payload.success) return sendProblem(reply, 400, 'Invalid connection payload', payload.error.message);
+
+    const sealed = await deps.credentialsVault.encrypt(ctx.workspaceId, JSON.stringify(payload.data));
+    const row = await withTx(deps.pool, async (client) => {
+      const updated = await replaceConnectionPayload(client, {
+        id,
+        workspaceId: ctx.workspaceId,
+        encryptedPayload: sealed.blob,
+        encVersion: sealed.encVersion,
+        name: parsed.data.name,
+      });
+      if (!updated) return null;
+      await appendAuditEvent(client, {
+        ...auditActor(req),
+        workspaceId: ctx.workspaceId,
+        action: 'credential.rotate',
+        targetType: 'connection',
+        targetId: id,
+        // Named scalars only — never the payload, old or new.
+        metadata: { connectorKey: updated.connectorKey, name: updated.name },
+      });
+      return updated;
+    });
+    if (!row) return sendProblem(reply, 404, 'Connection not found');
+    return row;
   });
 
   app.delete('/v1/connections/:id', async (req, reply) => {

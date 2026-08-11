@@ -121,6 +121,7 @@ describe('endpoint helpers', () => {
     await client.execute('wf1');
     await client.listConnections();
     await client.createConnection('telegram', 'Bot', { botToken: 'x' });
+    await client.rotateConnection('c1', { botToken: 'y' });
     await client.deleteConnection('c1');
     await client.testConnection('c1');
     await client.getExecution('e1');
@@ -162,6 +163,7 @@ describe('endpoint helpers', () => {
       'POST /v1/workflows/wf1/execute',
       'GET /v1/connections',
       'POST /v1/connections',
+      'PUT /v1/connections/c1',
       'DELETE /v1/connections/c1',
       'POST /v1/connections/c1/test',
       'GET /v1/executions/e1',

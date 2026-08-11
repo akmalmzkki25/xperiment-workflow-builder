@@ -76,7 +76,13 @@ export const OPENAPI_DOCUMENT = {
       get: { summary: 'List connections', tags: ['connections'] },
       post: { summary: 'Create a connection (secrets encrypted at rest)', tags: ['connections'] },
     },
-    '/v1/connections/{id}': { delete: { summary: 'Delete a connection', tags: ['connections'] } },
+    '/v1/connections/{id}': {
+      put: {
+        summary: 'Rotate a credential in place (whole payload; id and connector unchanged)',
+        tags: ['connections'],
+      },
+      delete: { summary: 'Delete a connection', tags: ['connections'] },
+    },
     '/v1/connections/{id}/test': { post: { summary: 'Test a connection', tags: ['connections'] } },
     '/v1/ai/generate': { post: { summary: 'Generate a workflow from a prompt', tags: ['ai'] } },
     '/v1/ai/edit': { post: { summary: 'Edit a workflow from a prompt', tags: ['ai'] } },

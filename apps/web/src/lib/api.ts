@@ -1,5 +1,15 @@
 import { clearToken, getToken, getWorkspace } from './auth';
 
+/**
+ * A connection type's payload shape, keyed by connector (`telegram`) rather than node
+ * type (`telegram.sendMessage`). Optional for the same reason the display fields are: a
+ * web build deployed ahead of the API must degrade, not crash.
+ */
+export interface ConnectionSchemaItem {
+  connectorKey: string;
+  payloadJsonSchema: unknown;
+}
+
 export interface ConnectorItem {
   type: string;
   kind: 'trigger' | 'action' | 'logic';
@@ -307,7 +317,7 @@ export class ApiClient {
     return this.request('POST', '/v1/auth/resend-verification');
   }
 
-  listConnectors(): Promise<{ items: ConnectorItem[] }> {
+  listConnectors(): Promise<{ items: ConnectorItem[]; connections?: ConnectionSchemaItem[] }> {
     return this.request('GET', '/v1/connectors');
   }
 
@@ -364,6 +374,17 @@ export class ApiClient {
 
   createConnection(connectorKey: string, name: string, payload: unknown): Promise<ConnectionRow> {
     return this.request('POST', '/v1/connections', { body: { connectorKey, name, payload } });
+  }
+
+  /**
+   * Whole replacement, and the id survives — that is what keeps published versions
+   * working across a credential rotation. `connectorKey` is not sent: the server reads
+   * it from the stored row.
+   */
+  rotateConnection(id: string, payload: unknown, name?: string): Promise<ConnectionRow> {
+    return this.request('PUT', `/v1/connections/${id}`, {
+      body: name === undefined ? { payload } : { name, payload },
+    });
   }
 
   deleteConnection(id: string): Promise<void> {

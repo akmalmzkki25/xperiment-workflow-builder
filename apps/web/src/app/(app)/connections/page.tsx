@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ConnectionDialog } from '../../../components/connections/ConnectionDialog';
+import { ConnectionDialog, type RotateTarget } from '../../../components/connections/ConnectionDialog';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { PermissionNotice } from '../../../components/ui/PermissionNotice';
 import { getBrowserClient } from '../../../lib/api';
@@ -14,6 +14,7 @@ type TestResult = { ok: boolean; error?: string };
 export default function ConnectionsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [rotating, setRotating] = useState<RotateTarget | null>(null);
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [pageError, setPageError] = useState<string | null>(null);
 
@@ -122,6 +123,15 @@ export default function ConnectionsPage() {
                       Test
                     </button>
                     <button
+                      className="q-btn q-btn--ghost q-btn--sm"
+                      onClick={() =>
+                        setRotating({ id: conn.id, name: conn.name, connectorKey: conn.connectorKey })
+                      }
+                      data-testid={`conn-rotate-${conn.name}`}
+                    >
+                      Rotate
+                    </button>
+                    <button
                       className="q-btn q-btn--danger q-btn--sm"
                       disabled={remove.isPending}
                       onClick={() => {
@@ -140,6 +150,11 @@ export default function ConnectionsPage() {
       )}
 
       <ConnectionDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      <ConnectionDialog
+        open={rotating !== null}
+        onClose={() => setRotating(null)}
+        rotate={rotating ?? undefined}
+      />
     </>
   );
 }

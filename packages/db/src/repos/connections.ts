@@ -69,6 +69,32 @@ export async function getConnectionWithPayload(
   };
 }
 
+/**
+ * Replace a connection's sealed payload in place.
+ *
+ * Rotation, not editing. The row keeps its id, so every published version that names it
+ * keeps working — which is the entire point: without this, an expired provider token
+ * meant creating a second connection, hand-editing `connectionRef` on every node,
+ * republishing each workflow, and only then deleting the old one.
+ *
+ * `connector_key` is deliberately not a parameter. Changing it would leave published
+ * nodes pointing at a connection whose payload no longer matches the connector they call,
+ * and the failure would surface as a runtime validation error nobody could trace back.
+ */
+export async function replaceConnectionPayload(
+  db: Db,
+  args: { id: string; workspaceId: string; encryptedPayload: Buffer; encVersion: number; name?: string | undefined },
+): Promise<ConnectionRow | null> {
+  const r = await db.query(
+    `UPDATE connections
+        SET encrypted_payload = $3, enc_version = $4, name = COALESCE($5, name), updated_at = now()
+      WHERE id = $1 AND workspace_id = $2
+      RETURNING *`,
+    [args.id, args.workspaceId, args.encryptedPayload, args.encVersion, args.name ?? null],
+  );
+  return r.rowCount ? mapConnection(r.rows[0] as Record<string, unknown>) : null;
+}
+
 export async function deleteConnection(db: Db, id: string, workspaceId: string): Promise<boolean> {
   const r = await db.query(`DELETE FROM connections WHERE id = $1 AND workspace_id = $2`, [id, workspaceId]);
   return (r.rowCount ?? 0) > 0;

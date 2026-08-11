@@ -126,6 +126,22 @@ describe('connections envelope encryption and audit', () => {
     expect(JSON.stringify(rows)).not.toContain('SECRET-TOKEN');
   });
 
+  test('rotating a connection audits it without echoing either secret', async () => {
+    const id = await createTelegramConnection();
+    const r = await auth.inject({
+      method: 'PUT',
+      url: `/v1/connections/${id}`,
+      payload: { payload: { botToken: 'ROTATED-TOKEN', baseUrl: stubUrl } },
+    });
+    expect(r.statusCode).toBe(200);
+    const rows = await auditRows('credential.rotate');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.target_id).toBe(id);
+    const dump = JSON.stringify(rows);
+    expect(dump).not.toContain('SECRET-TOKEN');
+    expect(dump).not.toContain('ROTATED-TOKEN');
+  });
+
   test('an api-key caller is recorded as the api_key actor, not as a user', async () => {
     const key = await createApiKeyClient(app, auth, 'builder');
     const r = await key.inject({
@@ -192,6 +208,88 @@ describe('connections API', () => {
     stubStatus = 403;
     const fail = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
     expect(fail.json<{ ok: boolean }>().ok).toBe(false);
+  });
+
+  test('rotation keeps the id, which is the entire point', async () => {
+    // Without this route an expired provider token meant: create a second connection,
+    // hand-edit connectionRef on every node, republish every workflow, then delete the
+    // old one. Keeping the id is what makes published versions keep working.
+    const id = await createTelegramConnection();
+    const r = await auth.inject({
+      method: 'PUT',
+      url: `/v1/connections/${id}`,
+      payload: { payload: { botToken: 'ROTATED-TOKEN', baseUrl: stubUrl } },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json<{ id: string }>().id).toBe(id);
+    const list = await auth.inject({ method: 'GET', url: '/v1/connections' });
+    expect(list.json<{ items: unknown[] }>().items).toHaveLength(1);
+  });
+
+  test('rotation replaces the stored payload rather than merging into it', async () => {
+    // A merge would let someone submit only the token they came to rotate and keep a
+    // stale phoneNumberId, and the mismatch would surface as a failed production run
+    // rather than a failed save.
+    const created = await auth.inject({
+      method: 'POST',
+      url: '/v1/connections',
+      payload: {
+        connectorKey: 'whatsapp',
+        name: 'WA',
+        payload: { accessToken: 'OLD-WA', phoneNumberId: '555', baseUrl: stubUrl },
+      },
+    });
+    const id = created.json<{ id: string }>().id;
+    const partial = await auth.inject({
+      method: 'PUT',
+      url: `/v1/connections/${id}`,
+      payload: { payload: { accessToken: 'NEW-WA' } },
+    });
+    expect(partial.statusCode).toBe(400);
+    const full = await auth.inject({
+      method: 'PUT',
+      url: `/v1/connections/${id}`,
+      payload: { payload: { accessToken: 'NEW-WA', phoneNumberId: '555', baseUrl: stubUrl } },
+    });
+    expect(full.statusCode).toBe(200);
+  });
+
+  test('rotation cannot repoint a connection at another connector', async () => {
+    // connectorKey comes from the stored row. Accepting it from the caller would leave
+    // published nodes calling a connector whose payload no longer matches.
+    const id = await createTelegramConnection();
+    const r = await auth.inject({
+      method: 'PUT',
+      url: `/v1/connections/${id}`,
+      payload: { connectorKey: 'openai', payload: { apiKey: 'sk-x' } },
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
+  test('a rotated credential is what the test route then dials with', async () => {
+    const id = await createTelegramConnection();
+    await auth.inject({
+      method: 'PUT',
+      url: `/v1/connections/${id}`,
+      payload: { name: 'Renamed bot', payload: { botToken: 'ROTATED-TOKEN', baseUrl: stubUrl } },
+    });
+    const ok = await auth.inject({ method: 'POST', url: `/v1/connections/${id}/test` });
+    expect(ok.json()).toEqual({ ok: true });
+    const list = await auth.inject({ method: 'GET', url: '/v1/connections' });
+    const items = list.json<{ items: { name: string }[] }>().items;
+    expect(items[0]!.name).toBe('Renamed bot');
+    expect(JSON.stringify(items)).not.toContain('ROTATED-TOKEN');
+  });
+
+  test('rotating an unknown connection is a 404, not a create', async () => {
+    const r = await auth.inject({
+      method: 'PUT',
+      url: '/v1/connections/00000000-0000-0000-0000-000000000009',
+      payload: { payload: { botToken: 'x' } },
+    });
+    expect(r.statusCode).toBe(404);
+    const list = await auth.inject({ method: 'GET', url: '/v1/connections' });
+    expect(list.json<{ items: unknown[] }>().items).toHaveLength(0);
   });
 
   test('create rejects bad payloads and unknown connector keys', async () => {

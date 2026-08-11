@@ -329,6 +329,32 @@ covers Gmail via an app password), and Google Sheets `sheets.appendRow` / `sheet
    appears in stored inputs, events, or logs. Provider `baseUrl` overrides in the
    payload support stubbed testing.
 
+### Rotating a credential
+
+Provider tokens expire. `PUT /v1/connections/:id` replaces the stored payload and
+**keeps the id**, so every published version that names the connection keeps
+working. Without it the only route was: create a second connection, hand-edit
+`connectionRef` on every node, republish each workflow, then delete the old one —
+and `DELETE` refuses with 409 while any published version still references it.
+
+Two deliberate constraints:
+
+- **Whole replacement, not a merge.** The stored payload is write-only and never
+  returned, so the form cannot prefill it. A partial update would let someone
+  submit only the token they came to rotate and keep stale values for everything
+  else, and the mismatch would surface as a failed production run rather than a
+  failed save. Every required field must be sent.
+- **`connectorKey` is immutable.** It is read from the stored row, never from the
+  request. Repointing a connection at a different connector would leave published
+  nodes calling something whose payload no longer matches.
+
+The form fields come from `GET /v1/connectors`, which publishes each connection
+type's JSON Schema alongside the node catalog. The web app derives inputs from it
+rather than keeping its own copy — the copy it used to keep had already lost
+`smtp.secure`, `googleSheets.baseUrl` and `googleSheets.tokenUrl`. A field name the
+UI does not recognise renders masked, so an unfamiliar credential is never shown in
+plain text by default.
+
 ## Web UI (Phase 1D)
 
 `apps/web` is a Next.js canvas UI (port 3005) with the Arus design language:
@@ -623,7 +649,8 @@ is the control that applies.
 
 ### Audit trail
 
-`audit_events` records credential lifecycle (`credential.create`, `.delete`, `.test`),
+`audit_events` records credential lifecycle (`credential.create`, `.rotate`, `.delete`,
+`.test`),
 credential use by a workflow node (`credential.read_use`, one row per node), signing
 secret disclosure (`trigger_secret.reveal`), the backfill (`secret.rekey_batch`),
 authentication (`auth.register`, `.login_failed`, `.login_succeeded`, `.logout`,
