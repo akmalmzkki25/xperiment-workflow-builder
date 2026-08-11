@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { Command } from 'commander';
+import { normalizeArgv } from './argv.js';
 import { clearToken, loadToken, saveToken } from './auth.js';
 import { ApiClient, ApiError } from './client.js';
 import { renderTimeline } from './render.js';
@@ -227,4 +228,4 @@ program
     }
   });
 
-await program.parseAsync(process.argv);
+await program.parseAsync(normalizeArgv(process.argv));
