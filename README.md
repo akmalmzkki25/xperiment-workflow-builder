@@ -16,21 +16,29 @@ delivery with idempotency, automatic retry, and a full execution audit trail.
 ```bash
 docker compose up -d
 pnpm install
-pnpm migrate
+pnpm dev
 ```
 
-Run the three services (three terminals):
+`pnpm dev` starts all six services in one terminal — api (3000), orchestrator
+(3001), worker (3002), gateway (3003), scheduler (3004) and web (3005) — and
+Ctrl-C stops them. Migrations run at boot behind a Postgres advisory lock, so
+starting six services at once serialises rather than races and `pnpm migrate` is
+not a separate step.
+
+It reads a root `.env` if you have one, but the real environment always wins: a
+CI job that exported `DATABASE_URL` must not be overridden by a file somebody
+left in their checkout. If Postgres or Redis is unreachable it says which one and
+stops, instead of printing five interleaved connection stack traces.
+
+Ports come from `API_PORT`, `ORCH_PORT`, `WORKER_PORT`, `GATEWAY_PORT`,
+`SCHEDULER_PORT` and `WEB_PORT`. Two services pointed at one port is refused
+before anything starts, as is any port in 3100-3104 or 3311-3312 — the e2e suites
+force-kill whatever owns those at the start and end of every run.
+
+To run one service on its own:
 
 ```bash
 pnpm --filter @xperiment/api dev
-```
-
-```bash
-pnpm --filter @xperiment/orchestrator dev
-```
-
-```bash
-pnpm --filter @xperiment/worker dev
 ```
 
 Create, publish, and run a workflow:

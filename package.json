@@ -2,8 +2,11 @@
   "name": "xperiment-workflow-builder",
   "private": true,
   "packageManager": "pnpm@10.8.1",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "dev": "pnpm --filter @xperiment/devstack start",
     "test": "pnpm -r --workspace-concurrency=1 test",
     "test:cov": "pnpm -r --workspace-concurrency=1 test:cov",
     "typecheck": "pnpm -r typecheck",
