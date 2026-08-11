@@ -53,7 +53,7 @@ export function requestFacts(req: { id: string; ip: string; headers: Record<stri
 }
 
 export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
-  const limiter = new LoginLimiter();
+  const limiter = new LoginLimiter(deps.limiterStore);
   const tokenSchema = z.object({ token: z.string().min(1).max(200) }).strict();
 
   /**
@@ -122,7 +122,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
     const parsed = credentialsSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
     const limiterKey = `${parsed.data.email}:${req.ip}`;
-    if (!limiter.check(limiterKey)) {
+    if (!(await limiter.check(limiterKey))) {
       return sendProblem(reply, 429, 'Too many attempts', 'Try again in a minute');
     }
     const user = await getUserByEmail(deps.pool, parsed.data.email);
@@ -164,7 +164,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
       return { mfaRequired: true, challenge: challenge.token };
     }
     // Only a login that actually ends in a session clears the budget.
-    limiter.reset(limiterKey);
+    await limiter.reset(limiterKey);
     const { token, hash } = generateToken('qs');
     await createSession(deps.pool, { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
     await appendAuditEvent(deps.pool, {
@@ -214,7 +214,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
     const parsed = z.object({ email: z.string().email() }).strict().safeParse(req.body ?? {});
     // Even a malformed body gets the neutral answer, so probing tells the caller nothing.
     if (!parsed.success) return reply.status(200).send({ sent: true });
-    if (!limiter.check(`forgot:${parsed.data.email}:${req.ip}`)) {
+    if (!(await limiter.check(`forgot:${parsed.data.email}:${req.ip}`))) {
       return sendProblem(reply, 429, 'Too many attempts', 'Try again in a minute');
     }
     const user = await getUserByEmail(deps.pool, parsed.data.email);
@@ -300,7 +300,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: ResolvedServerDep
     const ctx = authOf(req);
     if (!ctx.userId) return sendProblem(reply, 400, 'Sessions only', 'API keys have no email to verify');
     // Keyed on userId, not email: the caller is already identified and sends no body.
-    if (!limiter.check(`resend:${ctx.userId}:${req.ip}`)) {
+    if (!(await limiter.check(`resend:${ctx.userId}:${req.ip}`))) {
       return sendProblem(reply, 429, 'Too many attempts', 'Try again in a minute');
     }
     const user = await getUserById(deps.pool, ctx.userId);

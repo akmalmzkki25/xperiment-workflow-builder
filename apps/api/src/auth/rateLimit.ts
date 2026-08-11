@@ -1,27 +1,28 @@
+import { MemoryLimiterStore, type LimiterStore } from '@xperiment/queue';
+
 const WINDOW_MS = 60_000;
 const MAX_ATTEMPTS = 5;
 
-interface Window {
-  count: number;
-  startedAt: number;
-}
-
-/** Fixed-window in-memory login limiter (per email+ip). Redis-backed later. */
+/**
+ * Fixed-window login limiter, per email+ip.
+ *
+ * Async because the counter may live in Redis: in process it was per-replica state, so
+ * a cap of five attempts silently became five times the replica count. The default is
+ * still in memory — Redis is opted into at the composition root only, or the test
+ * suite would leave counters in a shared Redis DB and two consecutive runs would
+ * disagree.
+ */
 export class LoginLimiter {
-  private readonly windows = new Map<string, Window>();
+  constructor(private readonly store: LimiterStore = new MemoryLimiterStore()) {}
 
-  /** Returns true when the attempt is allowed. */
-  check(key: string, now: number = Date.now()): boolean {
-    const w = this.windows.get(key);
-    if (!w || now - w.startedAt >= WINDOW_MS) {
-      this.windows.set(key, { count: 1, startedAt: now });
-      return true;
-    }
-    w.count += 1;
-    return w.count <= MAX_ATTEMPTS;
+  /** True when the attempt is allowed. */
+  async check(key: string): Promise<boolean> {
+    return (await this.store.hit(key, WINDOW_MS)) <= MAX_ATTEMPTS;
   }
 
-  reset(key: string): void {
-    this.windows.delete(key);
+  async reset(key: string): Promise<void> {
+    await this.store.reset(key);
   }
 }
+
+export { MAX_ATTEMPTS, WINDOW_MS };

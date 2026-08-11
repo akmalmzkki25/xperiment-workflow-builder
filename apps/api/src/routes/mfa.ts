@@ -44,14 +44,14 @@ function mintRecoveryCodes(): { codes: string[]; hashes: string[] } {
 
 export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   // Per challenge: a typo costs the caller their five attempts on THAT challenge only.
-  const verifyLimiter = new LoginLimiter();
+  const verifyLimiter = new LoginLimiter(deps.limiterStore);
   // Per account, and this is the one that matters. Keying only on the challenge bounded
   // nothing: whoever holds the password can mint challenges without limit — login resets its
   // own limiter the moment the password verifies — and each fresh challenge would hand them
   // five more guesses at a six-digit code. Five attempts a minute per account is what makes
   // the second factor cost anything to guess.
-  const accountLimiter = new LoginLimiter();
-  const passwordLimiter = new LoginLimiter();
+  const accountLimiter = new LoginLimiter(deps.limiterStore);
+  const passwordLimiter = new LoginLimiter(deps.limiterStore);
 
   /**
    * Unwraps the stored secret. A row wrapped by a different root key cannot be opened, so
@@ -91,7 +91,7 @@ export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps
    * Rate-limited on the user id so this cannot become a password oracle.
    */
   async function reauthenticated(userId: string, password: string, ip: string, reply: FastifyReply): Promise<boolean> {
-    if (!passwordLimiter.check(`reauth:${userId}:${ip}`)) {
+    if (!(await passwordLimiter.check(`reauth:${userId}:${ip}`))) {
       sendProblem(reply, 429, 'Too many attempts', 'Try again in a minute');
       return false;
     }
@@ -100,7 +100,7 @@ export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps
       sendProblem(reply, 401, 'Invalid password');
       return false;
     }
-    passwordLimiter.reset(`reauth:${userId}:${ip}`);
+    await passwordLimiter.reset(`reauth:${userId}:${ip}`);
     return true;
   }
 
@@ -209,7 +209,7 @@ export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps
       .safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid or expired token');
     const challengeHash = hashToken(parsed.data.challenge);
-    if (!verifyLimiter.check(`mfa:${challengeHash}`)) {
+    if (!(await verifyLimiter.check(`mfa:${challengeHash}`))) {
       // Out of attempts: destroy the challenge rather than leave it sitting there for the
       // next minute's worth of guesses.
       await consumeAuthToken(deps.pool, challengeHash, 'mfa_challenge');
@@ -220,7 +220,7 @@ export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps
     if (!peeked) return sendProblem(reply, 400, 'Invalid or expired token');
     // The account cap, checked once the challenge has identified whose account this is.
     // Minting a new challenge does not reset it, which is what bounds the search space.
-    if (!accountLimiter.check(`mfa-account:${peeked.userId}`)) {
+    if (!(await accountLimiter.check(`mfa-account:${peeked.userId}`))) {
       await consumeAuthToken(deps.pool, challengeHash, 'mfa_challenge');
       await appendAuditEvent(deps.pool, {
         ...requestFacts(req),
@@ -251,9 +251,9 @@ export function registerMfaRoutes(app: FastifyInstance, deps: ResolvedServerDeps
     // Only now is the challenge spent, and the CAS decides a race between two winners.
     const claimed = await consumeAuthToken(deps.pool, challengeHash, 'mfa_challenge');
     if (!claimed) return sendProblem(reply, 400, 'Invalid or expired token');
-    verifyLimiter.reset(`mfa:${challengeHash}`);
+    await verifyLimiter.reset(`mfa:${challengeHash}`);
     // Only a completed second step clears the account's budget.
-    accountLimiter.reset(`mfa-account:${peeked.userId}`);
+    await accountLimiter.reset(`mfa-account:${peeked.userId}`);
     const { token, hash } = generateToken('qs');
     await createSession(deps.pool, {
       userId: peeked.userId,

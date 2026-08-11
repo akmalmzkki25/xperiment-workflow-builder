@@ -6,5 +6,14 @@ export {
   type NodeTaskPayload,
   type WatchdogPayload,
 } from './payloads.js';
-export { createRedisConnection, DEFAULT_REDIS_URL } from './connection.js';
+export { createLimiterRedis, createRedisConnection, DEFAULT_REDIS_URL } from './connection.js';
+export {
+  limiterKey,
+  LIMITER_PREFIX,
+  MemoryLimiterStore,
+  RedisLimiterStore,
+  type LimiterStore,
+  type RedisLike,
+  type RedisLimiterOptions,
+} from './limiterStore.js';
 export { createQueues, startOutboxPublisher, type OutboxPublisher, type Queues } from './publisher.js';

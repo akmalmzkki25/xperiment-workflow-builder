@@ -1,6 +1,12 @@
 import { createDefaultRegistry } from '@xperiment/connectors';
 import { assertBootSafe, createKeyProviderFromEnv, createPool, runMigrations } from '@xperiment/db';
-import { createQueues, createRedisConnection, startOutboxPublisher } from '@xperiment/queue';
+import {
+  createLimiterRedis,
+  createQueues,
+  createRedisConnection,
+  RedisLimiterStore,
+  startOutboxPublisher,
+} from '@xperiment/queue';
 import { buildServer } from './server.js';
 
 // Before anything opens a socket: a production deployment that inherited the committed
@@ -14,7 +20,15 @@ const registry = createDefaultRegistry({ allowPrivateIps: process.env['HTTP_ALLO
 // Resolved here rather than inside buildServer: a misconfigured KMS_PROVIDER or a
 // missing KMS_KEY_NAME must fail the boot, not every credentialed request.
 const keyProvider = await createKeyProviderFromEnv();
-const app = buildServer({ pool, registry, keyProvider });
+
+// A SEPARATE client from the BullMQ one, which sets maxRetriesPerRequest: null and so
+// queues commands forever when Redis is down — acceptable in a worker, fatal on a
+// login path. This one fails fast and the store degrades to per-replica counting.
+const limiterRedis = createLimiterRedis();
+const limiterStore = new RedisLimiterStore(limiterRedis);
+
+const app = buildServer({ pool, registry, keyProvider, limiterStore });
+limiterRedis.on('error', (e: Error) => app.log.warn({ err: e.message }, 'limiter.redis_error'));
 
 const redis = createRedisConnection();
 const queues = createQueues(redis);

@@ -28,6 +28,14 @@ export interface ResolvedServerDeps {
   credentialsVault: import('@xperiment/db').SecretVault;
   /** Envelope encryption for trigger, callback and alert webhook secrets. */
   triggerVault: import('@xperiment/db').SecretVault;
+  /**
+   * Where login attempt counters live. Undefined means in-process.
+   *
+   * Redis is opted into at the composition root ONLY. Defaulting to it would leave the
+   * test suite's counters in a shared Redis database, so two consecutive `pnpm test`
+   * runs would disagree with each other.
+   */
+  limiterStore?: import('@xperiment/queue').LimiterStore | undefined;
   ai: AiConfig;
   aiClientFactory: (cfg: {
     apiKey: string;

@@ -12,6 +12,7 @@ import {
   type SecretVault,
 } from '@xperiment/db';
 import { providerFor, type PaymentProvider } from '@xperiment/payments';
+import type { LimiterStore } from '@xperiment/queue';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { AiConfig } from './routes/deps.js';
@@ -58,6 +59,14 @@ export interface ServerDeps {
   triggerVault?: SecretVault;
   ai?: AiConfig;
   aiClientFactory?: (cfg: { apiKey: string; model: string; baseUrl: string; appUrl?: string }) => ChatClient;
+  /**
+   * Where login attempt counters live. Omitted means in-process.
+   *
+   * Redis is opted into at the composition root ONLY: defaulting to it would leave the
+   * test suite's counters in a shared Redis database, and two consecutive runs of
+   * `pnpm test` would then disagree with each other.
+   */
+  limiterStore?: LimiterStore;
   rateLimitPerMinute?: number;
   paymentProvider?: PaymentProvider;
   paymentWebhookSecret?: string | null;
@@ -112,6 +121,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     pool: deps.pool,
     registry: deps.registry,
     keyProvider,
+    // Undefined here means the limiter builds its own in-process store.
+    limiterStore: deps.limiterStore,
     paymentProvider: resolvePaymentProvider(deps.paymentProvider),
     paymentWebhookSecret: deps.paymentWebhookSecret ?? process.env['PAYMENT_WEBHOOK_SECRET'] ?? null,
     gatewayUrl: deps.gatewayUrl ?? process.env['GATEWAY_URL'] ?? 'http://localhost:3003',
