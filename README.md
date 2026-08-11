@@ -52,6 +52,33 @@ with `payload.json` like `{ "name": "Budi", "total": 150 }`.
 Set `HTTP_ALLOW_PRIVATE_IPS=true` on the worker when your workflow calls
 localhost URLs (the SSRF guard blocks private ranges by default).
 
+## Demo data
+
+An empty install shows empty lists, so nothing in the product can be evaluated.
+`xperiment seed` fills a **local** database with a small Indonesian shop: three
+published workflows, two connections, and a month of run history with real
+failures in it.
+
+```bash
+pnpm xperiment seed
+```
+
+It refuses to run unless all three gates pass: `NODE_ENV` is not `production`,
+`DATABASE_URL` is still the committed development credential, and that URL points
+at this machine. The second gate reads backwards on purpose — a database counts
+as development *because* nobody has configured it, so the dangerous case is the
+one that looks properly set up. `--force` overrides them and exists only as a
+flag, never as an environment variable.
+
+Nothing it writes can reach a provider: every fabricated credential carries the
+literal `FAKE` and every host is under `.invalid`, which RFC 2606 guarantees can
+never resolve. It also never inserts an outbox row, so seeding cannot dispatch
+real work to a running worker.
+
+There is no `--reset`. Seeding twice under the same name is refused; on a
+development stack, dropping the database and re-running `pnpm migrate` is the
+honest reset.
+
 Defaults point at the local stack: `DATABASE_URL=postgresql://postgres:dev_password_change_me@localhost:5432/xperiment`
 and `REDIS_URL=redis://:dev_password_change_me@localhost:6379/0` (see `.env.example`; the
 committed docker-compose recreates the same services).

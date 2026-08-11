@@ -15,6 +15,23 @@ export * from './repos/workflows.js';
 export * from './repos/executions.js';
 export * from './repos/outbox.js';
 export * from './repos/retention.js';
+export {
+  assertSeedable,
+  fakeHost,
+  fakeSecret,
+  FAKE_MARKER,
+  isFakeCredential,
+  seedRefusals,
+  type SeedEnv,
+  type SeedRefusal,
+} from './seed/guard.js';
+export {
+  seedDemoWorkspace,
+  SeedConflictError,
+  type SeedArgs,
+  type SeedDeps,
+  type SeedSummary,
+} from './seed/writer.js';
 export { deriveLegacyKey, encryptSecret, decryptSecret, openBytes, sealBytes } from './crypto.js';
 export * from './repos/triggers.js';
 export * from './repos/connections.js';

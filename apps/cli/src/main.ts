@@ -228,4 +228,73 @@ program
     }
   });
 
+program
+  .command('seed')
+  .description('Fill a LOCAL development database with a demo workspace, workflows and run history')
+  .option('--name <name>', 'workspace name', 'Toko Demo (FAKE)')
+  .option('--runs <n>', 'how many executions of history to fabricate', '240')
+  .option('--days <n>', 'how far back the history reaches', '30')
+  .option('--seed <n>', 'PRNG seed, so the same demo can be reproduced', '1902558064')
+  .option('--force', 'override the environment gates — type it deliberately')
+  .action(async (opts: { name: string; runs: string; days: string; seed: string; force?: boolean }) => {
+    // Imported dynamically so no other CLI command pays for a database connection.
+    const {
+      appendAuditEvent,
+      assertSeedable,
+      createKeyProviderFromEnv,
+      createPool,
+      createSecretVault,
+      createWorkspaceKeyring,
+      deriveLegacyKey,
+      seedDemoWorkspace,
+    } = await import('@xperiment/db');
+    const { canonicalHash } = await import('@xperiment/ir');
+
+    // Before the pool, not after: refusing should not need a database connection, and an
+    // unreachable production host must fail on the gate rather than on the socket.
+    try {
+      assertSeedable(process.env, { force: opts.force === true });
+    } catch (e) {
+      fail(e);
+    }
+
+    const pool = createPool();
+    try {
+      const keyring = createWorkspaceKeyring({ pool, provider: await createKeyProviderFromEnv() });
+      const summary = await seedDemoWorkspace(
+        {
+          pool,
+          hashDefinition: (d) => canonicalHash(d as Parameters<typeof canonicalHash>[0]),
+          vault: createSecretVault({
+            keyring,
+            legacyKey: deriveLegacyKey(
+              process.env['CREDENTIALS_SECRET_KEY'] ?? 'xperiment-dev-credentials-secret-change-me',
+            ),
+          }),
+        },
+        {
+          workspaceName: opts.name,
+          runs: Number(opts.runs),
+          days: Number(opts.days),
+          seed: Number(opts.seed),
+        },
+      );
+      console.log(`workspace  ${summary.workspaceId}  ${summary.workspaceName}`);
+      console.log(`workflows  ${summary.workflows}`);
+      console.log(`connections ${summary.connections} (fabricated — every host is .invalid)`);
+      console.log(`executions ${summary.executions}`);
+      console.log(`usage rows ${summary.usageEvents}`);
+      await appendAuditEvent(pool, {
+        workspaceId: summary.workspaceId,
+        actorKind: 'system',
+        action: 'workspace.create',
+        metadata: { seeded: true, executions: summary.executions },
+      });
+    } catch (e) {
+      fail(e);
+    } finally {
+      await pool.end();
+    }
+  });
+
 await program.parseAsync(normalizeArgv(process.argv));

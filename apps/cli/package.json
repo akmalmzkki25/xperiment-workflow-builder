@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@xperiment/db": "workspace:*",
+    "@xperiment/ir": "workspace:*",
     "commander": "^12.1.0",
     "pg": "^8.12.0"
   },
