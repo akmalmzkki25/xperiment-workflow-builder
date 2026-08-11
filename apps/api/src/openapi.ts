@@ -21,6 +21,67 @@ export const OPENAPI_DOCUMENT = {
     '/v1/auth/register': { post: { summary: 'Register a user and workspace', security: [], tags: ['auth'] } },
     '/v1/auth/login': { post: { summary: 'Log in', security: [], tags: ['auth'] } },
     '/v1/auth/me': { get: { summary: 'Current user + workspaces', tags: ['auth'] } },
+    '/v1/auth/logout': { post: { summary: 'Revoke the current session', tags: ['auth'] } },
+    '/v1/auth/logout-all': { post: { summary: 'Revoke every session for this user', tags: ['auth'] } },
+    '/v1/auth/forgot-password': {
+      post: {
+        summary: 'Request a password reset link (always 200, so it cannot enumerate accounts)',
+        security: [],
+        tags: ['auth'],
+      },
+    },
+    '/v1/auth/reset-password': {
+      post: { summary: 'Consume a reset token and revoke every session', security: [], tags: ['auth'] },
+    },
+    '/v1/auth/verify-email': { post: { summary: 'Confirm an email address', security: [], tags: ['auth'] } },
+    '/v1/auth/resend-verification': { post: { summary: 'Send the confirmation email again', tags: ['auth'] } },
+    '/v1/auth/mfa/setup': {
+      post: { summary: 'Begin TOTP enrolment (returns a secret and otpauth URI)', tags: ['auth'] },
+    },
+    '/v1/auth/mfa/confirm': { post: { summary: 'Confirm enrolment with a code', tags: ['auth'] } },
+    '/v1/auth/mfa/disable': { post: { summary: 'Turn off the second factor', tags: ['auth'] } },
+    '/v1/auth/mfa/recovery-codes': { post: { summary: 'Replace the recovery codes', tags: ['auth'] } },
+    '/v1/auth/mfa/verify': {
+      post: {
+        summary: 'Complete a two-step login with a TOTP or recovery code',
+        security: [],
+        tags: ['auth'],
+      },
+    },
+    '/v1/workspaces': {
+      get: { summary: 'Workspaces this caller belongs to', tags: ['workspaces'] },
+      post: { summary: 'Create a workspace (caller becomes owner)', tags: ['workspaces'] },
+    },
+    '/v1/workspaces/invites': { post: { summary: 'Invite someone by email', tags: ['workspaces'] } },
+    '/v1/workspaces/mfa-policy': {
+      put: { summary: 'Require a second factor for every member', tags: ['workspaces'] },
+    },
+    '/v1/invites/accept': { post: { summary: 'Accept an invite token', tags: ['workspaces'] } },
+    '/v1/api-keys': {
+      get: { summary: 'List API keys (metadata only; the key itself is shown once)', tags: ['api-keys'] },
+      post: { summary: 'Create an API key', tags: ['api-keys'] },
+    },
+    '/v1/api-keys/{id}': { delete: { summary: 'Revoke an API key', tags: ['api-keys'] } },
+    '/v1/workflows/{id}/triggers': {
+      get: {
+        summary: 'Trigger URLs and signing secrets (audited: each read is a secret disclosure)',
+        tags: ['triggers'],
+      },
+    },
+    '/v1/workflows/{id}/triggers/{nodeId}/samples': {
+      get: { summary: 'Recent test-mode payloads for a webhook trigger', tags: ['triggers'] },
+    },
+    '/v1/audit': { get: { summary: 'Audit events for this workspace (cursor paginated)', tags: ['audit'] } },
+    '/v1/executions/{id}/nodes/{nodeId}/{attempt}/payload': {
+      get: {
+        summary: "One node attempt's input and output, redacted (needs execution:run, not just read)",
+        tags: ['executions'],
+      },
+    },
+    '/v1/healthz': { get: { summary: 'Liveness: the process is up', security: [], tags: ['ops'] } },
+    '/v1/readyz': {
+      get: { summary: 'Readiness: dependencies answered (503 when a critical one did not)', security: [], tags: ['ops'] },
+    },
     '/v1/workflows': {
       get: { summary: 'List workflows (cursor paginated)', tags: ['workflows'] },
       post: { summary: 'Create a workflow', tags: ['workflows'] },

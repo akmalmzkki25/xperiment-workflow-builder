@@ -416,7 +416,11 @@ The REST API is hardened for external use:
   secret once; the orchestrator POSTs `{ executionId, workflowId, status, completedAt }`
   to that URL on any terminal state, SSRF-guarded and `X-Xperiment-Signature` (HMAC-SHA256)
   signed. `DELETE` clears it.
-- **OpenAPI** — `GET /v1/openapi.json` (public) documents the `/v1` surface.
+- **OpenAPI** — `GET /v1/openapi.json` (public) documents the `/v1` surface. A test
+  enumerates every registered route and asserts the document covers it, and that
+  nothing in the document is missing from the server. It found twenty-five
+  undocumented routes the first time it ran, including the whole account-recovery
+  and MFA surface. Adding a route without documenting it now fails the suite.
 
 ## Usage metering (Phase 2I)
 

@@ -73,6 +73,15 @@ export interface ServerDeps {
   /** Overridable so a test can supply memoryMailSender and read the tokens it mails. */
   mailSender?: MailSender;
   appUrl?: string;
+  /**
+   * Called once per registered route.
+   *
+   * A test seam, and the only way to enumerate the surface: Fastify's `onRoute` hook
+   * only fires for routes added AFTER it is registered, so it has to go in here rather
+   * than be attached to the returned instance. Used to prove the OpenAPI document cannot
+   * silently fall behind the routes.
+   */
+  onRoute?: (route: { method: string; url: string }) => void;
 }
 
 /** A typo must fail at startup, not silently disable payment on every request. */
@@ -100,6 +109,16 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     logger: { level: process.env['LOG_LEVEL'] ?? 'info' },
     genReqId: (req) => (req.headers['x-request-id'] as string | undefined) ?? randomUUID(),
   });
+  // Registered here, before any route, because `onRoute` only fires for routes added
+  // after the hook. This is the seam the openapi staleness test uses to enumerate what
+  // actually exists; absent, it costs nothing.
+  if (deps.onRoute) {
+    const report = deps.onRoute;
+    app.addHook('onRoute', (route) => {
+      const methods = Array.isArray(route.method) ? route.method : [route.method];
+      for (const method of methods) report({ method, url: route.url });
+    });
+  }
   app.addHook('onRequest', async (req, reply) => {
     void reply.header('x-request-id', req.id);
   });
