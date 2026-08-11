@@ -3,6 +3,11 @@ import type pg from 'pg';
 import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
 import { getQuotaUsage, getWorkspacePlan } from './entitlements.js';
+import {
+  decodeExecutionCursor,
+  encodeExecutionCursor,
+  type ExecutionFilter,
+} from './executionCursor.js';
 import { insertOutbox } from './outbox.js';
 
 export const PAYLOAD_CAP_BYTES = 262144;
@@ -493,10 +498,31 @@ export async function getExecutionDetail(
   };
 }
 
+export class CursorError extends Error {
+  constructor(readonly reason: 'malformed' | 'filter_changed') {
+    super(reason === 'malformed' ? 'Cursor is not readable' : 'Cursor was issued for a different filter');
+  }
+}
+
+/**
+ * Filtering happens HERE, not in the browser.
+ *
+ * The executions page used to fetch the default twenty rows and filter them client-side,
+ * so choosing FAILED showed "No executions" whenever the last twenty runs had succeeded
+ * — while the failures sat unreachable on page two. On a five-minute cron, twenty rows
+ * is a hundred minutes of history.
+ */
 export async function listExecutions(
   db: Db,
-  args: { workspaceId?: string; workflowId?: string; limit: number; cursor?: string },
+  args: {
+    workspaceId?: string;
+    workflowId?: string;
+    status?: readonly string[];
+    limit: number;
+    cursor?: string;
+  },
 ): Promise<{ items: ExecutionRow[]; nextCursor: string | null }> {
+  const filter: ExecutionFilter = { workflowId: args.workflowId, status: args.status };
   const params: unknown[] = [];
   const where: string[] = [];
   if (args.workspaceId) {
@@ -507,9 +533,25 @@ export async function listExecutions(
     params.push(args.workflowId);
     where.push(`workflow_id = $${params.length}`);
   }
+  if (args.status && args.status.length === 1) {
+    // Scalar equality, NOT `= ANY(array)`, and the difference is measurable: with an
+    // array Postgres uses (workspace_id, created_at) and applies status as a Filter,
+    // scanning the whole history to find the rare failures. Scalar equality puts status
+    // in the Index Cond of (workspace_id, status, created_at) instead. Verified with
+    // EXPLAIN under enable_seqscan = off.
+    params.push(args.status[0]);
+    where.push(`status = $${params.length}`);
+  } else if (args.status && args.status.length > 1) {
+    // Several statuses cannot share one ordered index scan — the index orders by status
+    // first, so a merge would be needed. Postgres reads the created_at index and filters,
+    // which at least avoids a sort.
+    params.push(args.status);
+    where.push(`status = ANY($${params.length}::text[])`);
+  }
   if (args.cursor) {
-    const [createdAt, id] = Buffer.from(args.cursor, 'base64').toString('utf8').split('|');
-    params.push(createdAt, id);
+    const decoded = decodeExecutionCursor(args.cursor, filter);
+    if (!decoded.ok) throw new CursorError(decoded.reason);
+    params.push(decoded.createdAt, decoded.id);
     where.push(`(created_at, id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`);
   }
   params.push(args.limit + 1);
@@ -524,7 +566,7 @@ export async function listExecutions(
   const last = items[items.length - 1];
   const nextCursor =
     hasMore && last
-      ? Buffer.from(`${(last['created_at'] as Date).toISOString()}|${last['id'] as string}`).toString('base64')
+      ? encodeExecutionCursor(last['created_at'] as Date, last['id'] as string, filter)
       : null;
   return { items: items.map(mapExecution), nextCursor };
 }

@@ -296,3 +296,91 @@ describe('execute and inspect', () => {
     expect(r.statusCode).toBe(400);
   });
 });
+
+describe('executions list filtering', () => {
+  /** Rows are written directly so status and age are exact rather than incidental. */
+  async function seedRuns(): Promise<{ workflowId: string; failedId: string }> {
+    const workflowId = await publishedWorkflow();
+    const version = await pool.query<{ id: string }>(
+      `SELECT id FROM workflow_versions WHERE workflow_id = $1 LIMIT 1`,
+      [workflowId],
+    );
+    const versionId = version.rows[0]!.id;
+    const ws = await pool.query<{ workspace_id: string }>(`SELECT workspace_id FROM workflows WHERE id = $1`, [
+      workflowId,
+    ]);
+    const workspaceId = ws.rows[0]!.workspace_id;
+    const insert = async (status: string, minutesAgo: number): Promise<string> => {
+      const r = await pool.query<{ id: string }>(
+        `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, status, created_at)
+         VALUES ($1, $2, $3, $4, now() - make_interval(mins => $5)) RETURNING id`,
+        [workspaceId, workflowId, versionId, status, minutesAgo],
+      );
+      return r.rows[0]!.id;
+    };
+    // The failure is the OLDEST row, so a client-side filter over the first page would
+    // never see it. That was the actual bug.
+    const failedId = await insert('FAILED', 900);
+    for (let i = 0; i < 25; i += 1) await insert('SUCCEEDED', i);
+    return { workflowId, failedId };
+  }
+
+  test('a failure older than the first page is still found', async () => {
+    const { failedId } = await seedRuns();
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions?status=FAILED' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json<{ items: { id: string }[] }>().items.map((e) => e.id)).toEqual([failedId]);
+  });
+
+  test('several statuses in one request', async () => {
+    await seedRuns();
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions?status=FAILED,SUCCEEDED&limit=100' });
+    expect(r.json<{ items: unknown[] }>().items).toHaveLength(26);
+  });
+
+  test('an unknown status is a 400, not an empty page', async () => {
+    // An empty page reads as "nothing matched" and sends an operator looking for a
+    // problem that does not exist.
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions?status=BROKEN' });
+    expect(r.statusCode).toBe(400);
+  });
+
+  test('an empty status parameter means no filter', async () => {
+    await seedRuns();
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions?status=&limit=100' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json<{ items: unknown[] }>().items).toHaveLength(26);
+  });
+
+  test('a cursor from another filter is a 400 rather than the wrong page', async () => {
+    await seedRuns();
+    const first = await auth.inject({ method: 'GET', url: '/v1/executions?status=SUCCEEDED&limit=2' });
+    const cursor = first.json<{ nextCursor: string }>().nextCursor;
+    expect(cursor).toBeTruthy();
+    const reused = await auth.inject({
+      method: 'GET',
+      url: `/v1/executions?limit=2&cursor=${encodeURIComponent(cursor)}`,
+    });
+    expect(reused.statusCode).toBe(400);
+  });
+
+  test('the same filter pages forward normally', async () => {
+    await seedRuns();
+    const first = await auth.inject({ method: 'GET', url: '/v1/executions?status=SUCCEEDED&limit=2' });
+    const cursor = first.json<{ nextCursor: string }>().nextCursor;
+    const second = await auth.inject({
+      method: 'GET',
+      url: `/v1/executions?status=SUCCEEDED&limit=2&cursor=${encodeURIComponent(cursor)}`,
+    });
+    expect(second.statusCode).toBe(200);
+    const firstIds = first.json<{ items: { id: string }[] }>().items.map((e) => e.id);
+    const secondIds = second.json<{ items: { id: string }[] }>().items.map((e) => e.id);
+    expect(secondIds).toHaveLength(2);
+    expect(firstIds.some((id) => secondIds.includes(id))).toBe(false);
+  });
+
+  test('a garbage cursor is a 400', async () => {
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions?cursor=not-a-cursor' });
+    expect(r.statusCode).toBe(400);
+  });
+});

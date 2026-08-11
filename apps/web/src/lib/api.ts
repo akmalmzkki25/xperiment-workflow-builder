@@ -397,11 +397,16 @@ export class ApiClient {
 
   listExecutions(q?: {
     workflowId?: string;
+    /** Sent comma-separated; the server enumerates the valid values. */
+    status?: readonly string[];
     limit?: number;
+    cursor?: string;
   }): Promise<{ items: ExecutionRow[]; nextCursor: string | null }> {
     const params = new URLSearchParams();
     if (q?.workflowId) params.set('workflowId', q.workflowId);
+    if (q?.status && q.status.length > 0) params.set('status', q.status.join(','));
     if (q?.limit) params.set('limit', String(q.limit));
+    if (q?.cursor) params.set('cursor', q.cursor);
     const qs = params.toString();
     return this.request('GET', `/v1/executions${qs ? `?${qs}` : ''}`);
   }

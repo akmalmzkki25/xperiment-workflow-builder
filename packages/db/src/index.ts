@@ -13,6 +13,13 @@ export { runMigrations } from './migrate.js';
 export { withTx } from './tx.js';
 export * from './repos/workflows.js';
 export * from './repos/executions.js';
+export {
+  decodeExecutionCursor,
+  encodeExecutionCursor,
+  filterFingerprint,
+  type CursorResult,
+  type ExecutionFilter,
+} from './repos/executionCursor.js';
 export * from './repos/outbox.js';
 export * from './repos/retention.js';
 export {

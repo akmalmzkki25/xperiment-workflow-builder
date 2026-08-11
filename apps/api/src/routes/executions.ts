@@ -7,6 +7,7 @@ import {
   closeOpenWaits,
   createExecutionWithTrigger,
   enqueueCompletionCallback,
+  CursorError,
   getExecutionDetail,
   getNodePayload,
   getTriggerPayload,
@@ -40,8 +41,26 @@ function sendQuotaProblem(reply: FastifyReply, refusal: QuotaRefusal): void {
   );
 }
 
+/** The statuses an execution can hold. Enumerated so a typo is a 400, not an empty page. */
+const EXECUTION_STATUSES = [
+  'CREATED',
+  'QUEUED',
+  'RUNNING',
+  'SUCCEEDED',
+  'FAILED',
+  'TIMED_OUT',
+  'CANCELED',
+] as const;
+
 const listQuerySchema = z.object({
   workflowId: z.string().uuid().optional(),
+  // Comma-separated so `?status=FAILED,TIMED_OUT` works — which is what an operator
+  // actually wants when they are looking for problems, rather than two separate looks.
+  status: z
+    .string()
+    .optional()
+    .transform((v) => (v === undefined || v.trim() === '' ? undefined : v.split(',').map((s) => s.trim())))
+    .pipe(z.array(z.enum(EXECUTION_STATUSES)).min(1).max(EXECUTION_STATUSES.length).optional()),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
 });
@@ -83,12 +102,21 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
     if (!requirePermission(reply, authOf(req), 'execution:read')) return;
     const q = listQuerySchema.safeParse(req.query ?? {});
     if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
-    return listExecutions(deps.pool, {
-      workspaceId: authOf(req).workspaceId,
-      limit: q.data.limit,
-      ...(q.data.workflowId ? { workflowId: q.data.workflowId } : {}),
-      ...(q.data.cursor ? { cursor: q.data.cursor } : {}),
-    });
+    try {
+      return await listExecutions(deps.pool, {
+        workspaceId: authOf(req).workspaceId,
+        limit: q.data.limit,
+        ...(q.data.workflowId ? { workflowId: q.data.workflowId } : {}),
+        ...(q.data.status ? { status: q.data.status } : {}),
+        ...(q.data.cursor ? { cursor: q.data.cursor } : {}),
+      });
+    } catch (e) {
+      // A cursor minted under a different filter would otherwise return the page of
+      // UNFILTERED rows after that position: no error, no empty result, just the wrong
+      // set. Saying so lets the caller drop the cursor and start over.
+      if (e instanceof CursorError) return sendProblem(reply, 400, 'Invalid cursor', e.message);
+      throw e;
+    }
   });
 
   app.get('/v1/executions/:id', async (req, reply) => {

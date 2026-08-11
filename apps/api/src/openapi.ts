@@ -38,7 +38,13 @@ export const OPENAPI_DOCUMENT = {
       put: { summary: 'Set the completion webhook (returns the signing secret once)', tags: ['workflows'] },
       delete: { summary: 'Clear the completion webhook', tags: ['workflows'] },
     },
-    '/v1/executions': { get: { summary: 'List executions (cursor paginated)', tags: ['executions'] } },
+    '/v1/executions': {
+      get: {
+        summary:
+          'List executions (server-side status filter, keyset paginated; a cursor is only valid for the filter it was issued under)',
+        tags: ['executions'],
+      },
+    },
     '/v1/executions/{id}': { get: { summary: 'Get an execution timeline', tags: ['executions'] } },
     '/v1/executions/{id}/retry': { post: { summary: 'Replay as a new execution', tags: ['executions'] } },
     '/v1/executions/{id}/cancel': { post: { summary: 'Cancel a running execution', tags: ['executions'] } },

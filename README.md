@@ -355,6 +355,27 @@ rather than keeping its own copy — the copy it used to keep had already lost
 UI does not recognise renders masked, so an unfamiliar credential is never shown in
 plain text by default.
 
+### Finding a failed run
+
+`GET /v1/executions?status=FAILED,TIMED_OUT` filters on the server. The web list
+used to fetch the default twenty rows and filter them in the browser, so choosing
+FAILED showed "No executions" whenever the last twenty runs had succeeded — while
+the failures sat unreachable on page two. On a five-minute cron, twenty rows is a
+hundred minutes of history.
+
+The filter lives in the URL, so a filtered view is a link somebody can send.
+
+Pagination is keyset (`created_at, id`), and **a cursor is only valid for the
+filter it was issued under**. A cursor is just a position: handed to a request
+with a different filter it would return the page of rows after that position from
+the wrong set — no error, no empty result, silently wrong. The filter is hashed
+into the cursor and a mismatch is a 400.
+
+One measured detail shapes the query: `status = ANY('{FAILED}')` makes Postgres
+read the `created_at` index and apply status as a *filter*, scanning the whole
+history to find the rare failures. Scalar `status = 'FAILED'` puts it in the index
+condition instead, so a single-status request is emitted as scalar equality.
+
 ## Web UI (Phase 1D)
 
 `apps/web` is a Next.js canvas UI (port 3005) with the Arus design language:
