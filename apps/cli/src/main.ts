@@ -131,6 +131,52 @@ program
   });
 
 program
+  .command('prune')
+  .description('Delete run history, webhook bodies and settled bookkeeping past their retention')
+  .option('--execution-days <n>', 'keep executions this long', '30')
+  .option('--trigger-days <n>', 'keep recorded webhook bodies this long', '30')
+  .option('--batch <n>', 'rows per table per run', '5000')
+  .option('--dry-run', 'report what the clamped policy would be and delete nothing')
+  .action(async (opts: { executionDays: string; triggerDays: string; batch: string; dryRun?: boolean }) => {
+    const { appendAuditEvent, clampPolicy, createPool, pruneExpired } = await import('@xperiment/db');
+    const requested = {
+      executionDays: Number(opts.executionDays),
+      triggerEventDays: Number(opts.triggerDays),
+    };
+    const policy = clampPolicy(requested);
+    // Printed always: audit and usage have floors the flags cannot go under, and an
+    // operator who asked for thirty days of audit deserves to be told they got ninety.
+    console.log(`policy ${JSON.stringify(policy)}`);
+    if (opts.dryRun) return;
+
+    const pool = createPool();
+    try {
+      const result = await pruneExpired(pool, requested, Number(opts.batch));
+      for (const [table, deleted] of Object.entries(result)) {
+        console.log(`${table.padEnd(16)} deleted=${deleted}`);
+      }
+      // One row per run. workspaceId is null because a sweep spans every workspace,
+      // and global rows never surface in a single workspace's audit view.
+      await appendAuditEvent(pool, {
+        actorKind: 'system',
+        action: 'retention.prune',
+        metadata: { ...result, ...policy },
+      });
+      const total = Object.values(result).reduce((a, b) => a + b, 0);
+      // A full batch means there is more to do; exit 2 so a cron can loop rather than
+      // silently leaving half the backlog behind.
+      if (total >= Number(opts.batch)) {
+        console.error('batch was full — more rows remain, re-run to continue');
+        process.exit(2);
+      }
+    } catch (e) {
+      fail(e);
+    } finally {
+      await pool.end();
+    }
+  });
+
+program
   .command('rekey')
   .description('Re-encrypt legacy secrets under per-workspace envelope encryption')
   .option('--batch-size <n>', 'rows per query', '100')

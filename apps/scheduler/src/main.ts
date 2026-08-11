@@ -1,4 +1,4 @@
-import { assertBootSafe, createPool, outboxHealth, runMigrations } from '@xperiment/db';
+import { assertBootSafe, createPool, outboxHealth, pruneExpired, runMigrations } from '@xperiment/db';
 import {
   createMetrics,
   createReadiness,
@@ -25,6 +25,28 @@ const publisher = startOutboxPublisher({ pool, queues, log: (msg, extra) => logg
 const intervalMs = Number(process.env['SCHEDULER_INTERVAL_MS'] ?? 5000);
 let running = false;
 const log = (msg: string, extra?: Record<string, unknown>) => logger.info(extra ?? {}, msg);
+
+/**
+ * Retention runs on its own, much slower clock.
+ *
+ * Not on the 5s tick: a sweep takes locks on the largest tables in the system, and
+ * doing that twelve times a minute would fight the workload it is meant to serve.
+ */
+const pruneIntervalMs = Number(process.env['PRUNE_INTERVAL_MS'] ?? 3_600_000);
+let pruning = false;
+const pruneTimer = setInterval(() => {
+  if (pruning) return;
+  pruning = true;
+  void pruneExpired(pool)
+    .then((result) => {
+      const total = Object.values(result).reduce((a, b) => a + b, 0);
+      if (total > 0) log('retention.pruned', { ...result });
+    })
+    .catch((e: unknown) => logger.error({ err: (e as Error).message }, 'retention sweep failed'))
+    .finally(() => {
+      pruning = false;
+    });
+}, pruneIntervalMs);
 const timer = setInterval(() => {
   if (running) return;
   running = true;
@@ -71,6 +93,7 @@ const admin = await startAdminServer({
 async function shutdown(): Promise<void> {
   logger.info('shutting down');
   clearInterval(timer);
+  clearInterval(pruneTimer);
   await publisher.stop();
   for (const q of Object.values(queues)) await q.close();
   connection.disconnect();

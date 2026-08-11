@@ -62,6 +62,12 @@ describe('limiterKey', () => {
     expect(limiterKey('a')).toBe(limiterKey('a'));
     expect(limiterKey('a')).not.toBe(limiterKey('b'));
   });
+
+  test('is keyed, so it is not an oracle for whether an address is a customer', () => {
+    // A bare sha256 stops enumeration but not confirmation: guess one address, compute
+    // the same digest, ask EXISTS. Different secrets must give different keys.
+    expect(limiterKey('budi@example.com', 'secret-a')).not.toBe(limiterKey('budi@example.com', 'secret-b'));
+  });
 });
 
 describe('RedisLimiterStore', () => {
@@ -79,6 +85,11 @@ describe('RedisLimiterStore', () => {
     }
   });
   afterAll(async () => {
+    // Scoped delete, NEVER a flush: this Redis database is shared with other
+    // applications on a developer box, and a live 60-second counter left behind would
+    // bleed into the next run the moment a Redis-backed test is appended below.
+    const keys = await redis.keys(`${LIMITER_PREFIX}*`).catch(() => [] as string[]);
+    if (keys.length > 0) await redis.del(...keys).catch(() => undefined);
     await redis.quit().catch(() => undefined);
   });
   beforeEach(async () => {

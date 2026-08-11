@@ -14,6 +14,7 @@ export { withTx } from './tx.js';
 export * from './repos/workflows.js';
 export * from './repos/executions.js';
 export * from './repos/outbox.js';
+export * from './repos/retention.js';
 export { deriveLegacyKey, encryptSecret, decryptSecret, openBytes, sealBytes } from './crypto.js';
 export * from './repos/triggers.js';
 export * from './repos/connections.js';

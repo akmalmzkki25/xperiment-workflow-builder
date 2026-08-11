@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 
 /**
  * Where a fixed-window counter lives.
@@ -80,14 +80,31 @@ export interface RedisLike {
 export const LIMITER_PREFIX = 'xperiment:rl:';
 
 /**
- * Hashed, never the raw key.
+ * HMAC, never the raw key and never a bare hash.
  *
  * The natural key is `${email}:${ip}`. Stored raw, a single `SCAN xperiment:rl:*` by anyone
  * with Redis access enumerates every account that has ever attempted a login — a list
  * of real customer emails, handed over by a rate limiter.
+ *
+ * A plain sha256 stops enumeration but not CONFIRMATION: an attacker who guesses one
+ * address computes the same digest and asks `EXISTS`, turning the limiter into an
+ * oracle for "is this person a customer". Keying the hash with a server-side secret
+ * closes that, and the secret never leaves the process.
  */
-export function limiterKey(raw: string): string {
-  return LIMITER_PREFIX + createHash('sha256').update(raw).digest('hex');
+export function limiterKey(raw: string, secret: string = limiterSecret()): string {
+  return LIMITER_PREFIX + createHmac('sha256', secret).update(raw).digest('hex');
+}
+
+/**
+ * The HMAC key. Falls back to a fixed development string rather than throwing.
+ *
+ * A missing secret must not take the login path down, and the fallback is not a
+ * meaningful weakening: an attacker who can read Redis to run the oracle can usually
+ * read the environment too. `assertBootSafe` is where a production deployment is made
+ * to configure its secrets.
+ */
+function limiterSecret(): string {
+  return process.env['LIMITER_KEY_SECRET'] ?? 'xperiment-dev-limiter-secret-change-me';
 }
 
 export interface RedisLimiterOptions {
@@ -118,6 +135,11 @@ export class RedisLimiterStore implements LimiterStore {
       const n = await this.redis.eval(HIT_SCRIPT, 1, limiterKey(key), String(windowMs));
       return Number(n);
     } catch (e) {
+      // Measured caveat: a commandTimeout rejection does NOT mean the INCR was not
+      // applied — Redis executes it regardless of whether the reply is read. So on a
+      // flapping Redis one attempt can be counted twice, here and in Redis, and a
+      // caller runs out of budget sooner than their real attempt count. It cannot
+      // lock anyone out permanently, because the PEXPIRE ran too.
       this.options.onFallback?.(e as Error);
       return this.fallback.hit(key, windowMs);
     }

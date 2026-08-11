@@ -26,6 +26,44 @@ export const PLAN_CATALOG: Record<PlanCode, PlanLimits> = {
 
 export const PLAN_CODES = Object.keys(PLAN_CATALOG) as PlanCode[];
 
+/**
+ * How long a plan keeps run history, in days.
+ *
+ * A PARALLEL record rather than another key on PlanLimits, deliberately. Adding a key
+ * to that type touches sixteen files across twenty sites, and the compiler forces only
+ * one production file — LIMIT_KEYS is annotated `readonly LimitKey[]` rather than
+ * exhaustiveness-checked, so a short array compiles and the new limit is then never
+ * resolved, never evaluated and never returned, with no signal at all. Retention is
+ * also a different KIND of number: a limit is a ceiling you enforce before acting,
+ * this is an age after which you delete.
+ */
+export interface PlanRetention {
+  /** Executions and everything that cascades from them. */
+  executionDays: number;
+  /** Recorded webhook bodies. Must be no shorter than executionDays. */
+  triggerEventDays: number;
+}
+
+export const PLAN_RETENTION: Record<PlanCode, PlanRetention> = {
+  free: { executionDays: 7, triggerEventDays: 7 },
+  builder: { executionDays: 30, triggerEventDays: 30 },
+  team: { executionDays: 90, triggerEventDays: 90 },
+  business: { executionDays: 365, triggerEventDays: 365 },
+};
+
+/**
+ * Floors enforced in code, not configuration.
+ *
+ * Audit and usage are NOT ordinary run history. Deleting usage early rewrites invoices
+ * that were already sent; deleting audit early destroys the record of who did what,
+ * which is the one thing an audit log exists for. These are the shortest either may
+ * ever be, whatever a plan or an operator asks for.
+ */
+export const AUDIT_RETENTION_FLOOR_DAYS = 90;
+export const USAGE_RETENTION_FLOOR_DAYS = 365;
+/** Published outbox rows are bookkeeping; a week is generous for debugging a delivery. */
+export const OUTBOX_RETENTION_DAYS = 7;
+
 export const SOFT_LIMIT_RATIO = 0.8;
 
 export type QuotaStatus = 'ok' | 'warn' | 'blocked';
