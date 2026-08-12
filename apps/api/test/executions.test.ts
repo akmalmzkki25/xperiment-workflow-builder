@@ -23,7 +23,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await pool.query(
-    `TRUNCATE executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
+    `TRUNCATE webhook_deliveries, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
   );
 });
 
@@ -520,5 +520,87 @@ describe('bulk retry', () => {
     const r = await other.inject({ method: 'POST', url: '/v1/executions/retry', payload: {} });
     expect(r.json()).toMatchObject({ matched: 0, retried: 0 });
     expect(await countRuns(workflowId)).toBe(before);
+  });
+});
+
+describe('payload search', () => {
+  /** A run started by a webhook carrying `payload`. */
+  async function runWith(payload: unknown, key: string): Promise<string> {
+    const workflowId = await publishedWorkflow();
+    const v = await pool.query<{ id: string }>(
+      `SELECT id FROM workflow_versions WHERE workflow_id = $1 LIMIT 1`,
+      [workflowId],
+    );
+    const ws = await pool.query<{ workspace_id: string }>(`SELECT workspace_id FROM workflows WHERE id = $1`, [
+      workflowId,
+    ]);
+    const t = await pool.query<{ id: string }>(
+      `INSERT INTO trigger_events (workspace_id, workflow_id, node_id, idempotency_key, payload_json)
+       VALUES ($1, $2, 'hook', $3, $4) RETURNING id`,
+      [ws.rows[0]!.workspace_id, workflowId, key, JSON.stringify(payload)],
+    );
+    const e = await pool.query<{ id: string }>(
+      `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, status, trigger_event_id)
+       VALUES ($1, $2, $3, 'SUCCEEDED', $4) RETURNING id`,
+      [ws.rows[0]!.workspace_id, workflowId, v.rows[0]!.id, t.rows[0]!.id],
+    );
+    return e.rows[0]!.id;
+  }
+
+  test('finds the run that handled an order number', async () => {
+    const wanted = await runWith({ body: { order_id: 'INV-20260811-0042' } }, 'ps1');
+    await runWith({ body: { order_id: 'INV-20260811-0043' } }, 'ps2');
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions/search?q=INV-20260811-0042' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json<{ items: { executionId: string }[] }>().items.map((i) => i.executionId)).toEqual([wanted]);
+  });
+
+  test('a two-character query is a 400, not a table scan', async () => {
+    // Two characters produce only padded trigrams, so the index cannot narrow anything
+    // and Postgres would read every webhook body in the workspace.
+    expect((await auth.inject({ method: 'GET', url: '/v1/executions/search?q=99' })).statusCode).toBe(400);
+    expect((await auth.inject({ method: 'GET', url: '/v1/executions/search' })).statusCode).toBe(400);
+  });
+
+  test('whitespace does not buy a shorter query', async () => {
+    // ' 9 ' trims to '9'. Without the trim the length check would pass on padding.
+    expect(
+      (await auth.inject({ method: 'GET', url: `/v1/executions/search?q=${encodeURIComponent('  9  ')}` }))
+        .statusCode,
+    ).toBe(400);
+  });
+
+  test('a viewer may not search payloads', async () => {
+    // Same gate as reading a node payload: substring-probing customer data would turn
+    // execution:read into a transitive read of every webhook body.
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    const r = await viewer.inject({ method: 'GET', url: '/v1/executions/search?q=INV-2026' });
+    expect(r.statusCode).toBe(403);
+  });
+
+  test('another workspace finds nothing of ours', async () => {
+    await runWith({ body: { order_id: 'INV-PRIVATE-0001' } }, 'ps3');
+    const other = await createAuthedUser(app);
+    const r = await other.inject({ method: 'GET', url: '/v1/executions/search?q=INV-PRIVATE-0001' });
+    expect(r.json<{ items: unknown[] }>().items).toHaveLength(0);
+  });
+
+  test('results never carry the matched body', async () => {
+    await runWith({ body: { note: 'CUSTOMER-PRIVATE-DATA' } }, 'ps4');
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions/search?q=CUSTOMER-PRIVATE' });
+    expect(r.body).not.toContain('CUSTOMER-PRIVATE-DATA');
+    expect(r.json<{ items: unknown[] }>().items).toHaveLength(1);
+  });
+
+  test('the search route is not shadowed by /v1/executions/:id', async () => {
+    // `search` is a static segment and must not be parsed as an execution id.
+    const r = await auth.inject({ method: 'GET', url: '/v1/executions/search?q=anything' });
+    expect(r.statusCode).toBe(200);
+  });
+
+  test('an oversized limit is refused', async () => {
+    expect(
+      (await auth.inject({ method: 'GET', url: '/v1/executions/search?q=INV-2026&limit=500' })).statusCode,
+    ).toBe(400);
   });
 });

@@ -10,6 +10,15 @@ export interface ConnectionSchemaItem {
   payloadJsonSchema: unknown;
 }
 
+/** A run whose trigger body matched a search. Carries no payload content, by design. */
+export interface PayloadMatchView {
+  executionId: string;
+  workflowId: string;
+  status: string;
+  createdAt: string;
+  nodeId: string | null;
+}
+
 /** One inbound webhook delivery. Carries no body and no header value, by construction. */
 export interface DeliveryView {
   id: string;
@@ -373,6 +382,16 @@ export class ApiClient {
 
   listTriggers(id: string): Promise<{ triggers: TriggerView[] }> {
     return this.request('GET', `/v1/workflows/${id}/triggers`);
+  }
+
+  /**
+   * Find runs by a substring of the webhook body that started them.
+   *
+   * Results carry no payload content — the server does not return it, so there is
+   * nothing here to redact. Minimum three characters, enforced server-side.
+   */
+  searchExecutions(q: string): Promise<{ items: PayloadMatchView[] }> {
+    return this.request('GET', `/v1/executions/search?q=${encodeURIComponent(q)}`);
   }
 
   /**

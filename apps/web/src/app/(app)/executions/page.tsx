@@ -76,6 +76,19 @@ function ExecutionsList() {
   // offered on a filter that selects failures.
   const canBulkRetry = choice === 'PROBLEMS' || choice === 'FAILED' || choice === 'TIMED_OUT';
 
+  // "The customer says order INV-… never went through." Typed, then submitted — searching
+  // per keystroke would run a trigram scan on every letter, and the first two could not
+  // use the index at all.
+  const [searchDraft, setSearchDraft] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const search = useQuery({
+    queryKey: ['execution-search', searchTerm],
+    queryFn: () => getBrowserClient().searchExecutions(searchTerm),
+    enabled: searchTerm.length >= 3,
+    retry: false,
+  });
+  const searching = searchTerm.length >= 3;
+
   const setChoice = (next: string): void => {
     setCursors([]);
     router.replace(`/executions${paramsForChoice(next, workflowId)}`);
@@ -100,7 +113,88 @@ function ExecutionsList() {
         </select>
       </div>
 
-      {canBulkRetry && !forbidden ? (
+      {forbidden ? null : (
+        <form
+          className="q-search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSearchTerm(searchDraft.trim());
+          }}
+        >
+          <input
+            className="q-input"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            placeholder="Find a run by order number, phone, email…"
+            aria-label="Search runs by trigger payload"
+            data-testid="exec-search-input"
+          />
+          <button className="q-btn q-btn--sm" type="submit" data-testid="exec-search-submit">
+            Search
+          </button>
+          {searching ? (
+            <button
+              className="q-btn q-btn--ghost q-btn--sm"
+              type="button"
+              onClick={() => {
+                setSearchDraft('');
+                setSearchTerm('');
+              }}
+              data-testid="exec-search-clear"
+            >
+              Clear
+            </button>
+          ) : null}
+          {searchDraft.trim().length > 0 && searchDraft.trim().length < 3 ? (
+            <span className="q-field__hint">At least three characters — shorter than that cannot be indexed.</span>
+          ) : null}
+        </form>
+      )}
+
+      {searching && !forbidden ? (
+        <div data-testid="exec-search-results">
+          {search.isPending ? <p style={{ color: 'var(--text-muted)' }}>Searching…</p> : null}
+          {search.isError ? <div className="q-banner">Search failed.</div> : null}
+          {search.data && search.data.items.length === 0 ? (
+            <EmptyState
+              title="No run matched"
+              hint="Only webhook bodies are searched, and only within the retention window. A run started from the editor has no body to match."
+            />
+          ) : null}
+          {search.data && search.data.items.length > 0 ? (
+            <table className="q-table">
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Workflow</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {search.data.items.map((m) => (
+                  <tr key={m.executionId} data-testid={`search-row-${shortId(m.executionId)}`}>
+                    <td>
+                      <Link href={`/executions/${m.executionId}`} className="q-table__rowlink mono">
+                        {shortId(m.executionId)}
+                      </Link>
+                    </td>
+                    <td className="mono" style={{ color: 'var(--text-muted)' }}>
+                      {shortId(m.workflowId)}
+                    </td>
+                    <td>
+                      <StatusChip status={m.status} />
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(m.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!searching && canBulkRetry && !forbidden ? (
         <div className="q-banner" data-testid="bulk-retry-bar">
           <span>{retryNotice ?? 'Fixed whatever broke these? Re-run them all.'}</span>
           <button
@@ -126,9 +220,11 @@ function ExecutionsList() {
         </div>
       ) : null}
 
+      {/* A search replaces the list rather than sitting beside it: two tables of runs on
+          one screen, one filtered and one not, is a way to click the wrong row. */}
       {forbidden ? (
         <PermissionNotice detail={forbidden} />
-      ) : executions.isLoading ? (
+      ) : searching ? null : executions.isLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading executions…</p>
       ) : items.length === 0 ? (
         <EmptyState
@@ -172,7 +268,7 @@ function ExecutionsList() {
         </table>
       )}
 
-      {forbidden || items.length === 0 ? null : (
+      {forbidden || searching || items.length === 0 ? null : (
         <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
           <button
             className="q-btn q-btn--ghost q-btn--sm"

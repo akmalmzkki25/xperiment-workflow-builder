@@ -454,6 +454,38 @@ with a different filter it would return the page of rows after that position fro
 the wrong set — no error, no empty result, silently wrong. The filter is hashed
 into the cursor and a mismatch is a 400.
 
+### Finding the run for one order
+
+"The customer says order INV-20260811-0042 never went through." Status filtering
+does not help — the run is probably SUCCEEDED, sitting among four hundred others.
+`GET /v1/executions/search?q=…` matches a substring of the webhook body that
+started each run, and the executions page has a search box for it.
+
+Backed by a **pg_trgm GIN index** on the payload text, because the question is
+always a substring — an order id, a phone number, an email — and never a JSON path
+the operator knows. That requires the `pg_trgm` extension; migration 0021 creates
+it, and a database that forbids it fails at migration time rather than silently
+sequential-scanning later.
+
+**The three-character minimum is measured, not stylistic.** A trigram is three
+consecutive characters. At two characters `show_trgm` returns only *padded*
+trigrams (`"  9"`, `" 99"`, `"99 "`), and padding only matches at a word boundary
+— so an infix search has nothing to look up and Postgres reads every webhook body
+in the table. Shorter queries are a 400.
+
+Two safety properties:
+
+- **Gated on `execution:run`**, the same permission as reading a node payload. A
+  viewer is a read-only observer; substring-probing customer data would turn
+  `execution:read` into a transitive read of every webhook body.
+- **Results carry no payload content** — execution id, workflow, status, time. The
+  caller could open one and see it, but a list view left open on a shared screen
+  should not be showing customer data it was never asked for.
+
+`%` and `_` in a query are escaped, so searching `50%` finds the text "50%" rather
+than everything after "50", and a query of `%%%` matches nothing rather than
+everything.
+
 ### Re-running a batch of failures
 
 A provider token expires, forty runs fail over a weekend, somebody rotates the

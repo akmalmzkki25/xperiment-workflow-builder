@@ -15,6 +15,9 @@ import {
   getWorkflow,
   latestNodeStates,
   listExecutions,
+  MAX_SEARCH_LENGTH,
+  MIN_SEARCH_LENGTH,
+  searchExecutionsByPayload,
   recordExecutionUsage,
   waitsForExecution,
   withTx,
@@ -85,6 +88,18 @@ const bulkRetrySchema = z
   })
   .strict();
 
+/**
+ * The minimum is MEASURED, not chosen for tidiness.
+ *
+ * A trigram is three consecutive characters. At two, Postgres cannot use the payload
+ * index at all and sequentially scans every webhook body in the table — a scan a user
+ * could ask for by typing two letters. Refused as a 400 rather than served slowly.
+ */
+const searchQuerySchema = z.object({
+  q: z.string().trim().min(MIN_SEARCH_LENGTH).max(MAX_SEARCH_LENGTH),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
 export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workflows/:id/execute', async (req, reply) => {
     const ctx = authOf(req);
@@ -137,6 +152,30 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       if (e instanceof CursorError) return sendProblem(reply, 400, 'Invalid cursor', e.message);
       throw e;
     }
+  });
+
+  /**
+   * Find a run by what was in the body that started it.
+   *
+   * Gated on `execution:run`, the same permission as reading a node payload, and for the
+   * same reason: a viewer is a read-only observer, and substring-probing customer data
+   * would turn `execution:read` into a transitive read of every webhook body.
+   *
+   * Registered BEFORE `/v1/executions/:id` — Fastify's router prefers the static segment,
+   * but keeping them in this order makes that independent of router behaviour.
+   */
+  app.get('/v1/executions/search', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'execution:run')) return;
+    const q = searchQuerySchema.safeParse(req.query ?? {});
+    if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
+    return {
+      items: await searchExecutionsByPayload(deps.pool, {
+        workspaceId: ctx.workspaceId,
+        query: q.data.q,
+        limit: q.data.limit,
+      }),
+    };
   });
 
   app.get('/v1/executions/:id', async (req, reply) => {

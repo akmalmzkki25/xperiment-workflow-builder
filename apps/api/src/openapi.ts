@@ -105,6 +105,13 @@ export const OPENAPI_DOCUMENT = {
       put: { summary: 'Set the completion webhook (returns the signing secret once)', tags: ['workflows'] },
       delete: { summary: 'Clear the completion webhook', tags: ['workflows'] },
     },
+    '/v1/executions/search': {
+      get: {
+        summary:
+          'Find executions by a substring of the webhook body that started them (needs execution:run; minimum three characters)',
+        tags: ['executions'],
+      },
+    },
     '/v1/executions/retry': {
       post: {
         summary:
