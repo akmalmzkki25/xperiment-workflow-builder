@@ -573,6 +573,58 @@ A suspended node becomes `WAITING`; timers and expiries are swept by the schedul
 Nothing auto-approves: an execution with an open wait is skipped by the global
 watchdog and bounded only by its own expiry.
 
+## Data-shaping nodes
+
+Eight logic nodes work on the arrays a trigger or a query hands you. All are pure —
+no connection, no network, deterministic output.
+
+| Node | Does | Ports |
+|---|---|---|
+| `core.switch` | Routes on strict equality against up to ten cases | `case1`…`case10`, `default` |
+| `core.filter` | Keeps rows matching a field predicate | `main`, `empty` |
+| `core.sort` | Orders by a field | `main` |
+| `core.limit` | Takes the first N | `main` |
+| `core.aggregate` | sum / avg / min / max / count, optionally grouped | `main` |
+| `core.splitBatch` | Chunks a list into batches | `main`, `empty` |
+| `core.merge` | Fans several branches back into one | `main` |
+| `core.stopAndError` | Ends the run with the author's own error | *(none)* |
+
+Five decisions are worth knowing before you rely on them, because each one is a
+place where the obvious behaviour would be wrong:
+
+- **`core.switch` matches strictly.** `150` does not match `"150"`. A webhook that
+  sends numbers as strings will fall to `default`, which is visible, rather than
+  matching by coincidence.
+- **`core.filter` drops rows it cannot compare; it does not fail the run.** A
+  relational test against a null field excludes that row. Filtering five thousand
+  rows should not die because one of them is missing a price — discarding rows that
+  do not meet the condition is the node's whole job.
+- **`core.sort` puts nulls last in *both* directions**, and compares strings by
+  UTF-16 code unit rather than `localeCompare` — so `'Z' < 'a'`. Locale order shifts
+  with the ICU version, which would break the determinism criterion. Null means "no
+  data", and burying it at both ends is what "highest price first" actually means.
+- **`core.aggregate` reports what it skipped.** Only finite numbers are counted;
+  everything else is excluded *and* tallied in `skipped`, so a wrong total cannot
+  pass silently. `sum` of nothing is `0`, but `avg`, `min` and `max` of nothing are
+  `null` — there is no honest number for the average of nothing, and `0` is a lie
+  that ends up on an invoice.
+- **`core.merge` treats `null` as "that branch did not run"** and drops it by
+  default. A skipped branch is absent from the context, so `{{ nodes.a.output }}`
+  resolves to null — which is exactly the signal you want after a `core.if`.
+
+`core.splitBatch` emits the whole list of batches at once rather than one batch per
+call: a cursor would need mutable per-execution state *and* a back edge, and
+`validateGraph` rejects cycles outright. Feed the batches to `core.loop`
+(`items: {{ nodes.split.output.batches }}`) and each `loop.item` is one batch. Note
+that `core.loop` defaults to 100 iterations, so 300 batches fails with
+`too_many_iterations` — correct, but worth knowing before it surprises you.
+
+`core.stopAndError` declares **no output ports**, so publish rejects any non-`error`
+edge leaving it. Under an `onError: 'continue'` policy it would silently not stop the
+run, so publish rejects that too (`stop_node_cannot_continue`). Author-supplied
+`details` are wrapped rather than passed through — a `httpStatus` key would otherwise
+be read by the worker's classifier and make the stop retryable.
+
 ## Loops & error paths (LOGIC-002, LOGIC-004)
 
 `core.loop` takes an array and runs the nodes scoped to it once per item. The body stays in
