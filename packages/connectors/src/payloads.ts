@@ -25,6 +25,11 @@ export const CONNECTION_PAYLOAD_SCHEMAS = {
       secure: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]).optional(),
     })
     .strict(),
+  slack: z.object({ botToken: z.string().min(1), baseUrl: z.string().url().optional() }).strict(),
+  // Midtrans authenticates with the server key as the Basic username and an empty
+  // password. The client key is a browser-side value and is deliberately not stored here.
+  midtrans: z.object({ serverKey: z.string().min(1), baseUrl: z.string().url().optional() }).strict(),
+  xendit: z.object({ secretKey: z.string().min(1), baseUrl: z.string().url().optional() }).strict(),
   googleSheets: z
     .object({
       serviceAccountEmail: z.string().email(),

@@ -72,7 +72,7 @@ describe('connectorCatalog', () => {
   });
 
   test('every category is one the palette knows how to group', () => {
-    const known = new Set(['Triggers', 'Logic', 'Data', 'Messaging', 'AI', 'Integrations']);
+    const known = new Set(['Triggers', 'Logic', 'Data', 'Messaging', 'AI', 'Payments', 'Integrations']);
     for (const item of items) expect(known.has(item.category), `${item.type}: ${item.category}`).toBe(true);
   });
 

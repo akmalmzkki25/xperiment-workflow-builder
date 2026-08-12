@@ -319,6 +319,31 @@ Phase 2 beta connectors `whatsapp.sendMessage` (Cloud API, token), `email.send` 
 covers Gmail via an app password), and Google Sheets `sheets.appendRow` / `sheets.getRows`
 (service-account key, no OAuth flow this release).
 
+`slack.postMessage`, `midtrans.createTransaction` and `xendit.createInvoice` join them.
+Three provider behaviours are worth knowing, because each is a way to be wrong quietly:
+
+- **Slack answers HTTP 200 with `{ ok: false }`.** A revoked token or a channel the bot
+  was removed from arrives as a *successful* response. The connector checks `ok`, so
+  those become node failures instead of messages nobody received.
+- **Midtrans returns 406 for a duplicate `orderId`; Xendit returns 409 for a duplicate
+  `externalId`.** Both are re-thrown as non-retryable errors *without* an HTTP status,
+  because the worker's classifier overrides a connector's retryable flag for anything
+  carrying one. Left alone, a duplicate order would be retried three times against a
+  provider that will keep refusing it.
+- **Midtrans has no `Test` button, on purpose.** Snap offers no side-effect-free
+  credential probe, and inventing one by posting a throwaway transaction would leave real
+  orders in a real merchant dashboard. Xendit's test reads `/balance`, which is genuinely
+  read-only.
+
+Midtrans defaults to the **sandbox** host. A misconfigured connection that reaches sandbox
+costs nothing; the same mistake against production creates a real payment page for a real
+customer. Production is one explicit `baseUrl` away.
+
+Amounts on both payment connectors are whole rupiah — IDR has no minor unit. When
+`itemDetails` is supplied, Midtrans requires `grossAmount` to equal the sum of
+`price × quantity`; the connector checks that before making any request, so the error names
+the actual problem instead of relaying a generic 400.
+
 1. `POST /v1/connections` with `{ connectorKey, name, payload }` — payloads are
    validated per connector, AES-256-GCM encrypted at rest, and never returned by the
    API. `POST /v1/connections/:id/test` verifies against the provider.

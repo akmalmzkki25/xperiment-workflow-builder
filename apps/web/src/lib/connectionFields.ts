@@ -64,6 +64,12 @@ const PLACEHOLDERS: Record<string, string> = {
   'gemini.baseUrl': 'https://generativelanguage.googleapis.com',
   'whatsapp.baseUrl': 'https://graph.facebook.com',
   'googleSheets.baseUrl': 'https://sheets.googleapis.com',
+  'slack.baseUrl': 'https://slack.com',
+  // Sandbox, matching the connector's own default: a misconfigured connection that
+  // reaches sandbox costs nothing, and the same mistake against production creates a real
+  // payment page for a real customer.
+  'midtrans.baseUrl': 'https://app.sandbox.midtrans.com',
+  'xendit.baseUrl': 'https://api.xendit.co',
   'smtp.host': 'smtp.gmail.com',
   'smtp.port': '587',
   'smtp.from': 'bot@example.com',

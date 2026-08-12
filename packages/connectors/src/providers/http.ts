@@ -29,6 +29,27 @@ export async function providerFetch(
   return res.json();
 }
 
+/** HTTP Basic where the secret is the username and the password is empty. */
+export function basicAuth(username: string): string {
+  return `Basic ${Buffer.from(`${username}:`, 'utf8').toString('base64')}`;
+}
+
+/**
+ * The status a `providerFetch` failure carried, or null.
+ *
+ * Providers signal specific, non-retryable business outcomes with an HTTP status —
+ * Midtrans returns 406 for a duplicate order, Xendit 409 for a duplicate invoice. Those
+ * have to be recognised and RE-THROWN WITHOUT a status, because
+ * `apps/worker/src/classify.ts` overrides the connector's own retryable flag for any
+ * error carrying `details.httpStatus`. Left alone, a duplicate order is retried three
+ * times against a provider that will keep saying no.
+ */
+export function httpStatusOf(e: unknown): number | null {
+  if (!(e instanceof NodeRunError)) return null;
+  const details = e.details as { httpStatus?: unknown } | undefined;
+  return typeof details?.httpStatus === 'number' ? details.httpStatus : null;
+}
+
 export async function providerCheck(url: string, signal: AbortSignal, headers?: Record<string, string>): Promise<void> {
   let res: Response;
   try {

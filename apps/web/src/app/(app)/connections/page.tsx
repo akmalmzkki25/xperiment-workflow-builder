@@ -30,6 +30,10 @@ export default function ConnectionsPage() {
   const test = useMutation({
     mutationFn: async (id: string) => ({ id, result: await getBrowserClient().testConnection(id) }),
     onSuccess: ({ id, result }) => setTestResults((prev) => ({ ...prev, [id]: result })),
+    // Without this the button did nothing visible on a 4xx: the request throws, onSuccess
+    // never fires, and the health column stays on the em dash it started with. A user
+    // reads that as "nothing happened" and clicks again.
+    onError: (e) => setPageError(e instanceof Error ? e.message : 'Connection test failed'),
   });
 
   const remove = useMutation({

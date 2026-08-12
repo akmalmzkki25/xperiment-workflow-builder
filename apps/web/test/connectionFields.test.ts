@@ -24,11 +24,14 @@ describe('deriveFields against the real server schemas', () => {
     expect(connectionSchemas().map((s) => s.connectorKey).sort()).toEqual([
       'gemini',
       'googleSheets',
+      'midtrans',
       'openai',
       'postgres',
+      'slack',
       'smtp',
       'telegram',
       'whatsapp',
+      'xendit',
     ]);
   });
 

@@ -55,7 +55,7 @@ export interface ConnectorDisplay {
    *
    * NOT what the palette groups by — that is `kind`, into Triggers/Logic/Actions.
    */
-  category: 'Triggers' | 'Logic' | 'Data' | 'Messaging' | 'AI' | 'Integrations';
+  category: 'Triggers' | 'Logic' | 'Data' | 'Messaging' | 'AI' | 'Payments' | 'Integrations';
   /** A single character drawn on the node. */
   glyph: string;
   docsUrl?: string;

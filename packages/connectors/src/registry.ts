@@ -20,8 +20,11 @@ import { postgresQuery } from './postgres/query.js';
 import { emailSend } from './email/send.js';
 import { sheetsAppendRow } from './google/sheetsAppendRow.js';
 import { sheetsGetRows } from './google/sheetsGetRows.js';
+import { midtransCreateTransaction } from './midtrans/createTransaction.js';
+import { slackPostMessage } from './slack/postMessage.js';
 import { telegramSendMessage } from './telegram/sendMessage.js';
 import { whatsappSendMessage } from './whatsapp/sendMessage.js';
+import { xenditCreateInvoice } from './xendit/createInvoice.js';
 import { scheduleTrigger } from './schedule/trigger.js';
 import { webhookTrigger } from './webhook/trigger.js';
 import type { ConnectorDefinition } from './types.js';
@@ -58,6 +61,9 @@ export function createDefaultRegistry(cfg: RegistryConfig = {}): ConnectorRegist
     postgresQuery,
     telegramSendMessage,
     whatsappSendMessage,
+    slackPostMessage,
+    midtransCreateTransaction,
+    xenditCreateInvoice,
     emailSend,
     sheetsAppendRow,
     sheetsGetRows,
