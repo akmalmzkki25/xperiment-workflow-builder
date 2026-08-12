@@ -17,6 +17,7 @@ export interface PruneResult {
   executions: number;
   executionWaits: number;
   triggerEvents: number;
+  webhookDeliveries: number;
   auditEvents: number;
   usageEvents: number;
   outbox: number;
@@ -74,6 +75,7 @@ export async function pruneExpired(
     executions: 0,
     executionWaits: 0,
     triggerEvents: 0,
+    webhookDeliveries: 0,
     auditEvents: 0,
     usageEvents: 0,
     outbox: 0,
@@ -108,6 +110,17 @@ export async function pruneExpired(
       client,
       `DELETE FROM trigger_events WHERE id IN (
          SELECT id FROM trigger_events WHERE received_at < now() - make_interval(days => $1) LIMIT ${batch}
+       )`,
+      [policy.triggerEventDays],
+    );
+
+    // Same horizon as the trigger bodies they describe. A delivery record is diagnostic,
+    // not evidence: keeping it past the run it explains helps nobody and costs storage on
+    // the highest-volume write path in the system.
+    result.webhookDeliveries = await deleteBatch(
+      client,
+      `DELETE FROM webhook_deliveries WHERE id IN (
+         SELECT id FROM webhook_deliveries WHERE received_at < now() - make_interval(days => $1) LIMIT ${batch}
        )`,
       [policy.triggerEventDays],
     );

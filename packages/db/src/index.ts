@@ -41,6 +41,7 @@ export {
 } from './seed/writer.js';
 export { deriveLegacyKey, encryptSecret, decryptSecret, openBytes, sealBytes } from './crypto.js';
 export * from './repos/triggers.js';
+export * from './repos/deliveries.js';
 export * from './repos/connections.js';
 export * from './repos/auth.js';
 export * from './repos/waits.js';

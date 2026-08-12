@@ -71,6 +71,12 @@ export const OPENAPI_DOCUMENT = {
     '/v1/workflows/{id}/triggers/{nodeId}/samples': {
       get: { summary: 'Recent test-mode payloads for a webhook trigger', tags: ['triggers'] },
     },
+    '/v1/workflows/{id}/deliveries': {
+      get: {
+        summary: 'Recent inbound webhook deliveries, accepted and rejected (no bodies, no header values)',
+        tags: ['triggers'],
+      },
+    },
     '/v1/audit': { get: { summary: 'Audit events for this workspace (cursor paginated)', tags: ['audit'] } },
     '/v1/executions/{id}/nodes/{nodeId}/{attempt}/payload': {
       get: {

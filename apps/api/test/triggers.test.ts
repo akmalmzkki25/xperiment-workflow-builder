@@ -76,7 +76,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await pool.query(
-    `TRUNCATE workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows, audit_events CASCADE`,
+    `TRUNCATE webhook_deliveries, workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows, audit_events CASCADE`,
   );
 });
 
@@ -305,5 +305,82 @@ describe('activation', () => {
     const rendered = samples.map((s) => JSON.stringify(s));
     expect(new Set(rendered).size).toBe(1);
     expect(rendered[0]).toContain('visible-leaf');
+  });
+});
+
+describe('webhook delivery diagnostics', () => {
+  /** Rows are written by the gateway, so the API test writes them directly. */
+  async function seedDelivery(
+    workflowId: string,
+    outcome: string,
+    statusCode: number,
+    headersSeen: string[],
+  ): Promise<void> {
+    const trig = await pool.query<{ id: string; workspace_id: string }>(
+      `SELECT id, workspace_id FROM workflow_triggers WHERE workflow_id = $1 LIMIT 1`,
+      [workflowId],
+    );
+    const t = trig.rows[0]!;
+    await pool.query(
+      `INSERT INTO webhook_deliveries
+         (workspace_id, workflow_id, trigger_id, node_id, mode, outcome, status_code, auth_mode, headers_seen, body_bytes)
+       VALUES ($1,$2,$3,'hook','production',$4,$5,'meta',$6,42)`,
+      [t.workspace_id, workflowId, t.id, outcome, statusCode, headersSeen],
+    );
+  }
+
+  async function activeWebhook(): Promise<string> {
+    const id = await publishedWorkflow(webhookIr());
+    await auth.inject({ method: 'POST', url: `/v1/workflows/${id}/activate` });
+    return id;
+  }
+
+  test('lists deliveries newest first with the diagnostic fields', async () => {
+    const id = await activeWebhook();
+    await seedDelivery(id, 'unauthorized', 401, ['x-xperiment-signature']);
+    await seedDelivery(id, 'accepted', 202, ['x-hub-signature-256']);
+    const r = await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/deliveries` });
+    expect(r.statusCode).toBe(200);
+    const items = r.json<{ items: { outcome: string; authMode: string; headersSeen: string[] }[] }>().items;
+    expect(items.map((d) => d.outcome)).toEqual(['accepted', 'unauthorized']);
+    // The diagnostic pair: what the trigger expects against what actually arrived.
+    expect(items[1]!.authMode).toBe('meta');
+    expect(items[1]!.headersSeen).toEqual(['x-xperiment-signature']);
+  });
+
+  test('a viewer may read them, unlike a sample payload', async () => {
+    // Deliveries carry no body and no header value — only outcomes, sizes and header
+    // names. That is operational metadata, so the person asking "why did nothing run"
+    // can see it without also gaining a transitive read of customer data.
+    const id = await activeWebhook();
+    await seedDelivery(id, 'unauthorized', 401, ['authorization']);
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    const deliveries = await viewer.inject({ method: 'GET', url: `/v1/workflows/${id}/deliveries` });
+    expect(deliveries.statusCode).toBe(200);
+    const samples = await viewer.inject({ method: 'GET', url: `/v1/workflows/${id}/triggers/hook/samples` });
+    expect(samples.statusCode).toBe(403);
+  });
+
+  test('another workspace sees nothing, and the workflow is a 404 to it', async () => {
+    const id = await activeWebhook();
+    await seedDelivery(id, 'accepted', 202, []);
+    const other = await createAuthedUser(app);
+    const r = await other.inject({ method: 'GET', url: `/v1/workflows/${id}/deliveries` });
+    expect(r.statusCode).toBe(404);
+  });
+
+  test('an invalid limit is a 400', async () => {
+    const id = await activeWebhook();
+    expect((await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/deliveries?limit=0` })).statusCode).toBe(400);
+    expect((await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/deliveries?limit=500` })).statusCode).toBe(
+      400,
+    );
+  });
+
+  test('filters to one trigger node', async () => {
+    const id = await activeWebhook();
+    await seedDelivery(id, 'accepted', 202, []);
+    const r = await auth.inject({ method: 'GET', url: `/v1/workflows/${id}/deliveries?nodeId=other` });
+    expect(r.json<{ items: unknown[] }>().items).toHaveLength(0);
   });
 });

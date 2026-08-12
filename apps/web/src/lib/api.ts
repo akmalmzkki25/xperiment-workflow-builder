@@ -10,6 +10,21 @@ export interface ConnectionSchemaItem {
   payloadJsonSchema: unknown;
 }
 
+/** One inbound webhook delivery. Carries no body and no header value, by construction. */
+export interface DeliveryView {
+  id: string;
+  nodeId: string;
+  mode: string;
+  outcome: string;
+  statusCode: number;
+  authMode: string | null;
+  /** Header NAMES that arrived, from a fixed diagnostic allowlist. */
+  headersSeen: string[];
+  bodyBytes: number;
+  executionId: string | null;
+  receivedAt: string;
+}
+
 export interface ConnectorItem {
   type: string;
   kind: 'trigger' | 'action' | 'logic';
@@ -358,6 +373,15 @@ export class ApiClient {
 
   listTriggers(id: string): Promise<{ triggers: TriggerView[] }> {
     return this.request('GET', `/v1/workflows/${id}/triggers`);
+  }
+
+  /**
+   * Inbound deliveries, accepted and rejected. No body, no header values — the server
+   * stores neither, so there is nothing here to redact.
+   */
+  listDeliveries(id: string, nodeId?: string): Promise<{ items: DeliveryView[] }> {
+    const qs = nodeId ? `?nodeId=${encodeURIComponent(nodeId)}` : '';
+    return this.request('GET', `/v1/workflows/${id}/deliveries${qs}`);
   }
 
   listTriggerSamples(id: string, nodeId: string): Promise<{ samples: unknown[] }> {

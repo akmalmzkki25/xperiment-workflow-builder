@@ -174,6 +174,32 @@ fails.
 
 An `authMode` nobody implemented fails closed. A typo cannot read as "no auth needed".
 
+### When a webhook does not arrive
+
+Every delivery to a **known** route key is recorded, accepted or not:
+`GET /v1/workflows/:id/deliveries`, and in the editor under **Recent deliveries**
+on the trigger panel. Before this a rejected delivery produced a 401 and nothing
+else, so "my webhook isn't working" had no evidence anywhere in the product.
+
+The row that matters most reads: *sent `x-xperiment-signature`, but this trigger
+expects `x-hub-signature-256`* — the wrong-header mistake the table above exists
+to make possible in the first place.
+
+Three things are deliberately **not** stored:
+
+- **The body.** A rejected delivery is unauthenticated input; keeping it would let
+  anyone holding a route key write arbitrary content into the database and onto an
+  operator's screen. Only its size is recorded.
+- **Header values.** Only header *names*, from a fixed diagnostic allowlist — those
+  values are the signatures and bearer tokens.
+- **Anything at all for an unknown route key.** Otherwise a public endpoint lets
+  anyone fill the table by spraying random keys.
+
+Because there is no body and no header value, this is readable by any member with
+`execution:read`, including a viewer — unlike sample payloads, which are customer
+data and need `execution:run`. Deliveries are pruned on the same horizon as the
+trigger bodies they describe.
+
 **Meta subscription handshake.** Meta subscribes with
 `GET /t/:routeKey?hub.mode=subscribe&hub.verify_token=…&hub.challenge=…` and requires
 the challenge echoed back as plain text. Xperiment answers that on `GET`, and the handler is

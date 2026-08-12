@@ -67,7 +67,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await pool.query(
-    `TRUNCATE workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
+    `TRUNCATE webhook_deliveries, workflow_triggers, executions, execution_nodes, execution_events, trigger_events, task_outbox, workflow_versions, workflow_drafts, workflows CASCADE`,
   );
 });
 
@@ -587,5 +587,145 @@ describe('oversized deliveries', () => {
       [workflowId],
     );
     expect(Number(runs.rows[0]!.count)).toBe(0);
+  });
+});
+
+describe('webhook delivery diagnostics', () => {
+  async function deliveries(workflowId: string) {
+    const r = await pool.query<{
+      outcome: string;
+      status_code: number;
+      auth_mode: string | null;
+      headers_seen: string[];
+      body_bytes: number;
+      execution_id: string | null;
+    }>(
+      `SELECT outcome, status_code, auth_mode, headers_seen, body_bytes, execution_id
+         FROM webhook_deliveries WHERE workflow_id = $1 ORDER BY received_at, id`,
+      [workflowId],
+    );
+    return r.rows;
+  }
+
+  test('a rejected delivery is recorded, which is the whole point', async () => {
+    // Before this, a provider signing under the wrong header got a 401 and left no trace
+    // anywhere an operator could look. "My webhook isn't working" with zero evidence.
+    const { workflowId, routeKey, secret } = await seedHook('meta');
+    const body = JSON.stringify({ entry: [] });
+    await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json', 'x-xperiment-signature': sign(secret, body) },
+      payload: body,
+    });
+    const rows = await deliveries(workflowId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.outcome).toBe('unauthorized');
+    expect(rows[0]!.status_code).toBe(401);
+    // The diagnostic: what the trigger expected against what actually arrived.
+    expect(rows[0]!.auth_mode).toBe('meta');
+    expect(rows[0]!.headers_seen).toEqual(['x-xperiment-signature']);
+  });
+
+  test('a rejected body is NEVER stored, only its size', async () => {
+    // A rejected delivery is unauthenticated input. Storing it would let anyone holding a
+    // route key write arbitrary content into the database and onto an operator's screen.
+    const { workflowId, routeKey } = await seedHook('meta');
+    const marker = 'ATTACKER-CONTROLLED-CONTENT';
+    const body = JSON.stringify({ note: marker });
+    await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json' },
+      payload: body,
+    });
+    const raw = await pool.query<{ row: string }>(
+      `SELECT webhook_deliveries::text AS row FROM webhook_deliveries WHERE workflow_id = $1`,
+      [workflowId],
+    );
+    expect(raw.rowCount).toBe(1);
+    expect(raw.rows[0]!.row).not.toContain(marker);
+    expect((await deliveries(workflowId))[0]!.body_bytes).toBe(Buffer.byteLength(body));
+  });
+
+  test('header VALUES are never stored, only names', async () => {
+    const { workflowId, routeKey } = await seedHook('token');
+    await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json', authorization: 'Bearer LEAKED-TOKEN-VALUE' },
+      payload: '{}',
+    });
+    const raw = await pool.query<{ row: string }>(
+      `SELECT webhook_deliveries::text AS row FROM webhook_deliveries WHERE workflow_id = $1`,
+      [workflowId],
+    );
+    expect(raw.rows[0]!.row).not.toContain('LEAKED-TOKEN-VALUE');
+    expect((await deliveries(workflowId))[0]!.headers_seen).toEqual(['authorization']);
+  });
+
+  test('an accepted delivery links to the execution it started', async () => {
+    const { workflowId, routeKey } = await seedHook('none');
+    const r = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ a: 1 }),
+    });
+    const { executionId } = r.json<{ executionId: string }>();
+    const rows = await deliveries(workflowId);
+    expect(rows[0]!.outcome).toBe('accepted');
+    expect(rows[0]!.execution_id).toBe(executionId);
+  });
+
+  test('a repeat delivery is recorded as a duplicate, not a second acceptance', async () => {
+    // An operator seeing one execution for five deliveries needs to know why.
+    const { workflowId, routeKey } = await seedHook('none', { idemPath: 'event.id' });
+    const send = () =>
+      app.inject({
+        method: 'POST',
+        url: `/t/${routeKey}`,
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ event: { id: 'same' } }),
+      });
+    await send();
+    await send();
+    expect((await deliveries(workflowId)).map((d) => d.outcome)).toEqual(['accepted', 'duplicate']);
+  });
+
+  test('malformed JSON is recorded rather than vanishing', async () => {
+    const { workflowId, routeKey } = await seedHook('none');
+    await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json' },
+      payload: '{not json',
+    });
+    const rows = await deliveries(workflowId);
+    expect(rows[0]!.outcome).toBe('invalid_json');
+    expect(rows[0]!.status_code).toBe(400);
+  });
+
+  test('an unknown route key writes nothing at all', async () => {
+    // Otherwise a public endpoint lets anyone fill this table by spraying random keys —
+    // unauthenticated write amplification.
+    await pool.query(`DELETE FROM webhook_deliveries`);
+    await app.inject({
+      method: 'POST',
+      url: '/t/rk_definitely_not_real',
+      headers: { 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    const count = await pool.query<{ count: string }>(`SELECT count(*) AS count FROM webhook_deliveries`);
+    expect(Number(count.rows[0]!.count)).toBe(0);
+  });
+
+  test('a GET handshake records nothing — it is not a delivery', async () => {
+    const { workflowId, routeKey, secret } = await seedHook('meta');
+    await app.inject({
+      method: 'GET',
+      url: `/t/${routeKey}?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(secret)}&hub.challenge=123`,
+    });
+    expect(await deliveries(workflowId)).toHaveLength(0);
   });
 });

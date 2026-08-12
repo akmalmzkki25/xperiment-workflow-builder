@@ -3,6 +3,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { getBrowserClient, type TriggerView } from '../../lib/api';
+import { deliveryHint, deliveryTone } from '../../lib/deliveryHint';
+import { fmtTime } from '../../lib/format';
 import { expressionPaths } from '../../lib/samplePaths';
 
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -75,6 +77,7 @@ export function TriggerPanel({ workflowId, triggers, showSecrets, loading }: Tri
                 <p className="q-field__hint">Auth: none</p>
               )}
               {t.testUrl ? <SampleViewer workflowId={workflowId} nodeId={t.nodeId} testUrl={t.testUrl} /> : null}
+              <DeliveryViewer workflowId={workflowId} nodeId={t.nodeId} />
             </>
           ) : (
             <p className="q-field__hint">
@@ -134,6 +137,65 @@ function SampleViewer({ workflowId, nodeId, testUrl }: { workflowId: string; nod
             ))}
           </>
         ) : null}
+      </div>
+    </details>
+  );
+}
+
+/**
+ * What actually arrived at this endpoint, including what was turned away.
+ *
+ * Before this existed a rejected delivery produced a 401 and nothing else, so "my webhook
+ * isn't working" had no evidence anywhere in the product. Fetched lazily behind a closed
+ * `<details>`: unlike the trigger list this costs no audit row, but it is still a query
+ * per editor mount that nobody asked for.
+ */
+function DeliveryViewer({ workflowId, nodeId }: { workflowId: string; nodeId: string }) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({
+    queryKey: ['trigger-deliveries', workflowId, nodeId],
+    queryFn: () => getBrowserClient().listDeliveries(workflowId, nodeId),
+    enabled: open,
+    // A misconfigured sender retries; seeing the next attempt land without a manual
+    // refresh is the difference between diagnosing in one sitting and two.
+    refetchInterval: open ? 10_000 : false,
+  });
+  const items = q.data?.items ?? [];
+
+  return (
+    <details
+      data-testid={`trigger-deliveries-${nodeId}`}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Recent deliveries</summary>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+        {q.isPending && open ? <span className="q-field__hint">Loading…</span> : null}
+        {q.isError ? <span className="q-field__error">Could not load deliveries.</span> : null}
+        {q.data && items.length === 0 ? (
+          <span className="q-field__hint" data-testid={`trigger-deliveries-empty-${nodeId}`}>
+            Nothing has reached this endpoint yet. Rejected deliveries appear here too, so if a provider says it
+            is sending and this stays empty, the request is not arriving at all.
+          </span>
+        ) : null}
+        {items.map((d) => (
+          <div key={d.id} className="q-delivery" data-testid={`delivery-${d.id}`}>
+            <span
+              className="q-chip"
+              style={{
+                color:
+                  deliveryTone(d.outcome) === 'succeeded'
+                    ? 'var(--status-succeeded)'
+                    : deliveryTone(d.outcome) === 'failed'
+                      ? 'var(--status-failed)'
+                      : 'var(--text-muted)',
+              }}
+            >
+              {d.statusCode} {d.outcome}
+            </span>
+            <span className="q-field__hint">{fmtTime(d.receivedAt)}</span>
+            <p className="q-delivery__hint">{deliveryHint(d)}</p>
+          </div>
+        ))}
       </div>
     </details>
   );

@@ -6,9 +6,12 @@ import {
   getTriggerByRouteKey,
   getVersion,
   getWorkflow,
+  headersSeen,
   PAYLOAD_CAP_BYTES,
   PayloadTooLargeError,
+  recordDelivery,
   withTx,
+  type DeliveryOutcome,
   type SecretVault,
 } from '@xperiment/db';
 import { runnableNodeIds, workflowIrSchema } from '@xperiment/ir';
@@ -134,11 +137,48 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
 
       const rawBody = (req.body as Buffer | undefined) ?? Buffer.alloc(0);
 
+      /**
+       * Record what happened, then answer.
+       *
+       * Never the body: a rejected delivery is unauthenticated input, and storing it
+       * would let anyone holding a route key write arbitrary content into the database
+       * and onto an operator's screen. Never header values either — those are the
+       * signatures. Only which diagnostic header NAMES arrived, which is the whole
+       * diagnostic: "you sent x-xperiment-signature, this trigger expects x-hub-signature-256".
+       *
+       * Best-effort: a delivery that cannot be logged must still be answered, so a
+       * diagnostic write never becomes the reason a webhook fails.
+       */
+      const note = async (
+        outcome: DeliveryOutcome,
+        statusCode: number,
+        executionId?: string,
+      ): Promise<void> => {
+        try {
+          await recordDelivery(deps.pool, {
+            workspaceId: trigger.workspaceId,
+            workflowId: trigger.workflowId,
+            triggerId: trigger.id,
+            nodeId: trigger.nodeId,
+            mode,
+            outcome,
+            statusCode,
+            authMode: trigger.authMode,
+            headersSeen: headersSeen(req.headers as Record<string, unknown>),
+            bodyBytes: rawBody.length,
+            ...(executionId === undefined ? {} : { executionId }),
+          });
+        } catch (e) {
+          req.log.warn({ err: e }, 'delivery.record_failed');
+        }
+      };
+
       let body: unknown = null;
       if (rawBody.length > 0) {
         try {
           body = JSON.parse(rawBody.toString('utf8'));
         } catch {
+          await note('invalid_json', 400);
           return reply.status(400).send({ title: 'Invalid JSON body', status: 400 });
         }
       }
@@ -162,7 +202,12 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
                     : // An authMode nobody implemented fails closed. Falling through as
                       // "no auth required" would turn a typo into an open endpoint.
                       false;
-        if (!ok) return reply.status(401).send({ title: 'Unauthorized', status: 401 });
+        if (!ok) {
+          // The one that matters most. Before this, a provider signing under the wrong
+          // header got a 401 and left no trace anywhere the operator could look.
+          await note('unauthorized', 401);
+          return reply.status(401).send({ title: 'Unauthorized', status: 401 });
+        }
       }
 
       const dedupKey =
@@ -189,14 +234,19 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
         triggerNodeId: trigger.nodeId,
       });
       if (result.outcome === 'quota_exceeded') {
-        // Deliberately generic: an unauthenticated caller must not learn the
-        // workspace's plan state from a webhook response.
+        // The response stays deliberately generic — an unauthenticated caller must not
+        // learn the workspace's plan state — but the OWNER gets to see it here, which is
+        // the difference between "webhooks stopped working" and "we hit the plan cap".
+        await note('quota_exceeded', 429);
         return reply.status(429).send({ title: 'Too Many Requests', status: 429 });
       }
       const created = result.outcome === 'created';
       if (created && mode === 'test') {
         await deps.pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [result.execution.id]);
       }
+      // A repeat delivery is recorded as such rather than as a second acceptance: an
+      // operator seeing one execution for five deliveries needs to know why.
+      await note(created ? 'accepted' : 'duplicate', created ? 202 : 200, result.execution.id);
       return reply.status(created ? 202 : 200).send({ executionId: result.execution.id, created });
     };
 

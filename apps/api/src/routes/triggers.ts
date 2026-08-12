@@ -4,6 +4,7 @@ import {
   deleteTriggersNotIn,
   getVersion,
   getWorkflow,
+  listDeliveries,
   listTriggers,
   recentTestTriggerPayloads,
   setTriggersActive,
@@ -15,6 +16,7 @@ import {
 import { nextFireAt } from '@xperiment/engine-core';
 import { workflowIrSchema, type IRNode } from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { hasPermission } from '../auth/permissions.js';
 import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { quotaBlocks } from './plan.js';
@@ -82,6 +84,11 @@ async function auditReveal(
     });
   }
 }
+
+const deliveriesQuerySchema = z.object({
+  nodeId: z.string().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+});
 
 export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workflows/:id/activate', async (req, reply) => {
@@ -162,6 +169,26 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     );
     if (withCredentials) await auditReveal(deps, req, ctx.workspaceId, rows);
     return { triggers };
+  });
+
+  app.get('/v1/workflows/:id/deliveries', async (req, reply) => {
+    const ctx = authOf(req);
+    // `execution:read`, not `execution:run`. Unlike a sample payload, a delivery record
+    // holds no body and no header value — only outcomes, sizes and header NAMES. That is
+    // operational metadata, so a viewer investigating "why did nothing run" can see it.
+    if (!requirePermission(reply, ctx, 'execution:read')) return;
+    const { id } = req.params as { id: string };
+    if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
+    const q = deliveriesQuerySchema.safeParse(req.query ?? {});
+    if (!q.success) return sendProblem(reply, 400, 'Invalid query', q.error.message);
+    return {
+      items: await listDeliveries(deps.pool, {
+        workspaceId: ctx.workspaceId,
+        workflowId: id,
+        ...(q.data.nodeId ? { nodeId: q.data.nodeId } : {}),
+        limit: q.data.limit,
+      }),
+    };
   });
 
   app.get('/v1/workflows/:id/triggers/:nodeId/samples', async (req, reply) => {
