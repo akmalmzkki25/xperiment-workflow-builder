@@ -63,7 +63,7 @@ describe('triggers repo', () => {
     const row = await upsertTrigger(pool, { workflowId, nodeId: 'hook', type: 'webhook', authMode: 'none' });
     expect((await getTriggerByRouteKey(pool, row.routeKey))?.id).toBe(row.id);
     expect(await getTriggerByRouteKey(pool, 'nope')).toBeNull();
-    expect(await listTriggers(pool, workflowId)).toHaveLength(1);
+    expect(await listTriggers(pool, workflowId, DEFAULT_WORKSPACE_ID)).toHaveLength(1);
   });
 
   test('a trigger row carries its workspace and secret version', async () => {
@@ -127,11 +127,11 @@ describe('triggers repo', () => {
     await upsertTrigger(pool, { workflowId, nodeId: 'b', type: 'schedule', cron: '* * * * *', timezone: 'UTC' });
     await setTriggersActive(pool, workflowId, true);
     await setWorkflowActive(pool, workflowId, true);
-    expect((await listTriggers(pool, workflowId)).every((t) => t.active)).toBe(true);
+    expect((await listTriggers(pool, workflowId, DEFAULT_WORKSPACE_ID)).every((t) => t.active)).toBe(true);
     const wf = await getWorkflow(pool, workflowId);
     expect(wf?.active).toBe(true);
     await deleteTriggersNotIn(pool, workflowId, ['a']);
-    const remaining = await listTriggers(pool, workflowId);
+    const remaining = await listTriggers(pool, workflowId, DEFAULT_WORKSPACE_ID);
     expect(remaining.map((t) => t.nodeId)).toEqual(['a']);
   });
 
@@ -190,7 +190,7 @@ describe('triggers repo', () => {
       );
       await pool.query(`UPDATE executions SET mode = $1 WHERE id = $2`, [mode, execution.id]);
     }
-    const samples = await recentTestTriggerPayloads(pool, workflowId, 'hook', 5);
+    const samples = await recentTestTriggerPayloads(pool, workflowId, 'hook', 5, DEFAULT_WORKSPACE_ID);
     expect(samples).toEqual([{ n: 2 }, { n: 0 }]);
   });
 
@@ -214,8 +214,8 @@ describe('triggers repo', () => {
       );
       await pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [execution.id]);
     }
-    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_a', 5)).toEqual([{ from: 'hook_a' }]);
-    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_b', 5)).toEqual([{ from: 'hook_b' }]);
+    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_a', 5, DEFAULT_WORKSPACE_ID)).toEqual([{ from: 'hook_a' }]);
+    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_b', 5, DEFAULT_WORKSPACE_ID)).toEqual([{ from: 'hook_b' }]);
   });
 
   test('an event recorded before node attribution existed is not offered as a sample', async () => {
@@ -231,6 +231,47 @@ describe('triggers repo', () => {
     );
     await pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [execution.id]);
     // Guessing which node a NULL belongs to would be worse than showing nothing.
-    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_a', 5)).not.toContainEqual({ legacy: true });
+    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook_a', 5, DEFAULT_WORKSPACE_ID)).not.toContainEqual({ legacy: true });
+  });
+});
+
+describe('trigger reads are workspace-scoped at the repository', () => {
+  /** A second workspace that must never see the first one's triggers. */
+  const OTHER_WORKSPACE = '00000000-0000-0000-0000-0000000000ff';
+
+  beforeEach(async () => {
+    await pool.query(`INSERT INTO workspaces (id, name) VALUES ($1, 'other') ON CONFLICT DO NOTHING`, [
+      OTHER_WORKSPACE,
+    ]);
+  });
+
+  test('listTriggers returns nothing for a workspace that does not own the workflow', async () => {
+    // The workspace predicate used to live only in the API handler. That is the exact
+    // "remember to pass it" pattern getConnectionWithPayload's docblock records having
+    // turned into a compile error, after the worker forgot it and resolved another
+    // tenant's credential.
+    await upsertTrigger(pool, { workflowId, nodeId: 'hook', type: 'webhook', authMode: 'none' });
+    expect(await listTriggers(pool, workflowId, DEFAULT_WORKSPACE_ID)).toHaveLength(1);
+    expect(await listTriggers(pool, workflowId, OTHER_WORKSPACE)).toHaveLength(0);
+  });
+
+  test('recentTestTriggerPayloads returns nothing for a foreign workspace', async () => {
+    // Sample payloads are recorded request bodies. Leaking them across tenants would
+    // hand over whatever a customer POSTed to their own webhook.
+    await upsertTrigger(pool, { workflowId, nodeId: 'hook', type: 'webhook', authMode: 'none' });
+    const created = executionOf(
+      await createExecutionWithTrigger(pool, {
+        workflowId,
+        versionId,
+        idempotencyKey: 'scope-1',
+        payload: { body: { secret: 'customer-data' } },
+        nodeIds: ['hook'],
+        executionTimeoutMs: 60000,
+        triggerNodeId: 'hook',
+      }),
+    );
+    await pool.query(`UPDATE executions SET mode = 'test' WHERE id = $1`, [created.id]);
+    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook', 5, DEFAULT_WORKSPACE_ID)).toHaveLength(1);
+    expect(await recentTestTriggerPayloads(pool, workflowId, 'hook', 5, OTHER_WORKSPACE)).toHaveLength(0);
   });
 });

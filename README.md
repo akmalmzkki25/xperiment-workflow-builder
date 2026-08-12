@@ -428,10 +428,13 @@ with a different filter it would return the page of rows after that position fro
 the wrong set — no error, no empty result, silently wrong. The filter is hashed
 into the cursor and a mismatch is a 400.
 
-One measured detail shapes the query: `status = ANY('{FAILED}')` makes Postgres
-read the `created_at` index and apply status as a *filter*, scanning the whole
-history to find the rare failures. Scalar `status = 'FAILED'` puts it in the index
-condition instead, so a single-status request is emitted as scalar equality.
+One measured detail shapes the query, and it is about **ordering**, not index use.
+`status = ANY('{FAILED}')` *does* use the status index — but as a Bitmap Index
+Scan, which cannot emit rows in index order, so Postgres sorts the whole matching
+set before taking twenty. Scalar `status = 'FAILED'` gets a plain Index Scan
+already ordered by `(created_at DESC, id DESC)`, so the page reads twenty-one
+index entries and stops. A single-status request is therefore emitted as scalar
+equality.
 
 ## Web UI (Phase 1D)
 

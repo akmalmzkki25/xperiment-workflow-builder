@@ -101,8 +101,21 @@ export async function getTriggerByRouteKey(db: Db, routeKey: string): Promise<Tr
   return r.rowCount ? mapTrigger(r.rows[0] as Record<string, unknown>) : null;
 }
 
-export async function listTriggers(db: Db, workflowId: string): Promise<TriggerRow[]> {
-  const r = await db.query(`SELECT * FROM workflow_triggers WHERE workflow_id = $1 ORDER BY node_id`, [workflowId]);
+/**
+ * `workspaceId` is required, for the same reason `getConnectionWithPayload` requires it.
+ *
+ * The predicate used to live only in the API handler, which meant every future caller had
+ * to remember it. That is precisely how the worker once resolved another tenant's
+ * credential. Requiring the argument turns forgetting into a compile error.
+ */
+export async function listTriggers(db: Db, workflowId: string, workspaceId: string): Promise<TriggerRow[]> {
+  const r = await db.query(
+    `SELECT t.* FROM workflow_triggers t
+       JOIN workflows w ON w.id = t.workflow_id
+      WHERE t.workflow_id = $1 AND w.workspace_id = $2
+      ORDER BY t.node_id`,
+    [workflowId, workspaceId],
+  );
   return (r.rows as Record<string, unknown>[]).map(mapTrigger);
 }
 
@@ -153,19 +166,24 @@ export async function updateNextFireAt(db: Db, triggerId: string, nextFireAt: Da
  *
  * Only test-mode runs are recorded; production fires never become samples.
  */
+/**
+ * `workspaceId` is required. These rows are recorded request bodies — whatever a customer
+ * POSTed to their own webhook — so a cross-tenant read here hands over their data.
+ */
 export async function recentTestTriggerPayloads(
   db: Db,
   workflowId: string,
   nodeId: string,
   limit: number,
+  workspaceId: string,
 ): Promise<unknown[]> {
   const r = await db.query(
     `SELECT t.payload_json FROM trigger_events t
      JOIN executions e ON e.trigger_event_id = t.id
-     WHERE t.workflow_id = $1 AND t.node_id = $2 AND e.mode = 'test'
+     WHERE t.workflow_id = $1 AND t.node_id = $2 AND e.mode = 'test' AND e.workspace_id = $4
      ORDER BY t.received_at DESC
      LIMIT $3`,
-    [workflowId, nodeId, limit],
+    [workflowId, nodeId, limit, workspaceId],
   );
   return (r.rows as { payload_json: unknown }[]).map((row) => row.payload_json);
 }

@@ -6,6 +6,8 @@ import {
   getTriggerByRouteKey,
   getVersion,
   getWorkflow,
+  PAYLOAD_CAP_BYTES,
+  PayloadTooLargeError,
   withTx,
   type SecretVault,
 } from '@xperiment/db';
@@ -35,12 +37,37 @@ export interface GatewayDeps {
 export function buildGateway(deps: GatewayDeps): FastifyInstance {
   const app = Fastify({
     logger: { level: process.env['LOG_LEVEL'] ?? 'info' },
-    bodyLimit: 1024 * 1024,
+    // Matched to the storage cap, not chosen independently. At 1 MB, anything between
+    // 256 KB and 1 MB passed Fastify and then threw inside createExecutionWithTrigger,
+    // and with no error handler the provider got a 500 — which most providers retry,
+    // forever, on a body that can never be stored.
+    bodyLimit: PAYLOAD_CAP_BYTES,
     genReqId: () => randomUUID(),
   });
   // Keep raw bytes for HMAC; parse JSON manually.
   app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, payload, done) => {
     done(null, payload);
+  });
+
+  /**
+   * A payload the database will not accept is the CALLER's problem, not ours.
+   *
+   * `bodyLimit` above rejects the clearly-oversized before we buffer anything, but the
+   * stored payload wraps the body with headers and query, so a body just under the cap
+   * can still overflow once wrapped. Reported as 413 either way: a 500 tells a provider
+   * to try again, and it will, on a body that can never be stored.
+   */
+  app.setErrorHandler((err: unknown, _req, reply) => {
+    if (err instanceof PayloadTooLargeError) {
+      return reply.status(413).send({ title: 'Payload Too Large', status: 413 });
+    }
+    const e = err as { statusCode?: unknown; message?: unknown };
+    const status = typeof e.statusCode === 'number' ? e.statusCode : 500;
+    // Never relay the message on a 5xx: it can carry connection strings and query text.
+    if (status >= 500) return reply.status(status).send({ title: 'Internal Server Error', status });
+    return reply
+      .status(status)
+      .send({ title: typeof e.message === 'string' ? e.message : 'Request rejected', status });
   });
 
   // Liveness: touches nothing, so a database blip cannot restart the fleet.

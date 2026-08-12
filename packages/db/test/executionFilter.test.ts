@@ -143,66 +143,103 @@ describe('pagination under a filter', () => {
 
 describe('an index can serve the filtered list', () => {
   /**
-   * `enable_seqscan = off` on purpose.
+   * Seeded with volume, then ANALYZEd, because a query plan is a function of statistics.
    *
-   * On a near-empty test table the planner picks a sequential scan whatever indexes
-   * exist, so a plain EXPLAIN would pass with no index at all and fail once someone adds
-   * rows. Forcing the choice answers the question that actually matters — is there an
-   * index that CAN serve this predicate and ordering — rather than what today's
-   * statistics happen to prefer.
+   * The first version of these tests asserted plans against whatever rows the other tests
+   * in this file happened to leave behind. They passed, then failed the moment a change
+   * elsewhere emptied the table — the planner reads an empty table with `enable_seqscan
+   * = off` and picks `idx_executions_created_at` with an Incremental Sort for *every*
+   * shape, so the assertions were measuring test-order luck rather than the schema.
+   *
+   * Two thousand rows at a realistic skew — failures are rare, which is exactly why the
+   * status index matters — make the answer the one a production table would give.
    */
-  async function forcedPlan(sql: string, params: unknown[]): Promise<string> {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('SET LOCAL enable_seqscan = off');
-      const plan = await client.query<{ 'QUERY PLAN': string }>(`EXPLAIN ${sql}`, params);
-      return plan.rows.map((r) => r['QUERY PLAN']).join('\n');
-    } finally {
-      await client.query('ROLLBACK');
-      client.release();
-    }
+  let volumeWorkflowId: string;
+
+  beforeAll(async () => {
+    const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Filter volume' });
+    volumeWorkflowId = wf.id;
+    const version = await createVersion(pool, {
+      workflowId: volumeWorkflowId,
+      definition: { schemaVersion: '0.1' },
+      hash: 'fv',
+    });
+    await pool.query(
+      `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, status, created_at)
+       SELECT $1, $2, $3,
+              CASE WHEN i % 40 = 0 THEN 'FAILED' WHEN i % 97 = 0 THEN 'TIMED_OUT' ELSE 'SUCCEEDED' END,
+              now() - make_interval(mins => i)
+         FROM generate_series(1, 2000) AS i`,
+      [DEFAULT_WORKSPACE_ID, volumeWorkflowId, version.id],
+    );
+    await pool.query('ANALYZE executions');
+  }, 60000);
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM executions WHERE workflow_id = $1`, [volumeWorkflowId]);
+    await pool.query('ANALYZE executions');
+  });
+
+  async function plan(sql: string, params: unknown[]): Promise<string> {
+    const explained = await pool.query<{ 'QUERY PLAN': string }>(`EXPLAIN ${sql}`, params);
+    return explained.rows.map((r) => r['QUERY PLAN']).join('\n');
   }
 
-  test('one status lands in the Index Cond, not a Filter', async () => {
-    // Measured, and it drove the query builder: `status = ANY('{FAILED}')` makes Postgres
-    // read (workspace_id, created_at) and FILTER on status — scanning the whole history
-    // to find the rare failures. Scalar equality puts status in the index condition.
-    const text = await forcedPlan(
+  test('one status reads straight off the index, in order, with no Sort', async () => {
+    // This is what drove the query builder, and the ordering is the point rather than the
+    // index: a scalar predicate gives an Index Scan whose output is ALREADY in
+    // (created_at DESC, id DESC), so LIMIT 21 reads twenty-one index entries and stops.
+    const text = await plan(
       `SELECT * FROM executions WHERE workspace_id = $1 AND status = $2
         ORDER BY created_at DESC, id DESC LIMIT 21`,
       [DEFAULT_WORKSPACE_ID, 'FAILED'],
     );
     expect(text, text).toContain('idx_executions_ws_status_created');
-    expect(text, text).toMatch(/Index Cond:.*status/s);
+    expect(text, text).toMatch(/Index Cond:[\s\S]*status/);
+    expect(text, text).not.toContain('Sort');
   });
 
-  test('an array predicate would NOT use that index, which is why it is avoided', async () => {
-    const text = await forcedPlan(
+  test('an array predicate keeps the index but LOSES the ordering, which is why it is avoided', async () => {
+    // Measured under volume, and it corrects the reason: `= ANY('{FAILED}')` does use
+    // idx_executions_ws_status_created — as a Bitmap Index Scan, which cannot emit rows in
+    // index order. Postgres therefore sorts the WHOLE matching set before taking twenty-one
+    // rows. On a workspace with a year of failures that is the difference between reading
+    // twenty-one index entries and sorting thousands.
+    const text = await plan(
       `SELECT * FROM executions WHERE workspace_id = $1 AND status = ANY($2::text[])
         ORDER BY created_at DESC, id DESC LIMIT 21`,
       [DEFAULT_WORKSPACE_ID, ['FAILED']],
     );
-    expect(text, text).not.toContain('idx_executions_ws_status_created');
+    expect(text, text).toContain('Sort');
   });
 
-  test('several statuses still read in index order rather than sorting', async () => {
-    // The index orders by status first, so two statuses cannot share one ordered scan.
-    // Reading the created_at index and filtering is the right plan; a Sort is not.
-    const text = await forcedPlan(
-      `SELECT * FROM executions WHERE workspace_id = $1 AND status = ANY($2::text[])
-        ORDER BY created_at DESC, id DESC LIMIT 21`,
-      [DEFAULT_WORKSPACE_ID, ['FAILED', 'TIMED_OUT']],
+  test('the unfiltered list reads in index order rather than sorting', async () => {
+    // No Sort node: the index already carries the ordering the page asks for. Without it
+    // every page would order the workspace's whole history before taking twenty rows.
+    const text = await plan(
+      `SELECT * FROM executions WHERE workspace_id = $1 ORDER BY created_at DESC, id DESC LIMIT 21`,
+      [DEFAULT_WORKSPACE_ID],
     );
     expect(text, text).toContain('idx_executions_ws_created');
     expect(text, text).not.toContain('Sort');
   });
 
-  test('the unfiltered list is index-served too', async () => {
-    const text = await forcedPlan(
-      `SELECT * FROM executions WHERE workspace_id = $1 ORDER BY created_at DESC, id DESC LIMIT 21`,
+  test('the index still serves a page deep into the history', async () => {
+    // A keyset page four hundred rows in must not degrade into a scan; that is the whole
+    // reason the index ends in (created_at DESC, id DESC).
+    const anchor = await pool.query<{ created_at: Date; id: string }>(
+      `SELECT created_at, id FROM executions WHERE workspace_id = $1
+        ORDER BY created_at DESC, id DESC OFFSET 400 LIMIT 1`,
       [DEFAULT_WORKSPACE_ID],
     );
+    const row = anchor.rows[0]!;
+    const text = await plan(
+      `SELECT * FROM executions WHERE workspace_id = $1
+         AND (created_at, id) < ($2::timestamptz, $3::uuid)
+        ORDER BY created_at DESC, id DESC LIMIT 21`,
+      [DEFAULT_WORKSPACE_ID, row.created_at.toISOString(), row.id],
+    );
     expect(text, text).toContain('idx_executions_ws_created');
+    expect(text, text).not.toContain('Sort');
   });
 });

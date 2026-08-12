@@ -545,3 +545,47 @@ describe('the Meta subscription handshake', () => {
     expect(r.body).toBe('1158201444');
   });
 });
+
+describe('oversized deliveries', () => {
+  test('a body over the storage cap is a 413, not a 500', async () => {
+    // bodyLimit was 1 MB while the database caps a stored payload at 256 KB, so anything
+    // between the two passed Fastify, then threw inside createExecutionWithTrigger with
+    // no error handler to catch it. The provider saw a 500 and retried forever.
+    const { routeKey } = await seedHook('none');
+    const body = JSON.stringify({ padding: 'x'.repeat(400 * 1024) });
+    const r = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json' },
+      payload: body,
+    });
+    expect(r.statusCode).toBe(413);
+  });
+
+  test('a body under the cap still succeeds', async () => {
+    const { routeKey } = await seedHook('none');
+    const body = JSON.stringify({ padding: 'x'.repeat(100 * 1024) });
+    const r = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json' },
+      payload: body,
+    });
+    expect(r.statusCode).toBe(202);
+  });
+
+  test('a rejected oversized delivery leaves no half-written execution', async () => {
+    const { workflowId, routeKey } = await seedHook('none');
+    await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ padding: 'x'.repeat(400 * 1024) }),
+    });
+    const runs = await pool.query<{ count: string }>(
+      `SELECT count(*) AS count FROM executions WHERE workflow_id = $1`,
+      [workflowId],
+    );
+    expect(Number(runs.rows[0]!.count)).toBe(0);
+  });
+});

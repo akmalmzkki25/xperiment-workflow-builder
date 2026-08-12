@@ -534,17 +534,18 @@ export async function listExecutions(
     where.push(`workflow_id = $${params.length}`);
   }
   if (args.status && args.status.length === 1) {
-    // Scalar equality, NOT `= ANY(array)`, and the difference is measurable: with an
-    // array Postgres uses (workspace_id, created_at) and applies status as a Filter,
-    // scanning the whole history to find the rare failures. Scalar equality puts status
-    // in the Index Cond of (workspace_id, status, created_at) instead. Verified with
-    // EXPLAIN under enable_seqscan = off.
+    // Scalar equality, NOT `= ANY(array)`, and the difference is the ORDERING rather than
+    // the index. Measured with EXPLAIN on two thousand rows: `= ANY('{FAILED}')` does use
+    // (workspace_id, status, created_at) — but as a Bitmap Index Scan, which cannot emit
+    // rows in index order, so Postgres sorts the whole matching set before taking twenty.
+    // Scalar equality gets a plain Index Scan already in (created_at DESC, id DESC), so
+    // the page reads twenty-one index entries and stops.
     params.push(args.status[0]);
     where.push(`status = $${params.length}`);
   } else if (args.status && args.status.length > 1) {
     // Several statuses cannot share one ordered index scan — the index orders by status
     // first, so a merge would be needed. Postgres reads the created_at index and filters,
-    // which at least avoids a sort.
+    // which at least keeps the ordering and avoids a full sort.
     params.push(args.status);
     where.push(`status = ANY($${params.length}::text[])`);
   }

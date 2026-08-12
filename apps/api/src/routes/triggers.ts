@@ -132,7 +132,7 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     await deleteTriggersNotIn(deps.pool, id, ir.nodes.map((n) => n.id));
     await setTriggersActive(deps.pool, id, true);
     await setWorkflowActive(deps.pool, id, true);
-    const fresh = await listTriggers(deps.pool, id);
+    const fresh = await listTriggers(deps.pool, id, ctx.workspaceId);
     const triggers = await Promise.all(fresh.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerVault, true)));
     await auditReveal(deps, req, ctx.workspaceId, fresh);
     return { active: true, triggers };
@@ -155,7 +155,7 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     const { id } = req.params as { id: string };
     const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
     if (!wf) return sendProblem(reply, 404, 'Workflow not found');
-    const rows = await listTriggers(deps.pool, id);
+    const rows = await listTriggers(deps.pool, id, ctx.workspaceId);
     const withCredentials = hasPermission(ctx.role, 'workflow:activate');
     const triggers = await Promise.all(
       rows.map((t) => triggerView(t, deps.gatewayUrl, deps.triggerVault, withCredentials)),
@@ -172,9 +172,9 @@ export function registerTriggerRoutes(app: FastifyInstance, deps: ResolvedServer
     if (!requirePermission(reply, ctx, 'execution:run')) return;
     const { id, nodeId } = req.params as { id: string; nodeId: string };
     if (!(await getWorkflow(deps.pool, id, ctx.workspaceId))) return sendProblem(reply, 404, 'Workflow not found');
-    const rows = await listTriggers(deps.pool, id);
+    const rows = await listTriggers(deps.pool, id, ctx.workspaceId);
     if (!rows.some((t) => t.nodeId === nodeId)) return sendProblem(reply, 404, 'Trigger not found');
-    const samples = await recentTestTriggerPayloads(deps.pool, id, nodeId, 5);
+    const samples = await recentTestTriggerPayloads(deps.pool, id, nodeId, 5, ctx.workspaceId);
     // A webhook body is not author-typed text — it is whatever a provider sent, and
     // providers put bearer tokens in headers the gateway does not strip and verify
     // tokens in query strings. Redaction here is key-name based and therefore partial;

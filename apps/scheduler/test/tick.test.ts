@@ -78,7 +78,7 @@ describe('runSchedulerTick', () => {
     expect(r1.fired).toBe(1);
     const count = await pool.query(`SELECT count(*)::int AS c FROM executions`);
     expect((count.rows[0] as { c: number }).c).toBe(1);
-    const trig = (await listTriggers(pool, workflowId))[0]!;
+    const trig = (await listTriggers(pool, workflowId, DEFAULT_WORKSPACE_ID))[0]!;
     expect(new Date(trig.nextFireAt!).getTime()).toBeGreaterThan(Date.now() - 1000);
   });
 
@@ -100,7 +100,7 @@ describe('runSchedulerTick', () => {
     expect(r).toEqual({ fired: 0, skipped: 1 });
     const count = await pool.query(`SELECT count(*)::int AS c FROM executions`);
     expect((count.rows[0] as { c: number }).c).toBe(0);
-    const trig = (await listTriggers(pool, workflowId))[0]!;
+    const trig = (await listTriggers(pool, workflowId, DEFAULT_WORKSPACE_ID))[0]!;
     expect(new Date(trig.nextFireAt!).getTime()).toBeGreaterThan(Date.now() - 1000);
   });
 
