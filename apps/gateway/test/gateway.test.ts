@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import {
   createPool,
   createSecretVault,
@@ -72,7 +72,7 @@ beforeEach(async () => {
 });
 
 async function seedHook(
-  authMode: 'none' | 'token' | 'hmac',
+  authMode: 'none' | 'token' | 'hmac' | 'meta' | 'xendit' | 'midtrans',
   opts: { active?: boolean; idemPath?: string; envelope?: boolean } = {},
 ) {
   const wf = await createWorkflow(pool, { workspaceId: DEFAULT_WORKSPACE_ID, name: 'Hook' });
@@ -395,5 +395,153 @@ describe('gateway', () => {
     expect(r.statusCode).toBe(413);
     // The wait survives for a properly-sized retry.
     expect((await latestNodeStates(pool, executionId)).find((n) => n.nodeId === 'evt')?.status).toBe('WAITING');
+  });
+});
+
+describe('provider signature schemes', () => {
+  test('a Meta delivery signed under X-Hub-Signature-256 is accepted', async () => {
+    const { routeKey, secret } = await seedHook('meta');
+    const body = JSON.stringify({ entry: [{ id: '1' }] });
+    const r = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(secret, body) },
+      payload: body,
+    });
+    expect(r.statusCode).toBe(202);
+  });
+
+  test('the old header name does not satisfy a meta trigger', async () => {
+    const { routeKey, secret } = await seedHook('meta');
+    const body = JSON.stringify({ entry: [] });
+    const r = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json', 'x-xperiment-signature': sign(secret, body) },
+      payload: body,
+    });
+    expect(r.statusCode).toBe(401);
+  });
+
+  test('a Xendit callback token is accepted, a wrong one is not', async () => {
+    const { routeKey, secret } = await seedHook('xendit');
+    const send = (token: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/t/${routeKey}`,
+        headers: { 'content-type': 'application/json', 'x-callback-token': token },
+        payload: JSON.stringify({ id: 'inv_1', status: 'PAID' }),
+      });
+    expect((await send(secret)).statusCode).toBe(202);
+    expect((await send('wrong')).statusCode).toBe(401);
+  });
+
+  test('a Midtrans notification is verified from the digest inside the body', async () => {
+    const { routeKey, secret } = await seedHook('midtrans');
+    const fields = { order_id: 'INV-1', status_code: '200', gross_amount: '56000.00' };
+    const signature_key = createHash('sha512')
+      .update(`${fields.order_id}${fields.status_code}${fields.gross_amount}${secret}`, 'utf8')
+      .digest('hex');
+    const send = (body: unknown) =>
+      app.inject({
+        method: 'POST',
+        url: `/t/${routeKey}`,
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify(body),
+      });
+    expect((await send({ ...fields, signature_key })).statusCode).toBe(202);
+    // A tampered amount must not pass, and this is the field an attacker would change.
+    expect((await send({ ...fields, gross_amount: '1.00', signature_key })).statusCode).toBe(401);
+  });
+
+  test('an unimplemented auth mode fails closed rather than opening the endpoint', async () => {
+    // A typo in authMode must not read as "no auth required".
+    const { workflowId, routeKey } = await seedHook('hmac');
+    await pool.query(`UPDATE workflow_triggers SET auth_mode = 'sha3_someday' WHERE workflow_id = $1`, [
+      workflowId,
+    ]);
+    const r = await app.inject({
+      method: 'POST',
+      url: `/t/${routeKey}`,
+      headers: { 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    expect(r.statusCode).toBe(401);
+  });
+});
+
+describe('the Meta subscription handshake', () => {
+  const handshakeUrl = (routeKey: string, token: string, challenge = '1158201444'): string =>
+    `/t/${routeKey}?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(token)}&hub.challenge=${challenge}`;
+
+  test('echoes the challenge as plain text when the token matches', async () => {
+    const { routeKey, secret } = await seedHook('meta');
+    const r = await app.inject({ method: 'GET', url: handshakeUrl(routeKey, secret) });
+    expect(r.statusCode).toBe(200);
+    // Meta compares byte for byte; a JSON wrapper fails the subscription silently.
+    expect(r.body).toBe('1158201444');
+    expect(r.headers['content-type']).toContain('text/plain');
+  });
+
+  test('a GET never creates an execution, even on an unauthenticated trigger', async () => {
+    // The reason this is a separate handler rather than a branch: webhook URLs get pasted
+    // into chat apps that fetch them automatically, and a GET that started a run would
+    // fire on any crawler or link preview that touched one.
+    //
+    // authMode 'none' deliberately. An authenticated trigger would refuse a bare GET at
+    // the auth check and this test would pass whether or not the routing was safe — which
+    // is exactly what the first version of it did.
+    const { workflowId, routeKey } = await seedHook('none');
+    await app.inject({ method: 'GET', url: `/t/${routeKey}` });
+    await app.inject({ method: 'GET', url: `/t/${routeKey}?hub.mode=subscribe` });
+    await app.inject({ method: 'GET', url: handshakeUrl(routeKey, 'anything') });
+    const runs = await pool.query<{ count: string }>(
+      `SELECT count(*) AS count FROM executions WHERE workflow_id = $1`,
+      [workflowId],
+    );
+    expect(Number(runs.rows[0]!.count)).toBe(0);
+    const outbox = await pool.query<{ count: string }>(`SELECT count(*) AS count FROM task_outbox`);
+    expect(Number(outbox.rows[0]!.count)).toBe(0);
+  });
+
+  test('a GET on a signed trigger creates nothing either', async () => {
+    const { workflowId, routeKey, secret } = await seedHook('meta');
+    await app.inject({ method: 'GET', url: handshakeUrl(routeKey, secret) });
+    await app.inject({ method: 'GET', url: handshakeUrl(routeKey, 'wrong') });
+    const runs = await pool.query<{ count: string }>(
+      `SELECT count(*) AS count FROM executions WHERE workflow_id = $1`,
+      [workflowId],
+    );
+    expect(Number(runs.rows[0]!.count)).toBe(0);
+  });
+
+  test('a wrong verify token is a 404, indistinguishable from an unknown route key', async () => {
+    // A 401 here would confirm the key exists and turn this into an enumeration oracle.
+    const { routeKey, secret } = await seedHook('meta');
+    const wrongToken = await app.inject({ method: 'GET', url: handshakeUrl(routeKey, 'nope') });
+    const unknownKey = await app.inject({ method: 'GET', url: handshakeUrl('rk_does_not_exist', secret) });
+    expect(wrongToken.statusCode).toBe(404);
+    expect(unknownKey.statusCode).toBe(404);
+    expect(wrongToken.json()).toEqual(unknownKey.json());
+  });
+
+  test('a trigger with no secret can never complete a handshake', async () => {
+    const { routeKey } = await seedHook('none');
+    expect((await app.inject({ method: 'GET', url: handshakeUrl(routeKey, '') })).statusCode).toBe(404);
+  });
+
+  test('the challenge is not a reflector for arbitrary content', async () => {
+    const { routeKey, secret } = await seedHook('meta');
+    const r = await app.inject({
+      method: 'GET',
+      url: handshakeUrl(routeKey, secret, encodeURIComponent('<script>alert(1)</script>')),
+    });
+    expect(r.statusCode).toBe(404);
+  });
+
+  test('works against an envelope-encrypted secret too', async () => {
+    const { routeKey, secret } = await seedHook('meta', { envelope: true });
+    const r = await app.inject({ method: 'GET', url: handshakeUrl(routeKey, secret) });
+    expect(r.body).toBe('1158201444');
   });
 });

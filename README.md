@@ -144,7 +144,7 @@ results, plus worker-crash recovery via BullMQ stalled-job redelivery.
 Webhook and schedule triggers start executions without `POST /execute`:
 
 1. Build a workflow whose entrypoint is a `webhook.trigger`
-   (`parameters: { authMode: 'none'|'token'|'hmac', idempotencyKeyPath?: 'event.id' }`)
+   (`parameters: { authMode: 'none'|'token'|'hmac'|'meta'|'xendit'|'midtrans', idempotencyKeyPath?: 'event.id' }`)
    or `schedule.trigger` (`parameters: { cron: '*/5 * * * *', timezone?: 'Asia/Jakarta' }`;
    6-field seconds cron supported).
 2. Publish it, then `POST /v1/workflows/:id/activate` — the response contains the
@@ -155,6 +155,38 @@ Webhook and schedule triggers start executions without `POST /execute`:
 4. Duplicate deliveries are deduped by `idempotencyKeyPath` → `Idempotency-Key` header →
    raw-body hash. `POST /v1/workflows/:id/deactivate` stops production traffic without
    touching definitions or running executions.
+
+### Receiving from a provider
+
+`hmac` and `token` are Xperiment's own schemes. The other three exist because each provider
+dictates exactly one, and none of them matches:
+
+| `authMode` | What arrives | Verified against |
+|---|---|---|
+| `meta` | `X-Hub-Signature-256: sha256=<hex>` | HMAC-SHA256 over the raw body |
+| `xendit` | `x-callback-token: <token>` | Constant-time compare with the secret |
+| `midtrans` | `signature_key` **inside** the JSON body | `sha512(order_id + status_code + gross_amount + secret)` |
+
+Midtrans concatenates the three fields as the **exact strings it sent**. Parsing
+`gross_amount` `"56000.00"` into a number and re-formatting it produces a different
+digest and rejects every genuine callback — that is the usual way this integration
+fails.
+
+An `authMode` nobody implemented fails closed. A typo cannot read as "no auth needed".
+
+**Meta subscription handshake.** Meta subscribes with
+`GET /t/:routeKey?hub.mode=subscribe&hub.verify_token=…&hub.challenge=…` and requires
+the challenge echoed back as plain text. Xperiment answers that on `GET`, and the handler is
+deliberately separate from the POST path with two properties:
+
+- **A `GET` can never start an execution.** Webhook URLs get pasted into chat apps that
+  fetch them automatically; a `GET` that ran a workflow would fire on any crawler or link
+  preview that touched the URL.
+- **Every failure is `404`, never `401`** — byte-identical to an unknown route key.
+  A distinguishable failure would let someone sweep route keys and learn which ones exist
+  without ever authenticating. A trigger with no secret can never complete a handshake,
+  and the challenge must match `[A-Za-z0-9_-]{1,256}` so the endpoint cannot be used to
+  reflect arbitrary content.
 
 Run the two extra services alongside the core three:
 

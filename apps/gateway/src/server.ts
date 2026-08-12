@@ -13,7 +13,16 @@ import { runnableNodeIds, workflowIrSchema } from '@xperiment/ir';
 import { createReadiness, postgresDependency } from '@xperiment/observability';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { extractDedupKey, sanitizeHeaders, verifyHmac, verifyToken } from './verify.js';
+import {
+  extractDedupKey,
+  parseHandshake,
+  sanitizeHeaders,
+  verifyCallbackToken,
+  verifyHmac,
+  verifyMetaSignature,
+  verifyMidtransSignature,
+  verifyToken,
+} from './verify.js';
 
 const DEFAULT_EXECUTION_TIMEOUT_MS = 900000;
 const RESUME_BODY_CAP_BYTES = 262144; // matches the node output cap in @xperiment/db
@@ -46,6 +55,43 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
     return report;
   });
 
+  const secretFor = async (trigger: {
+    workspaceId: string;
+    secretEncrypted: Buffer | null;
+    secretEncVersion: number;
+  }): Promise<string> =>
+    trigger.secretEncrypted
+      ? deps.triggerVault.decrypt(trigger.workspaceId, {
+          blob: trigger.secretEncrypted,
+          encVersion: trigger.secretEncVersion,
+        })
+      : '';
+
+  /**
+   * Meta's subscription handshake, and NOTHING else.
+   *
+   * A separate handler rather than a method branch inside `handle`, because the one thing
+   * this route must never do is start an execution. A GET that triggered a run would fire
+   * on any crawler, link preview or browser prefetch that touched the URL — and webhook
+   * URLs end up pasted into chat apps that fetch them automatically.
+   *
+   * Every failure is 404, never 401. A distinguishable failure would let someone sweep
+   * route keys and learn which exist without authenticating.
+   */
+  const handshake = async (req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const { routeKey } = req.params as { routeKey: string };
+    const trigger = await getTriggerByRouteKey(deps.pool, routeKey);
+    if (!trigger) return reply.status(404).send({ title: 'Not found', status: 404 });
+    const wf = await getWorkflow(deps.pool, trigger.workflowId);
+    if (!wf?.activeVersionId) return reply.status(404).send({ title: 'Not found', status: 404 });
+
+    const challenge = parseHandshake(req.query, await secretFor(trigger));
+    if (challenge === null) return reply.status(404).send({ title: 'Not found', status: 404 });
+    // Plain text, verbatim: Meta compares the body byte for byte and a JSON wrapper fails
+    // the subscription with no useful error.
+    return reply.status(200).type('text/plain; charset=utf-8').send(challenge);
+  };
+
   const handle =
     (mode: 'production' | 'test') =>
     async (req: FastifyRequest, reply: FastifyReply) => {
@@ -60,19 +106,6 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
       }
 
       const rawBody = (req.body as Buffer | undefined) ?? Buffer.alloc(0);
-      if (trigger.authMode === 'token' || trigger.authMode === 'hmac') {
-        const secret = trigger.secretEncrypted
-          ? await deps.triggerVault.decrypt(trigger.workspaceId, {
-              blob: trigger.secretEncrypted,
-              encVersion: trigger.secretEncVersion,
-            })
-          : '';
-        const ok =
-          trigger.authMode === 'token'
-            ? verifyToken(req.headers['authorization'], secret)
-            : verifyHmac(req.headers['x-xperiment-signature'] as string | undefined, secret, rawBody);
-        if (!ok) return reply.status(401).send({ title: 'Unauthorized', status: 401 });
-      }
 
       let body: unknown = null;
       if (rawBody.length > 0) {
@@ -81,6 +114,28 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
         } catch {
           return reply.status(400).send({ title: 'Invalid JSON body', status: 400 });
         }
+      }
+
+      if (trigger.authMode !== null && trigger.authMode !== 'none') {
+        const secret = await secretFor(trigger);
+        const header = (name: string): string | undefined => req.headers[name] as string | undefined;
+        // Midtrans is the odd one: its digest lives in the parsed body, so this check has
+        // to happen after JSON parsing rather than on the raw bytes like the others.
+        const ok =
+          trigger.authMode === 'token'
+            ? verifyToken(req.headers['authorization'], secret)
+            : trigger.authMode === 'hmac'
+              ? verifyHmac(header('x-xperiment-signature'), secret, rawBody)
+              : trigger.authMode === 'meta'
+                ? verifyMetaSignature(header('x-hub-signature-256'), secret, rawBody)
+                : trigger.authMode === 'xendit'
+                  ? verifyCallbackToken(header('x-callback-token'), secret)
+                  : trigger.authMode === 'midtrans'
+                    ? verifyMidtransSignature(body, secret)
+                    : // An authMode nobody implemented fails closed. Falling through as
+                      // "no auth required" would turn a typo into an open endpoint.
+                      false;
+        if (!ok) return reply.status(401).send({ title: 'Unauthorized', status: 401 });
       }
 
       const dedupKey =
@@ -120,6 +175,9 @@ export function buildGateway(deps: GatewayDeps): FastifyInstance {
 
   app.post('/t/test/:routeKey', handle('test'));
   app.post('/t/:routeKey', handle('production'));
+  // Handshake only. `handshake` cannot start an execution — that is the whole reason it
+  // is a separate function rather than a branch inside `handle`.
+  app.get('/t/:routeKey', handshake);
 
   // Resume a waitForEvent node. The token is the secret (like a route key), so
   // no auth header is required; a single-use token resolves the open event wait.

@@ -3,7 +3,10 @@ import type { ConnectorDefinition } from '../types.js';
 
 const paramsSchema = z
   .object({
-    authMode: z.enum(['none', 'token', 'hmac']),
+    // The last three are provider schemes, not choices about strength: Meta signs under
+    // its own header name, Xendit sends a bare token, and Midtrans puts a SHA-512 digest
+    // inside the body. Each provider dictates exactly one.
+    authMode: z.enum(['none', 'token', 'hmac', 'meta', 'xendit', 'midtrans']),
     idempotencyKeyPath: z.string().min(1).optional(),
   })
   .strict();

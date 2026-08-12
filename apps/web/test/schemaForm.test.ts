@@ -22,7 +22,9 @@ describe('deriveFields against real connector schemas', () => {
     const authMode = field(fields, 'authMode');
     expect(authMode.kind).toBe('select');
     expect(authMode.required).toBe(true);
-    expect(authMode.options).toEqual(['none', 'token', 'hmac']);
+    // The last three are provider schemes, not strength choices: Meta signs under its own
+    // header, Xendit sends a bare token, Midtrans puts a digest inside the body.
+    expect(authMode.options).toEqual(['none', 'token', 'hmac', 'meta', 'xendit', 'midtrans']);
     const idem = field(fields, 'idempotencyKeyPath');
     expect(idem.kind).toBe('text');
     expect(idem.required).toBe(false);
