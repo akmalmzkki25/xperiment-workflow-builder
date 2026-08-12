@@ -547,6 +547,33 @@ finalizes the execution (so a redelivered job never double-counts):
 The web **Usage** page renders the totals as scorecards (runs, success rate, nodes,
 compute, AI tokens) with a runs-per-day chart.
 
+### Known defect: periods are UTC, the product is not
+
+Scheduling defaults to `Asia/Jakarta` (`DEFAULT_TZ`, and hardcoded in the trigger
+route and the scheduler tick), but every period boundary here is UTC:
+
+- `periodStart` in `@xperiment/plans` is the UTC month start, and it keys both
+  `workspace_usage_counters` and invoice periods.
+- the daily series groups on `date_trunc('day', occurred_at AT TIME ZONE 'UTC')`.
+- `GET /v1/usage` defaults its own window to the UTC month, independently.
+
+For an Indonesian shop that means runs between **00:00 and 07:00 WIB land on the
+previous day** — and on the first of the month, in the previous *month*. A shop
+owner counting their own August orders will disagree with the invoice about the
+first seven hours of 1 August and the last seven of 31 August.
+
+**Not fixed here on purpose.** Correcting only the reporting view would leave the
+usage page on WIB months while invoices stayed on UTC months — a new
+inconsistency, in the one place where the two numbers are supposed to match.
+Correcting both means changing the key of `workspace_usage_counters`, and a
+straight rekey is not enough: a run at 03:00 WIB on 1 August was *counted into
+July*, so the counters have to be recomputed from the `usage_events` ledger. That
+is a data migration on money, and it wants its own spec and review rather than
+being folded into unrelated work.
+
+The ledger itself is fine — `usage_events.occurred_at` is a `timestamptz`, so no
+information has been lost and the recomputation is possible whenever it is done.
+
 ## Templates & WhatsApp vertical pack (Phase 2L)
 
 A curated, built-in template catalog — starting with an Indonesian **WhatsApp
