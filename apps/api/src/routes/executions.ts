@@ -65,6 +65,26 @@ const listQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+/**
+ * `status` defaults to the two failure states, and cannot be empty.
+ *
+ * "Retry everything" has no honest meaning — re-running a success duplicates work that
+ * already happened, and a caller who omits the filter almost certainly meant the failures.
+ */
+const bulkRetrySchema = z
+  .object({
+    workflowId: z.string().uuid().optional(),
+    status: z
+      .array(z.enum(EXECUTION_STATUSES))
+      .min(1)
+      .max(EXECUTION_STATUSES.length)
+      .default(['FAILED', 'TIMED_OUT']),
+    // Capped: an unbounded bulk re-run is a way to replay a month of work with one click.
+    limit: z.number().int().min(1).max(100).default(25),
+    dryRun: z.boolean().default(false),
+  })
+  .strict();
+
 export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServerDeps): void {
   app.post('/v1/workflows/:id/execute', async (req, reply) => {
     const ctx = authOf(req);
@@ -244,17 +264,32 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
     return { status: 'CANCELED' };
   });
 
-  app.post('/v1/executions/:id/retry', async (req, reply) => {
-    const ctx = authOf(req);
-    if (!requirePermission(reply, ctx, 'execution:run')) return;
-    const { id } = req.params as { id: string };
-    const detail = await getExecutionDetail(deps.pool, id, ctx.workspaceId);
-    if (!detail) return sendProblem(reply, 404, 'Execution not found');
+  /**
+   * Re-run one execution against the version it originally ran.
+   *
+   * Shared by the single and the bulk route so they cannot drift: a bulk retry that
+   * reproduced runs differently from the button beside them would be worse than no bulk
+   * retry at all.
+   */
+  type RetryOutcome =
+    | { kind: 'created'; executionId: string; status: string }
+    | { kind: 'deduped'; executionId: string; status: string }
+    | { kind: 'version_missing' }
+    | { kind: 'quota_exceeded'; refusal: QuotaRefusal };
+
+  async function retryOne(
+    workspaceId: string,
+    id: string,
+    idempotencyKey: string,
+  ): Promise<RetryOutcome | null> {
+    const detail = await getExecutionDetail(deps.pool, id, workspaceId);
+    if (!detail) return null;
     const version = await getVersion(deps.pool, detail.execution.workflowVersionId);
-    if (!version) return sendProblem(reply, 409, 'Original version missing');
+    // A version pruned or rolled away is a skip, not a batch failure: one unreplayable
+    // run must not stop the ninety-nine that can be replayed.
+    if (!version) return { kind: 'version_missing' };
     const ir = workflowIrSchema.parse(version.definition);
     const payload = await getTriggerPayload(deps.pool, id);
-    const idempotencyKey = (req.headers['idempotency-key'] as string | undefined) ?? randomUUID();
     const result = await createExecutionWithTrigger(deps.pool, {
       workflowId: detail.execution.workflowId,
       versionId: version.id,
@@ -263,13 +298,101 @@ export function registerExecutionRoutes(app: FastifyInstance, deps: ResolvedServ
       nodeIds: runnableNodeIds(ir),
       executionTimeoutMs: ir.metadata?.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
     });
-    if (result.outcome === 'quota_exceeded') {
-      sendQuotaProblem(reply, result);
+    if (result.outcome === 'quota_exceeded') return { kind: 'quota_exceeded', refusal: result };
+    return {
+      kind: result.outcome === 'created' ? 'created' : 'deduped',
+      executionId: result.execution.id,
+      status: result.execution.status,
+    };
+  }
+
+  app.post('/v1/executions/:id/retry', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'execution:run')) return;
+    const { id } = req.params as { id: string };
+    const idempotencyKey = (req.headers['idempotency-key'] as string | undefined) ?? randomUUID();
+    const outcome = await retryOne(ctx.workspaceId, id, idempotencyKey);
+    if (outcome === null) return sendProblem(reply, 404, 'Execution not found');
+    if (outcome.kind === 'version_missing') return sendProblem(reply, 409, 'Original version missing');
+    if (outcome.kind === 'quota_exceeded') {
+      sendQuotaProblem(reply, outcome.refusal);
       return;
     }
-    const created = result.outcome === 'created';
+    const created = outcome.kind === 'created';
     return reply
       .status(created ? 201 : 200)
-      .send({ executionId: result.execution.id, status: result.execution.status, created });
+      .send({ executionId: outcome.executionId, status: outcome.status, created });
+  });
+
+  /**
+   * Re-run every failure matching a filter.
+   *
+   * The operational shape this exists for: a provider token expires, forty runs fail over
+   * a weekend, somebody rotates the credential on Monday and needs those forty back —
+   * without opening forty tabs.
+   *
+   * Three constraints, each because a bulk re-run spends real money and real rate limit:
+   *
+   *  - `dryRun` first. The count is the thing an operator needs before committing, and it
+   *    costs one query.
+   *  - Hard-capped per call. An unbounded "retry everything" is a way to replay a month
+   *    of work with one click.
+   *  - Stops at the first quota refusal and REPORTS the partial. Quietly doing 43 of 100
+   *    and answering 200 would be a lie the operator only discovers from the invoice.
+   */
+  app.post('/v1/executions/retry', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'execution:run')) return;
+    const parsed = bulkRetrySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
+
+    const candidates = await listExecutions(deps.pool, {
+      workspaceId: ctx.workspaceId,
+      status: parsed.data.status,
+      limit: parsed.data.limit,
+      ...(parsed.data.workflowId ? { workflowId: parsed.data.workflowId } : {}),
+    });
+
+    if (parsed.data.dryRun) {
+      return { dryRun: true, matched: candidates.items.length, retried: 0, skipped: 0, stoppedForQuota: false };
+    }
+
+    let retried = 0;
+    let skipped = 0;
+    let stoppedForQuota = false;
+    // Oldest first, so a partial batch replays the backlog in the order it happened.
+    for (const execution of [...candidates.items].reverse()) {
+      const outcome = await retryOne(ctx.workspaceId, execution.id, randomUUID());
+      if (outcome === null || outcome.kind === 'version_missing') {
+        skipped += 1;
+        continue;
+      }
+      if (outcome.kind === 'quota_exceeded') {
+        stoppedForQuota = true;
+        break;
+      }
+      retried += 1;
+    }
+
+    // One row for the batch, not one per execution — the same reasoning as the rekey
+    // backfill. Per-run rows would bury the fact that a human did this once, deliberately.
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      workspaceId: ctx.workspaceId,
+      action: 'execution.retry_batch',
+      outcome: stoppedForQuota ? 'failure' : 'success',
+      metadata: {
+        matched: candidates.items.length,
+        retried,
+        skipped,
+        stoppedForQuota,
+        // Joined: audit metadata holds scalars, and the reader wants the filter as one
+        // readable string anyway.
+        status: parsed.data.status.join(','),
+        ...(parsed.data.workflowId ? { workflowId: parsed.data.workflowId } : {}),
+      },
+    });
+
+    return { dryRun: false, matched: candidates.items.length, retried, skipped, stoppedForQuota };
   });
 }

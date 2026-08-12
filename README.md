@@ -454,6 +454,27 @@ with a different filter it would return the page of rows after that position fro
 the wrong set — no error, no empty result, silently wrong. The filter is hashed
 into the cursor and a mismatch is a 400.
 
+### Re-running a batch of failures
+
+A provider token expires, forty runs fail over a weekend, somebody rotates the
+credential on Monday. `POST /v1/executions/retry` takes those forty back without
+opening forty tabs — and on the executions page the filter you are already
+looking at *is* the retry filter, so there is no second chance to get it wrong.
+
+Three constraints, because a bulk re-run spends real money and real rate limit:
+
+- **`dryRun` first.** The count is what a person needs before committing, and it
+  costs one query. The UI's **Count matches** button does exactly this.
+- **Capped per call** (100, default 25). An unbounded "retry everything" is a way
+  to replay a month of work with one click.
+- **Stops at the first quota refusal and reports the partial.** Quietly doing 43
+  of 100 and answering 200 would be a lie the operator discovers from the invoice.
+
+`status` defaults to `FAILED, TIMED_OUT` and cannot be empty — re-running a
+success duplicates work that already happened. One audit row (`execution.retry_batch`)
+covers the whole batch, not one per run: per-run rows would bury the fact that a
+human did this once, deliberately.
+
 One measured detail shapes the query, and it is about **ordering**, not index use.
 `status = ANY('{FAILED}')` *does* use the status index — but as a Bitmap Index
 Scan, which cannot emit rows in index order, so Postgres sorts the whole matching
@@ -812,8 +833,8 @@ is the control that applies.
 
 ### Audit trail
 
-`audit_events` records credential lifecycle (`credential.create`, `.rotate`, `.delete`,
-`.test`),
+`audit_events` records bulk re-runs (`execution.retry_batch`), credential lifecycle
+(`credential.create`, `.rotate`, `.delete`, `.test`),
 credential use by a workflow node (`credential.read_use`, one row per node), signing
 secret disclosure (`trigger_secret.reveal`), the backfill (`secret.rekey_batch`),
 authentication (`auth.register`, `.login_failed`, `.login_succeeded`, `.logout`,

@@ -121,6 +121,7 @@ describe('endpoint helpers', () => {
     await client.execute('wf1');
     await client.listDeliveries('wf1');
     await client.listDeliveries('wf1', 'hook');
+    await client.bulkRetry({ workflowId: 'wf1', dryRun: true });
     await client.listConnections();
     await client.createConnection('telegram', 'Bot', { botToken: 'x' });
     await client.rotateConnection('c1', { botToken: 'y' });
@@ -165,6 +166,7 @@ describe('endpoint helpers', () => {
       'POST /v1/workflows/wf1/execute',
       'GET /v1/workflows/wf1/deliveries',
       'GET /v1/workflows/wf1/deliveries?nodeId=hook',
+      'POST /v1/executions/retry',
       'GET /v1/connections',
       'POST /v1/connections',
       'PUT /v1/connections/c1',

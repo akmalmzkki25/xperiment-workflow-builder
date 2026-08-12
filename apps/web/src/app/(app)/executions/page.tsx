@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
@@ -42,6 +42,40 @@ function ExecutionsList() {
   const items = executions.data?.items ?? [];
   const nextCursor = executions.data?.nextCursor ?? null;
 
+  const queryClient = useQueryClient();
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  // The filter the operator is already looking at IS the retry filter. Asking them to
+  // restate it in a dialog would be a second chance to get it wrong.
+  const retry = useMutation({
+    mutationFn: (dryRun: boolean) =>
+      getBrowserClient().bulkRetry({
+        ...(workflowId ? { workflowId } : {}),
+        ...(statuses ? { status: statuses } : {}),
+        dryRun,
+      }),
+    onSuccess: (r) => {
+      if (r.dryRun) {
+        setRetryNotice(
+          r.matched === 0
+            ? 'Nothing matches this filter, so there is nothing to re-run.'
+            : `${r.matched} run(s) match. Re-run them?`,
+        );
+        return;
+      }
+      setRetryNotice(
+        r.stoppedForQuota
+          ? `Re-ran ${r.retried} of ${r.matched} and stopped: the workspace hit its execution limit.`
+          : `Re-ran ${r.retried} run(s)${r.skipped > 0 ? `, skipped ${r.skipped} whose version is gone` : ''}.`,
+      );
+      setCursors([]);
+      void queryClient.invalidateQueries({ queryKey: ['executions'] });
+    },
+    onError: (e) => setRetryNotice(e instanceof Error ? e.message : 'Bulk retry failed'),
+  });
+  // Re-running successes duplicates work that already happened, so the button is only
+  // offered on a filter that selects failures.
+  const canBulkRetry = choice === 'PROBLEMS' || choice === 'FAILED' || choice === 'TIMED_OUT';
+
   const setChoice = (next: string): void => {
     setCursors([]);
     router.replace(`/executions${paramsForChoice(next, workflowId)}`);
@@ -65,6 +99,32 @@ function ExecutionsList() {
           ))}
         </select>
       </div>
+
+      {canBulkRetry && !forbidden ? (
+        <div className="q-banner" data-testid="bulk-retry-bar">
+          <span>{retryNotice ?? 'Fixed whatever broke these? Re-run them all.'}</span>
+          <button
+            className="q-btn q-btn--ghost q-btn--sm"
+            disabled={retry.isPending}
+            onClick={() => retry.mutate(true)}
+            data-testid="bulk-retry-count"
+          >
+            Count matches
+          </button>
+          <button
+            className="q-btn q-btn--sm"
+            disabled={retry.isPending}
+            onClick={() => {
+              if (window.confirm('Re-run every execution matching this filter? Each one uses quota.')) {
+                retry.mutate(false);
+              }
+            }}
+            data-testid="bulk-retry-run"
+          >
+            Re-run matching
+          </button>
+        </div>
+      ) : null}
 
       {forbidden ? (
         <PermissionNotice detail={forbidden} />

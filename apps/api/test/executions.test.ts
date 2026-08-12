@@ -384,3 +384,141 @@ describe('executions list filtering', () => {
     expect(r.statusCode).toBe(400);
   });
 });
+
+describe('bulk retry', () => {
+  const setLimit = (ws: string, patch: Record<string, number | null>) =>
+    pool.query(`UPDATE workspace_plans SET limit_overrides = $2 WHERE workspace_id = $1`, [
+      ws,
+      JSON.stringify(patch),
+    ]);
+
+  /** Failed runs the operator would want back after fixing whatever broke them. */
+  async function seedFailures(count: number): Promise<{ workflowId: string; ids: string[] }> {
+    const workflowId = await publishedWorkflow();
+    const version = await pool.query<{ id: string }>(
+      `SELECT id FROM workflow_versions WHERE workflow_id = $1 LIMIT 1`,
+      [workflowId],
+    );
+    const ws = await pool.query<{ workspace_id: string }>(`SELECT workspace_id FROM workflows WHERE id = $1`, [
+      workflowId,
+    ]);
+    const ids: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const r = await pool.query<{ id: string }>(
+        `INSERT INTO executions (workspace_id, workflow_id, workflow_version_id, status, created_at)
+         VALUES ($1, $2, $3, 'FAILED', now() - make_interval(mins => $4)) RETURNING id`,
+        [ws.rows[0]!.workspace_id, workflowId, version.rows[0]!.id, i],
+      );
+      ids.push(r.rows[0]!.id);
+    }
+    return { workflowId, ids };
+  }
+
+  const countRuns = async (workflowId: string): Promise<number> => {
+    const r = await pool.query<{ count: string }>(
+      `SELECT count(*) AS count FROM executions WHERE workflow_id = $1`,
+      [workflowId],
+    );
+    return Number(r.rows[0]!.count);
+  };
+
+  test('a dry run counts without creating anything', async () => {
+    // The count is what an operator needs before committing to spending quota, and it
+    // costs one query.
+    const { workflowId } = await seedFailures(3);
+    const before = await countRuns(workflowId);
+    const r = await auth.inject({
+      method: 'POST',
+      url: '/v1/executions/retry',
+      payload: { workflowId, dryRun: true },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ dryRun: true, matched: 3, retried: 0 });
+    expect(await countRuns(workflowId)).toBe(before);
+  });
+
+  test('retries every matching failure and leaves successes alone', async () => {
+    const { workflowId } = await seedFailures(3);
+    await pool.query(`UPDATE executions SET status = 'SUCCEEDED' WHERE workflow_id = $1 AND status = 'FAILED'
+                      AND id IN (SELECT id FROM executions WHERE workflow_id = $1 LIMIT 1)`, [workflowId]);
+    const r = await auth.inject({
+      method: 'POST',
+      url: '/v1/executions/retry',
+      payload: { workflowId },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ retried: 2, skipped: 0, stoppedForQuota: false });
+    // Two new runs, so five rows where there were three.
+    expect(await countRuns(workflowId)).toBe(5);
+  });
+
+  test('defaults to the failure statuses rather than everything', async () => {
+    // "Retry everything" has no honest meaning — re-running a success duplicates work
+    // that already happened.
+    const { workflowId } = await seedFailures(2);
+    await pool.query(`UPDATE executions SET status = 'SUCCEEDED' WHERE workflow_id = $1`, [workflowId]);
+    const r = await auth.inject({ method: 'POST', url: '/v1/executions/retry', payload: { workflowId } });
+    expect(r.json()).toMatchObject({ matched: 0, retried: 0 });
+  });
+
+  test('an empty status list is refused, not treated as "all"', async () => {
+    const r = await auth.inject({ method: 'POST', url: '/v1/executions/retry', payload: { status: [] } });
+    expect(r.statusCode).toBe(400);
+  });
+
+  test('the batch is capped, so it cannot replay a month with one click', async () => {
+    const over = await auth.inject({ method: 'POST', url: '/v1/executions/retry', payload: { limit: 101 } });
+    expect(over.statusCode).toBe(400);
+    const { workflowId } = await seedFailures(4);
+    const r = await auth.inject({
+      method: 'POST',
+      url: '/v1/executions/retry',
+      payload: { workflowId, limit: 2 },
+    });
+    expect(r.json()).toMatchObject({ matched: 2, retried: 2 });
+  });
+
+  test('stops at the first quota refusal and REPORTS the partial', async () => {
+    // Quietly doing two of four and answering 200 would be a lie the operator only
+    // discovers from the invoice.
+    const { workflowId } = await seedFailures(4);
+    const ws = await pool.query<{ workspace_id: string }>(`SELECT workspace_id FROM workflows WHERE id = $1`, [
+      workflowId,
+    ]);
+    // Four seeded runs already count against the cap, so five allows exactly one retry.
+    await setLimit(ws.rows[0]!.workspace_id, { executionsPerMonth: 5 });
+    const r = await auth.inject({ method: 'POST', url: '/v1/executions/retry', payload: { workflowId } });
+    expect(r.statusCode).toBe(200);
+    const body = r.json<{ retried: number; stoppedForQuota: boolean }>();
+    expect(body.stoppedForQuota).toBe(true);
+    expect(body.retried).toBeLessThan(4);
+    await setLimit(ws.rows[0]!.workspace_id, {});
+  });
+
+  test('writes one audit row for the batch, not one per execution', async () => {
+    // Per-run rows would bury the fact that a human did this once, deliberately.
+    await pool.query(`DELETE FROM audit_events WHERE action = 'execution.retry_batch'`);
+    const { workflowId } = await seedFailures(3);
+    await auth.inject({ method: 'POST', url: '/v1/executions/retry', payload: { workflowId } });
+    const rows = await pool.query<{ metadata: Record<string, unknown> }>(
+      `SELECT metadata FROM audit_events WHERE action = 'execution.retry_batch'`,
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0]!.metadata).toMatchObject({ retried: 3, matched: 3 });
+  });
+
+  test('a viewer may not bulk retry', async () => {
+    const viewer = await addMemberWithRole(app, pool, auth.workspaceId, 'viewer');
+    const r = await viewer.inject({ method: 'POST', url: '/v1/executions/retry', payload: {} });
+    expect(r.statusCode).toBe(403);
+  });
+
+  test('another workspace retries nothing of ours', async () => {
+    const { workflowId } = await seedFailures(2);
+    const before = await countRuns(workflowId);
+    const other = await createAuthedUser(app);
+    const r = await other.inject({ method: 'POST', url: '/v1/executions/retry', payload: {} });
+    expect(r.json()).toMatchObject({ matched: 0, retried: 0 });
+    expect(await countRuns(workflowId)).toBe(before);
+  });
+});

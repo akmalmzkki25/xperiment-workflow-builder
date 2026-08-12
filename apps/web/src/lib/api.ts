@@ -376,6 +376,22 @@ export class ApiClient {
   }
 
   /**
+   * Re-run every execution matching a filter.
+   *
+   * `dryRun` first is the intended flow: the count is what a person needs before
+   * committing quota. The server caps the batch and stops at a quota refusal, reporting
+   * the partial rather than pretending it finished.
+   */
+  bulkRetry(body: {
+    workflowId?: string;
+    status?: readonly string[];
+    limit?: number;
+    dryRun?: boolean;
+  }): Promise<{ dryRun: boolean; matched: number; retried: number; skipped: number; stoppedForQuota: boolean }> {
+    return this.request('POST', '/v1/executions/retry', { body });
+  }
+
+  /**
    * Inbound deliveries, accepted and rejected. No body, no header values — the server
    * stores neither, so there is nothing here to redact.
    */

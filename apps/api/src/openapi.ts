@@ -105,6 +105,13 @@ export const OPENAPI_DOCUMENT = {
       put: { summary: 'Set the completion webhook (returns the signing secret once)', tags: ['workflows'] },
       delete: { summary: 'Clear the completion webhook', tags: ['workflows'] },
     },
+    '/v1/executions/retry': {
+      post: {
+        summary:
+          'Re-run every execution matching a filter (defaults to failures; dryRun counts first, capped per call, stops and reports on a quota refusal)',
+        tags: ['executions'],
+      },
+    },
     '/v1/executions': {
       get: {
         summary:

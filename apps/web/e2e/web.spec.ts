@@ -198,6 +198,39 @@ test('a webhook fire appears in executions with a green timeline', async ({ page
   await page.screenshot({ path: `${ARTIFACTS}/03-execution-detail.png` });
 });
 
+test('the trigger panel shows deliveries, including one the gateway turned away', async ({ page, request }) => {
+  // Covers the wiring unit tests cannot: gateway records → api serves → panel renders.
+  // The previous test already posted an accepted delivery; this adds a rejected one.
+  expect(webhookUrl).not.toBe('');
+  // A Buffer, not a string: Playwright JSON-encodes a string `data`, so `'{not json'`
+  // would arrive as the valid JSON string "{not json" and be accepted.
+  const bad = await request.post(webhookUrl, {
+    headers: { 'content-type': 'application/json' },
+    data: Buffer.from('{not json'),
+  });
+  expect(bad.status()).toBe(400);
+
+  await loginWithToken(page);
+  await page.getByTestId('nav-workflows').click();
+  await page.locator('.q-table tbody tr td a').first().click();
+  await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}/);
+
+  // The panel is behind a deliberate press: fetching it writes an audit row per secret.
+  await page.getByTestId('triggers-show').click();
+  const deliveries = page.getByTestId('trigger-deliveries-webhook_trigger');
+  await expect(deliveries).toBeVisible();
+  // Lazily fetched, so nothing is there until the section is opened.
+  await expect(deliveries).not.toContainText('accepted');
+  await deliveries.getByText('Recent deliveries').click();
+
+  // Both outcomes, and the rejected one explains itself rather than just failing.
+  await expect(deliveries).toContainText('accepted', { timeout: 15_000 });
+  await expect(deliveries).toContainText('invalid_json');
+  await expect(deliveries).toContainText('not valid JSON');
+  // The body is never stored, so it can never be rendered.
+  await expect(deliveries).not.toContainText('not json');
+});
+
 test('creates and tests a telegram connection without leaking the secret', async ({ page }) => {
   await loginWithToken(page);
   await page.getByTestId('nav-connections').click();
