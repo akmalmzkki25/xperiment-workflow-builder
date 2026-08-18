@@ -106,14 +106,9 @@ export function isBlocked(lines: readonly QuotaLine[], metric: LimitKey): boolea
   return lines.some((l) => l.metric === metric && l.status === 'blocked');
 }
 
-/** First instant of the UTC calendar month — the single definition of a billing period. */
-export function periodStart(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-}
-
-export function periodEnd(start: Date): Date {
-  return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
-}
+// What a billing period is, in Asia/Jakarta rather than UTC. `periodStart`/`periodEnd`
+// were removed rather than deprecated so tsc names every call site.
+export * from './period.js';
 
 // Pricing and invoice arithmetic. The cycle is type-only in the other direction —
 // invoice.ts imports these types with `import type`, which TypeScript erases.

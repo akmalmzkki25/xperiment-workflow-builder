@@ -1,4 +1,4 @@
-import { LIMIT_KEYS, PLAN_CATALOG, type LimitKey, type PlanCode, type PlanLimits } from '@xperiment/plans';
+import { BILLING_TZ, LIMIT_KEYS, PLAN_CATALOG, type LimitKey, type PlanCode, type PlanLimits } from '@xperiment/plans';
 import { type Db } from '../pool.js';
 
 /** Only flows are counted; stocks are live count(*). */
@@ -61,15 +61,15 @@ export async function setWorkspacePlan(
 
 export async function incrementUsageCounter(
   db: Db,
-  args: { workspaceId: string; periodStart: Date; metric: CounterMetric; quantity: number },
+  args: { workspaceId: string; periodKey: string; metric: CounterMetric; quantity: number },
 ): Promise<void> {
   if (args.quantity <= 0) return;
   await db.query(
     `INSERT INTO workspace_usage_counters (workspace_id, period_start, metric, quantity)
-     VALUES ($1,$2,$3,$4)
+     VALUES ($1,$2::date,$3,$4)
      ON CONFLICT (workspace_id, period_start, metric)
        DO UPDATE SET quantity = workspace_usage_counters.quantity + EXCLUDED.quantity`,
-    [args.workspaceId, args.periodStart, args.metric, args.quantity],
+    [args.workspaceId, args.periodKey, args.metric, args.quantity],
   );
 }
 
@@ -77,11 +77,11 @@ export async function incrementUsageCounter(
 export async function getQuotaUsage(
   db: Db,
   workspaceId: string,
-  periodStart: Date,
+  periodKey: string,
 ): Promise<Record<LimitKey, number>> {
   const counters = await db.query(
-    `SELECT metric, quantity FROM workspace_usage_counters WHERE workspace_id = $1 AND period_start = $2`,
-    [workspaceId, periodStart],
+    `SELECT metric, quantity FROM workspace_usage_counters WHERE workspace_id = $1 AND period_start = $2::date`,
+    [workspaceId, periodKey],
   );
   const gauges = await db.query(
     `SELECT
@@ -104,17 +104,21 @@ export async function getQuotaUsage(
  * Rebuild the flow counters from the ledger, which stays the billing source of truth.
  * Drift is therefore detectable and repairable rather than silent.
  */
-export async function recomputeCounters(db: Db, workspaceId: string, periodStart: Date): Promise<void> {
+export async function recomputeCounters(db: Db, workspaceId: string, periodKey: string): Promise<void> {
   await db.query(
-    // $2 is cast at every use: it addresses a DATE column and bounds a TIMESTAMPTZ
-    // one, and Postgres refuses to deduce a single type for the parameter otherwise.
+    // The bounds are WIB midnights, not the bare date. `occurred_at >= $2::date` would
+    // compare a timestamptz against a date cast with the SESSION TimeZone, which means
+    // the boundary of a billing period would be a database setting rather than an
+    // application decision — and on a UTC session it put 00:00-07:00 WIB on the 1st into
+    // the previous month.
     `INSERT INTO workspace_usage_counters (workspace_id, period_start, metric, quantity)
      SELECT $1, $2::date, metric, COALESCE(SUM(quantity),0)
      FROM usage_events
      WHERE workspace_id = $1 AND metric IN ('execution','ai_tokens')
-       AND occurred_at >= $2::date AND occurred_at < ($2::date + INTERVAL '1 month')
+       AND occurred_at >= ($2::date::timestamp AT TIME ZONE $3)
+       AND occurred_at < (($2::date + INTERVAL '1 month') AT TIME ZONE $3)
      GROUP BY metric
      ON CONFLICT (workspace_id, period_start, metric) DO UPDATE SET quantity = EXCLUDED.quantity`,
-    [workspaceId, periodStart],
+    [workspaceId, periodKey, BILLING_TZ],
   );
 }

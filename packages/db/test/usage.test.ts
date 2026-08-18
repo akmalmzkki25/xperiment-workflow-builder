@@ -64,20 +64,28 @@ describe('getUsageSummary', () => {
     expect(s.series[0]).toMatchObject({ date: '2026-07-10', executions: 1, nodes: 4, computeMs: 500, aiTokens: 90 });
   });
 
-  test('applies a half-open window and buckets days in UTC at boundaries', async () => {
+  test('applies a half-open window and buckets days in WIB, the days the shop keeps', async () => {
     const from = at('2026-09-01T00:00:00Z');
     const to = at('2026-10-01T00:00:00Z');
+    const run = (occurredAt: Date) => ({
+      workspaceId: WS,
+      metric: 'execution' as const,
+      quantity: 1,
+      metadata: { status: 'SUCCEEDED' },
+      occurredAt,
+    });
     await insertUsageEvents(pool, [
-      { workspaceId: WS, metric: 'execution', quantity: 1, metadata: { status: 'SUCCEEDED' }, occurredAt: from }, // exactly from → included
-      { workspaceId: WS, metric: 'execution', quantity: 1, metadata: { status: 'SUCCEEDED' }, occurredAt: to }, // exactly to → excluded (half-open)
-      { workspaceId: WS, metric: 'execution', quantity: 1, metadata: { status: 'SUCCEEDED' }, occurredAt: at('2026-09-15T23:59:59Z') }, // late UTC → stays on the 15th
-      { workspaceId: WS, metric: 'execution', quantity: 1, metadata: { status: 'SUCCEEDED' }, occurredAt: at('2026-09-16T00:00:30Z') }, // just past midnight → the 16th
+      run(from), // exactly from → included
+      run(to), // exactly to → excluded (half-open)
+      // 31 minutes apart and on the same UTC day, but either side of midnight in
+      // Jakarta. A UTC series calls both of them the 15th; the shop had closed.
+      run(at('2026-09-15T23:59:00+07:00')),
+      run(at('2026-09-16T00:30:00+07:00')),
     ]);
     const s = await getUsageSummary(pool, { workspaceId: WS, from, to });
     expect(s.totals.executions).toBe(3); // the row exactly at `to` is excluded
     const days = s.series.map((d) => d.date);
-    expect(days).toContain('2026-09-01');
-    expect(days).toContain('2026-09-15'); // 23:59:59Z is NOT shifted into the 16th
+    expect(days).toContain('2026-09-15');
     expect(days).toContain('2026-09-16');
     expect(days).not.toContain('2026-10-01'); // excluded by `< to`
   });

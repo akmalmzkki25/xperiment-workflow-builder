@@ -2,8 +2,6 @@ import { describe, expect, test } from 'vitest';
 import {
   evaluateQuota,
   isBlocked,
-  periodEnd,
-  periodStart,
   PLAN_CATALOG,
   resolveLimits,
   SOFT_LIMIT_RATIO,
@@ -97,19 +95,5 @@ describe('isBlocked', () => {
     expect(isBlocked(lines, 'executionsPerMonth')).toBe(true);
     expect(isBlocked(lines, 'aiTokensPerMonth')).toBe(false);
     expect(isBlocked(lines, 'activeWorkflows')).toBe(false);
-  });
-});
-
-describe('period boundaries', () => {
-  test('periodStart is the first instant of the UTC month', () => {
-    expect(periodStart(new Date('2026-07-28T13:45:00Z')).toISOString()).toBe('2026-07-01T00:00:00.000Z');
-  });
-
-  test('a UTC month boundary belongs to the new month', () => {
-    expect(periodStart(new Date('2026-08-01T00:00:00Z')).toISOString()).toBe('2026-08-01T00:00:00.000Z');
-  });
-
-  test('periodEnd rolls the year over', () => {
-    expect(periodEnd(new Date('2026-12-01T00:00:00Z')).toISOString()).toBe('2027-01-01T00:00:00.000Z');
   });
 });

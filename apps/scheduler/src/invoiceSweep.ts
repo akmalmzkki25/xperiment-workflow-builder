@@ -38,12 +38,11 @@ export async function runInvoiceSweep(deps: InvoiceSweepDeps): Promise<{ issued:
     try {
       const plan = await getWorkspacePlan(deps.pool, workspaceId);
       const limits = resolveLimits(plan.planCode, plan.limitOverrides);
-      const usage = await getQuotaUsage(deps.pool, workspaceId, period.start);
+      const usage = await getQuotaUsage(deps.pool, workspaceId, period.key);
       const draft = buildInvoice({ planCode: plan.planCode, limits, usage, taxRateBps: taxRateBps() });
       const invoice = await issueInvoice(deps.pool, {
         workspaceId,
-        periodStart: period.start,
-        periodEnd: period.end,
+        period,
         planCode: plan.planCode,
         draft,
       });
@@ -59,7 +58,7 @@ export async function runInvoiceSweep(deps: InvoiceSweepDeps): Promise<{ issued:
   // A full batch means there is more waiting. Saying so turns a tick that quietly runs
   // long into a visible line naming the real condition.
   const capped = due.length === batchSize;
-  if (capped) deps.log('invoice_sweep.backlog_capped', { batchSize, periodStart: period.start.toISOString() });
-  if (issued) deps.log('invoice_sweep.done', { issued, periodStart: period.start.toISOString() });
+  if (capped) deps.log('invoice_sweep.backlog_capped', { batchSize, period: period.key });
+  if (issued) deps.log('invoice_sweep.done', { issued, period: period.key });
   return { issued, capped };
 }

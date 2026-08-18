@@ -100,11 +100,3 @@ export function buildInvoice(args: {
   const taxMinor = Math.round((subtotalMinor * args.taxRateBps) / 10_000);
   return { lines, subtotalMinor, taxRateBps: args.taxRateBps, taxMinor, totalMinor: subtotalMinor + taxMinor };
 }
-
-/** The closed calendar month before the one containing `now`. `end` is exclusive. */
-export function previousPeriod(now: Date): { start: Date; end: Date } {
-  return {
-    start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)),
-    end: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
-  };
-}

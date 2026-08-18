@@ -1,4 +1,4 @@
-import { periodStart } from '@xperiment/plans';
+import { billingPeriod, BILLING_TZ } from '@xperiment/plans';
 import { type Db } from '../pool.js';
 import { incrementUsageCounter } from './entitlements.js';
 
@@ -81,7 +81,7 @@ export async function recordAiUsage(
   // The ledger is the billing truth; the counter is the O(1) index quota reads.
   await incrementUsageCounter(db, {
     workspaceId: args.workspaceId,
-    periodStart: periodStart(new Date()),
+    periodKey: billingPeriod(new Date()).key,
     metric: 'ai_tokens',
     quantity: args.tokens,
   });
@@ -110,14 +110,15 @@ export async function getUsageSummary(
     params,
   );
   const seriesRes = await db.query(
-    `SELECT to_char(date_trunc('day', occurred_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS date,
+    `SELECT to_char(date_trunc('day', occurred_at AT TIME ZONE $4), 'YYYY-MM-DD') AS date,
        COALESCE(SUM(quantity) FILTER (WHERE metric='execution'),0)::bigint AS executions,
        COALESCE(SUM(quantity) FILTER (WHERE metric='node'),0)::bigint AS nodes,
        COALESCE(SUM(quantity) FILTER (WHERE metric='compute_ms'),0)::bigint AS compute_ms,
        COALESCE(SUM(quantity) FILTER (WHERE metric='ai_tokens'),0)::bigint AS ai_tokens
      FROM usage_events WHERE workspace_id=$1 AND occurred_at >= $2 AND occurred_at < $3
      GROUP BY 1 ORDER BY 1`,
-    params,
+    // A shop owner reading a bar per day must see their own days, not UTC's.
+    [...params, BILLING_TZ],
   );
   const t = totalsRes.rows[0] as Record<string, string>;
   const n = (v: string | undefined): number => Number(v ?? 0);

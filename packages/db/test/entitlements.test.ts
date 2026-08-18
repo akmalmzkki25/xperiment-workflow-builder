@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { periodStart } from '@xperiment/plans';
+import { billingPeriod } from '@xperiment/plans';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
@@ -17,7 +17,7 @@ import {
 } from '../src/index.js';
 
 let pool: Pool;
-const period = periodStart(new Date());
+const period = billingPeriod(new Date()).key;
 
 beforeAll(async () => {
   pool = createPool();
@@ -63,9 +63,9 @@ describe('workspace plans', () => {
 describe('usage counters', () => {
   test('increments accumulate on one row per workspace/period/metric', async () => {
     const id = await newWorkspace();
-    await incrementUsageCounter(pool, { workspaceId: id, periodStart: period, metric: 'execution', quantity: 1 });
-    await incrementUsageCounter(pool, { workspaceId: id, periodStart: period, metric: 'execution', quantity: 4 });
-    await incrementUsageCounter(pool, { workspaceId: id, periodStart: period, metric: 'ai_tokens', quantity: 250 });
+    await incrementUsageCounter(pool, { workspaceId: id, periodKey: period, metric: 'execution', quantity: 1 });
+    await incrementUsageCounter(pool, { workspaceId: id, periodKey: period, metric: 'execution', quantity: 4 });
+    await incrementUsageCounter(pool, { workspaceId: id, periodKey: period, metric: 'ai_tokens', quantity: 250 });
     const usage = await getQuotaUsage(pool, id, period);
     expect(usage.executionsPerMonth).toBe(5);
     expect(usage.aiTokensPerMonth).toBe(250);
@@ -73,13 +73,13 @@ describe('usage counters', () => {
 
   test('counters are scoped to the workspace', async () => {
     const [a, b] = [await newWorkspace(), await newWorkspace()];
-    await incrementUsageCounter(pool, { workspaceId: a, periodStart: period, metric: 'execution', quantity: 7 });
+    await incrementUsageCounter(pool, { workspaceId: a, periodKey: period, metric: 'execution', quantity: 7 });
     expect((await getQuotaUsage(pool, b, period)).executionsPerMonth).toBe(0);
   });
 
   test('a non-positive quantity is a no-op', async () => {
     const id = await newWorkspace();
-    await incrementUsageCounter(pool, { workspaceId: id, periodStart: period, metric: 'execution', quantity: 0 });
+    await incrementUsageCounter(pool, { workspaceId: id, periodKey: period, metric: 'execution', quantity: 0 });
     expect((await getQuotaUsage(pool, id, period)).executionsPerMonth).toBe(0);
   });
 
@@ -92,7 +92,7 @@ describe('usage counters', () => {
 
   test('recomputeCounters rebuilds exactly what the ledger says', async () => {
     const id = await newWorkspace();
-    await incrementUsageCounter(pool, { workspaceId: id, periodStart: period, metric: 'execution', quantity: 999 });
+    await incrementUsageCounter(pool, { workspaceId: id, periodKey: period, metric: 'execution', quantity: 999 });
     await insertUsageEvents(pool, [
       { workspaceId: id, metric: 'execution', quantity: 1, occurredAt: new Date() },
       { workspaceId: id, metric: 'execution', quantity: 1, occurredAt: new Date() },

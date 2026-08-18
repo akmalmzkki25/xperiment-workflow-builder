@@ -2,8 +2,7 @@ import { appendAuditEvent, getQuotaUsage, getWorkspacePlan, setWorkspacePlan, wi
 import {
   evaluateQuota,
   isBlocked,
-  periodEnd,
-  periodStart,
+  billingPeriod,
   PLAN_CODES,
   resolveLimits,
   type LimitKey,
@@ -35,15 +34,17 @@ export interface PlanSnapshot {
 export async function quotaSnapshot(pool: pg.Pool, workspaceId: string): Promise<PlanSnapshot> {
   const plan = await getWorkspacePlan(pool, workspaceId);
   const limits = resolveLimits(plan.planCode, plan.limitOverrides);
-  const start = periodStart(new Date());
-  const usage = await getQuotaUsage(pool, workspaceId, start);
+  const period = billingPeriod(new Date());
+  const usage = await getQuotaUsage(pool, workspaceId, period.key);
   return {
     planCode: plan.planCode,
     allowOverage: plan.allowOverage,
     limits,
     usage,
     lines: evaluateQuota(limits, usage, plan.allowOverage),
-    period: { start: start.toISOString(), end: periodEnd(start).toISOString() },
+    // Instants, not the labels: a client rendering "this period" needs the boundary it
+    // is actually measured against, which is midnight in Asia/Jakarta.
+    period: { start: period.startsAt.toISOString(), end: period.endsAt.toISOString() },
   };
 }
 
@@ -86,8 +87,7 @@ export function registerPlanRoutes(app: FastifyInstance, deps: ResolvedServerDep
     if (parsed.data.planCode) {
       // A downgrade must not strand a workspace above a stock limit it cannot shed
       // automatically — refuse rather than leave it permanently blocked.
-      const start = periodStart(new Date());
-      const usage = await getQuotaUsage(deps.pool, ctx.workspaceId, start);
+      const usage = await getQuotaUsage(deps.pool, ctx.workspaceId, billingPeriod(new Date()).key);
       const next = resolveLimits(parsed.data.planCode, {});
       for (const metric of ['activeWorkflows', 'members'] as const) {
         const limit = next[metric];

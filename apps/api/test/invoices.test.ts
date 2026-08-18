@@ -30,8 +30,7 @@ async function seedInvoice(user: AuthedUser): Promise<string> {
   });
   const inv = await issueInvoice(pool, {
     workspaceId: user.workspaceId,
-    periodStart: period.start,
-    periodEnd: period.end,
+    period,
     planCode: 'builder',
     draft,
   });

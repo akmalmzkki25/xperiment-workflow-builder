@@ -8,7 +8,7 @@ import {
   withTx,
   type AlertRuleRow,
 } from '@xperiment/db';
-import { evaluateQuota, periodStart, resolveLimits } from '@xperiment/plans';
+import { billingPeriod, evaluateQuota, resolveLimits } from '@xperiment/plans';
 import type pg from 'pg';
 
 export interface AlertSweepDeps {
@@ -50,7 +50,7 @@ async function evaluate(client: pg.PoolClient, rule: AlertRuleRow): Promise<Reco
     // windowMinutes entirely and reads the same numbers the enforcement path does.
     const plan = await getWorkspacePlan(client, rule.workspaceId);
     const limits = resolveLimits(plan.planCode, plan.limitOverrides);
-    const start = periodStart(new Date());
+    const start = billingPeriod(new Date()).key;
     const usage = await getQuotaUsage(client, rule.workspaceId, start);
     const lines = evaluateQuota(limits, usage, plan.allowOverage);
     // Report the worst line: blocked outranks warn, and ok never fires.

@@ -579,32 +579,50 @@ finalizes the execution (so a redelivered job never double-counts):
 The web **Usage** page renders the totals as scorecards (runs, success rate, nodes,
 compute, AI tokens) with a runs-per-day chart.
 
-### Known defect: periods are UTC, the product is not
+### Billing periods are Asia/Jakarta
 
-Scheduling defaults to `Asia/Jakarta` (`DEFAULT_TZ`, and hardcoded in the trigger
-route and the scheduler tick), but every period boundary here is UTC:
+A billing period is the **Asia/Jakarta calendar month**, not the UTC one, because the
+product schedules in WIB and a shop owner counting their own August orders must agree
+with the invoice.
 
-- `periodStart` in `@xperiment/plans` is the UTC month start, and it keys both
-  `workspace_usage_counters` and invoice periods.
-- the daily series groups on `date_trunc('day', occurred_at AT TIME ZONE 'UTC')`.
-- `GET /v1/usage` defaults its own window to the UTC month, independently.
+`@xperiment/plans` exposes it as a value with three fields, because one `Date` was previously
+doing two different jobs:
 
-For an Indonesian shop that means runs between **00:00 and 07:00 WIB land on the
-previous day** — and on the first of the month, in the previous *month*. A shop
-owner counting their own August orders will disagree with the invoice about the
-first seven hours of 1 August and the last seven of 31 August.
+```ts
+billingPeriod(new Date()) // { key: '2026-08-01', endKey: '2026-09-01',
+                          //   startsAt: 2026-07-31T17:00Z, endsAt: 2026-08-31T17:00Z }
+```
 
-**Not fixed here on purpose.** Correcting only the reporting view would leave the
-usage page on WIB months while invoices stayed on UTC months — a new
-inconsistency, in the one place where the two numbers are supposed to match.
-Correcting both means changing the key of `workspace_usage_counters`, and a
-straight rekey is not enough: a run at 03:00 WIB on 1 August was *counted into
-July*, so the counters have to be recomputed from the `usage_events` ledger. That
-is a data migration on money, and it wants its own spec and review rather than
-being folded into unrelated work.
+`key` is the DATE label of `workspace_usage_counters.period_start` and
+`invoices.period_start`; `startsAt`/`endsAt` are the instants a `timestamptz` is compared
+against. In SQL the bounds are always built from the key in the zone:
 
-The ledger itself is fine — `usage_events.occurred_at` is a `timestamptz`, so no
-information has been lost and the recomputation is possible whenever it is done.
+```sql
+occurred_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Jakarta')
+occurred_at <  (($1::date + INTERVAL '1 month') AT TIME ZONE 'Asia/Jakarta')
+```
+
+never `occurred_at >= $1::date`, which casts through the **session** `TimeZone` — that
+made the boundary of a billing period a database setting rather than an application
+decision, and on a UTC session it filed a run at 03:00 WIB on the 1st into the previous
+month. The daily series on `GET /v1/usage` groups the same way, so the chart shows the
+days the shop actually keeps.
+
+**Migration `0022_billing_period_wib.sql`** recomputes the counters from the
+`usage_events` ledger — a rekey would not do, because misfiled runs are in the wrong
+month, not merely under the wrong label. It rebuilds only what the ledger can still
+account for: retention prunes `usage_events` after a 365-day floor, so months older than
+a workspace's earliest surviving event keep their UTC-derived values rather than being
+silently zeroed. The horizon reaches one month further back than that earliest event,
+which is exactly how far the old bounds could misfile.
+
+**Invoices already issued are left as they are.** Their period labels are the right
+calendar months; only the amounts came from UTC-bounded counters, and rewriting a closed
+invoice changes a record of money. The close sweep is idempotent per
+`(workspace_id, period_start)` and will not re-issue them.
+
+Making the zone per-workspace is a real feature with its own settings surface and
+migration, and is deliberately not part of this.
 
 ## Templates & WhatsApp vertical pack (Phase 2L)
 

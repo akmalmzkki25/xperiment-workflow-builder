@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { periodStart } from '@xperiment/plans';
+import { billingPeriod } from '@xperiment/plans';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
@@ -16,7 +16,7 @@ import {
 } from '../src/index.js';
 
 let pool: Pool;
-const period = periodStart(new Date());
+const period = billingPeriod(new Date()).key;
 
 const IR = {
   schemaVersion: '0.1',

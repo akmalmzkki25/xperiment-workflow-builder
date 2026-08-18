@@ -41,9 +41,9 @@ async function seed(planCode: string, executions: number): Promise<string> {
   await pool.query(`UPDATE workspace_plans SET plan_code = $2 WHERE workspace_id = $1`, [ws.id, planCode]);
   await pool.query(
     `INSERT INTO workspace_usage_counters (workspace_id, period_start, metric, quantity)
-     VALUES ($1,$2,'execution',$3)
+     VALUES ($1,$2::date,'execution',$3)
      ON CONFLICT (workspace_id, period_start, metric) DO UPDATE SET quantity = $3`,
-    [ws.id, period.start, executions],
+    [ws.id, period.key, executions],
   );
   return ws.id;
 }
@@ -55,7 +55,7 @@ describe('runInvoiceSweep', () => {
     const invoices = await listInvoices(pool, ws, 10);
     expect(invoices).toHaveLength(1);
     expect(invoices[0]!.planCode).toBe('builder');
-    expect(invoices[0]!.periodStart).toBe(period.start.toISOString().slice(0, 10));
+    expect(invoices[0]!.periodStart).toBe(period.key);
   });
 
   test('is idempotent — a second sweep issues nothing more', async () => {

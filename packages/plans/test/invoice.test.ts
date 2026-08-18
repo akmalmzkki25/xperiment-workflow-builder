@@ -5,7 +5,7 @@ import {
   DEFAULT_TAX_RATE_BPS,
   PLAN_CATALOG,
   PLAN_PRICING,
-  previousPeriod,
+
   resolveLimits,
   type LimitKey,
   type PlanCode,
@@ -142,19 +142,5 @@ describe('buildInvoice', () => {
       taxRateBps: 1100,
     });
     expect(inv.subtotalMinor).toBe(0);
-  });
-});
-
-describe('previousPeriod', () => {
-  test('returns the calendar month before the one containing `now`', () => {
-    const p = previousPeriod(new Date('2026-07-28T13:45:00Z'));
-    expect(p.start.toISOString()).toBe('2026-06-01T00:00:00.000Z');
-    expect(p.end.toISOString()).toBe('2026-07-01T00:00:00.000Z');
-  });
-
-  test('rolls the year backwards in January', () => {
-    const p = previousPeriod(new Date('2026-01-15T00:00:00Z'));
-    expect(p.start.toISOString()).toBe('2025-12-01T00:00:00.000Z');
-    expect(p.end.toISOString()).toBe('2026-01-01T00:00:00.000Z');
   });
 });

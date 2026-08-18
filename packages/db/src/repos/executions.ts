@@ -1,4 +1,4 @@
-import { evaluateQuota, isBlocked, periodStart, resolveLimits, type LimitKey } from '@xperiment/plans';
+import { billingPeriod, evaluateQuota, isBlocked, resolveLimits, type LimitKey } from '@xperiment/plans';
 import type pg from 'pg';
 import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
@@ -88,7 +88,7 @@ class QuotaRefusedError extends Error {
 async function checkAndConsumeExecutionQuota(
   client: pg.PoolClient,
   workspaceId: string,
-  period: Date,
+  periodKey: string,
 ): Promise<QuotaRefusal | null> {
   const plan = await getWorkspacePlan(client, workspaceId);
   const limits = resolveLimits(plan.planCode, plan.limitOverrides);
@@ -97,17 +97,17 @@ async function checkAndConsumeExecutionQuota(
 
   await client.query(
     `INSERT INTO workspace_usage_counters (workspace_id, period_start, metric, quantity)
-     VALUES ($1,$2,'execution',0) ON CONFLICT DO NOTHING`,
-    [workspaceId, period],
+     VALUES ($1,$2::date,'execution',0) ON CONFLICT DO NOTHING`,
+    [workspaceId, periodKey],
   );
   const locked = await client.query(
     `SELECT quantity FROM workspace_usage_counters
-     WHERE workspace_id=$1 AND period_start=$2 AND metric='execution' FOR UPDATE`,
-    [workspaceId, period],
+     WHERE workspace_id=$1 AND period_start=$2::date AND metric='execution' FOR UPDATE`,
+    [workspaceId, periodKey],
   );
   const used = Number((locked.rows[0] as { quantity: string }).quantity);
 
-  const usage = await getQuotaUsage(client, workspaceId, period);
+  const usage = await getQuotaUsage(client, workspaceId, periodKey);
   const lines = evaluateQuota(limits, { ...usage, executionsPerMonth: used }, plan.allowOverage);
   if (isBlocked(lines, 'executionsPerMonth')) {
     return { outcome: 'quota_exceeded', metric: 'executionsPerMonth', used, limit };
@@ -115,8 +115,8 @@ async function checkAndConsumeExecutionQuota(
 
   await client.query(
     `UPDATE workspace_usage_counters SET quantity = quantity + 1
-     WHERE workspace_id=$1 AND period_start=$2 AND metric='execution'`,
-    [workspaceId, period],
+     WHERE workspace_id=$1 AND period_start=$2::date AND metric='execution'`,
+    [workspaceId, periodKey],
   );
   return null;
 }
@@ -182,7 +182,7 @@ export async function createExecutionWithTrigger(
       workspaceId = adopted.workspace_id;
     }
 
-    const refusal = await checkAndConsumeExecutionQuota(client, workspaceId, periodStart(new Date()));
+    const refusal = await checkAndConsumeExecutionQuota(client, workspaceId, billingPeriod(new Date()).key);
     // Thrown, not returned: `withTx` COMMITs a normal return, which would durably
     // persist the trigger event above with no execution attached — poisoning that
     // idempotency key and storing a caller-controlled payload the counter never saw.

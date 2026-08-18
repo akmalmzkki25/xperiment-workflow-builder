@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { buildInvoice, DEFAULT_TAX_RATE_BPS, previousPeriod, resolveLimits, type PlanCode } from '@xperiment/plans';
+import { billingPeriod, buildInvoice, DEFAULT_TAX_RATE_BPS, previousPeriod, resolveLimits, type PlanCode } from '@xperiment/plans';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
@@ -43,8 +43,7 @@ const draftFor = (planCode: PlanCode, executions = 0) =>
 const issue = (workspaceId: string, planCode: PlanCode = 'builder', executions = 0) =>
   issueInvoice(pool, {
     workspaceId,
-    periodStart: period.start,
-    periodEnd: period.end,
+    period,
     planCode,
     draft: draftFor(planCode, executions),
   });
@@ -66,8 +65,8 @@ describe('issueInvoice', () => {
     const inv = await issue(ws);
     // node-postgres parses a DATE into *local* midnight, so a naive toISOString() rolls
     // the day back east of Greenwich — this pins the boundary against that.
-    expect(inv!.periodStart).toBe(period.start.toISOString().slice(0, 10));
-    expect(inv!.periodEnd).toBe(period.end.toISOString().slice(0, 10));
+    expect(inv!.periodStart).toBe(period.key);
+    expect(inv!.periodEnd).toBe(period.endKey);
     const reread = await getInvoice(pool, inv!.id, ws);
     expect(reread!.invoice.periodStart).toBe(inv!.periodStart);
     expect(reread!.invoice.periodEnd).toBe(inv!.periodEnd);
@@ -165,6 +164,16 @@ describe('workspacesNeedingInvoice', () => {
     // These fixtures are back-dated to the epoch so a bounded batch reaches them. Left
     // behind they accumulate across runs and crowd each other out of that batch — the
     // same coupling the LIMIT exists to bound. No real workspace predates 1971.
+    //
+    // The dependents go first: creating a workspace seeds a 'Plan quota' alert rule, and
+    // `alert_rules.workspace_id` is ON DELETE NO ACTION — so on the second consecutive
+    // run this delete used to fail on a foreign key and skip the whole suite.
+    await pool.query(
+      `DELETE FROM alert_events WHERE workspace_id IN (SELECT id FROM workspaces WHERE created_at < '1971-01-01')`,
+    );
+    await pool.query(
+      `DELETE FROM alert_rules WHERE workspace_id IN (SELECT id FROM workspaces WHERE created_at < '1971-01-01')`,
+    );
     await pool.query(`DELETE FROM workspaces WHERE created_at < '1971-01-01'`);
   });
 
@@ -208,9 +217,32 @@ describe('workspacesNeedingInvoice', () => {
     expect(ids.indexOf(older)).toBeLessThan(ids.indexOf(newer));
   });
 
+  test('the existence boundary is the WIB month end, not the label', async () => {
+    // 01:00 WIB on 1 September is 18:00 UTC on 31 August. Bounding existence by the
+    // period's *label* — '2026-09-01', which a UTC session reads as midnight UTC —
+    // would treat `after` as having existed through August and invoice it for a month it
+    // was never a customer.
+    const before = await newWorkspace();
+    const after = await newWorkspace();
+    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [
+      before,
+      new Date(Date.parse('2026-08-31T23:00:00+07:00')),
+    ]);
+    await pool.query(`UPDATE workspaces SET created_at = $2 WHERE id = $1`, [
+      after,
+      new Date(Date.parse('2026-09-01T01:00:00+07:00')),
+    ]);
+    const august = billingPeriod(new Date(Date.parse('2026-08-15T10:00:00+07:00')));
+    // A limit large enough that the ordering cannot decide the answer: this asserts the
+    // predicate, not which page of a bounded batch these two rows landed on.
+    const ids = (await workspacesNeedingInvoice(pool, august, 100_000)).map((w) => w.workspaceId);
+    expect(ids).toContain(before);
+    expect(ids).not.toContain(after);
+  });
+
   test('omits a workspace created after the period ended', async () => {
     const ws = await newWorkspace(); // created now, i.e. after any past period
-    const ancient = { start: new Date(Date.UTC(2020, 0, 1)), end: new Date(Date.UTC(2020, 1, 1)) };
+    const ancient = billingPeriod(new Date(Date.UTC(2020, 0, 15)));
     const ids = (await workspacesNeedingInvoice(pool, ancient)).map((w) => w.workspaceId);
     expect(ids).not.toContain(ws);
   });

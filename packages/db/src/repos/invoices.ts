@@ -1,4 +1,4 @@
-import { CURRENCY, type InvoiceDraft, type InvoiceLineKind, type PlanCode } from '@xperiment/plans';
+import { CURRENCY, type BillingPeriod, type InvoiceDraft, type InvoiceLineKind, type PlanCode } from '@xperiment/plans';
 import type pg from 'pg';
 import { type Db } from '../pool.js';
 import { withTx } from '../tx.js';
@@ -48,14 +48,6 @@ const day = (v: unknown): string => {
   return `${y}-${m}-${d}`;
 };
 
-/**
- * Bind a period boundary as a bare `YYYY-MM-DD` string rather than a Date, so Postgres
- * never casts an instant through the session timezone — west of Greenwich that would
- * store the previous day. Period boundaries are built with `Date.UTC`, so the UTC
- * components are the intended calendar date.
- */
-const dateParam = (d: Date): string => d.toISOString().slice(0, 10);
-
 function mapInvoice(r: Record<string, unknown>): InvoiceRow {
   return {
     id: r['id'] as string,
@@ -94,7 +86,7 @@ function mapLine(r: Record<string, unknown>): InvoiceLineRow {
  */
 export async function issueInvoice(
   pool: pg.Pool,
-  args: { workspaceId: string; periodStart: Date; periodEnd: Date; planCode: PlanCode; draft: InvoiceDraft },
+  args: { workspaceId: string; period: BillingPeriod; planCode: PlanCode; draft: InvoiceDraft },
 ): Promise<InvoiceRow | null> {
   try {
     return await withTx(pool, async (client) => {
@@ -105,8 +97,8 @@ export async function issueInvoice(
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [
           args.workspaceId,
-          dateParam(args.periodStart),
-          dateParam(args.periodEnd),
+          args.period.key,
+          args.period.endKey,
           args.planCode,
           CURRENCY,
           args.draft.subtotalMinor,
@@ -201,7 +193,7 @@ export const DEFAULT_INVOICE_BATCH = 500;
 
 export async function workspacesNeedingInvoice(
   db: Db,
-  period: { start: Date; end: Date },
+  period: BillingPeriod,
   limit: number = DEFAULT_INVOICE_BATCH,
 ): Promise<{ workspaceId: string }[]> {
   const r = await db.query(
@@ -210,7 +202,9 @@ export async function workspacesNeedingInvoice(
        AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.workspace_id = w.id AND i.period_start = $1::date)
      ORDER BY w.created_at, w.id
      LIMIT $3`,
-    [dateParam(period.start), period.end, limit],
+    // `endsAt` is a real instant, not the label: a workspace created at 01:00 WIB on the
+    // 1st of the next month did not exist during this period.
+    [period.key, period.endsAt, limit],
   );
   return (r.rows as { id: string }[]).map((row) => ({ workspaceId: row.id }));
 }
