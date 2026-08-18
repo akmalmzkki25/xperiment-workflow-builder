@@ -5,4 +5,13 @@ export { validateWorkflow, type ValidationFinding, type ValidationResult } from 
 export type { NodeTypeInfo, RegistryLike } from './registryLike.js';
 export { runnableNodeIds, validateGraph } from './graph.js';
 export { diffWorkflows } from './diff.js';
+export {
+  buildExport,
+  EXPORT_FORMAT,
+  planImport,
+  requiredConnections,
+  type ImportPlan,
+  type RequiredConnection,
+  type WorkflowExport,
+} from './portable.js';
 export type { WorkflowDiff, NodeModification, EdgeModification } from './diff.js';

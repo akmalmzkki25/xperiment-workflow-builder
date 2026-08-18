@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
+  appendAuditEvent,
   clearWorkflowCallback,
   createVersion,
   createWorkflow,
@@ -11,14 +12,38 @@ import {
   setWorkflowCallback,
   updateDraft,
 } from '@xperiment/db';
-import { canonicalHash, diffWorkflows, validateWorkflow, workflowIrSchema, type WorkflowIR } from '@xperiment/ir';
+import {
+  buildExport,
+  canonicalHash,
+  diffWorkflows,
+  EXPORT_FORMAT,
+  planImport,
+  validateWorkflow,
+  workflowIrSchema,
+  type WorkflowIR,
+} from '@xperiment/ir';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authOf, requirePermission } from '../auth/plugin.js';
+import { auditActor, authOf, requirePermission } from '../auth/plugin.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A workflow name is free text and reaches a response header here, so anything outside
+ * this alphabet is dropped rather than escaped — a name carrying a quote or a newline
+ * would otherwise be splicing into `Content-Disposition`.
+ */
+function safeFilename(name: string): string {
+  const slug = name
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .toLowerCase();
+  return `${slug || 'workflow'}.xperiment.json`;
+}
 
 const createSchema = z.object({ name: z.string().min(1).max(200) }).strict();
 const draftSchema = z.object({ definition: z.unknown() }).strict();
@@ -208,6 +233,98 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
     const toIr = workflowIrSchema.safeParse(b.ir);
     if (!toIr.success) return sendProblem(reply, 422, 'to is not a valid workflow', 'The "to" side is not a complete workflow (e.g. an unpublished draft)');
     return { from: a.label, to: b.label, diff: diffWorkflows(fromIr.data, toIr.data) };
+  });
+
+  /**
+   * Take a workflow out of the product.
+   *
+   * Carries no secrets: connection payloads and trigger secrets are separate rows and
+   * were never part of a definition. What it does carry is `connectionRef` — a UUID
+   * meaningful only in the workspace it came from — so the document also names, in
+   * words, which connector each of those nodes was for. `POST /import` uses that.
+   */
+  app.get('/v1/workflows/:id/export', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'workflow:read')) return;
+    const { id } = req.params as { id: string };
+    const wf = await getWorkflow(deps.pool, id, ctx.workspaceId);
+    if (!wf) return sendProblem(reply, 404, 'Workflow not found');
+
+    const versionRef = (req.query as { version?: unknown }).version;
+    let source: unknown;
+    if (typeof versionRef === 'string') {
+      if (!UUID_RE.test(versionRef)) return sendProblem(reply, 404, 'Version not found');
+      const v = await getVersion(deps.pool, versionRef);
+      if (!v || v.workflowId !== id) return sendProblem(reply, 404, 'Version not found');
+      source = v.definition;
+    } else {
+      const draft = await getDraft(deps.pool, id);
+      if (!draft) return sendProblem(reply, 404, 'Workflow not found');
+      source = draft.definition;
+    }
+
+    // A draft can be mid-edit and not yet a complete IR. That is a 422 about this
+    // document, not a 500 — and `?version=` is the way to export a known-good one.
+    const ir = workflowIrSchema.safeParse(source);
+    if (!ir.success) {
+      return sendProblem(reply, 422, 'Draft is not a complete workflow', 'Fix the findings, or export a published version with ?version=');
+    }
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      workspaceId: ctx.workspaceId,
+      action: 'workflow.export',
+      targetType: 'workflow',
+      targetId: id,
+      metadata: { nodeCount: ir.data.nodes.length },
+    });
+    reply.header('content-disposition', `attachment; filename="${safeFilename(wf.name)}"`);
+    return buildExport(wf.name, ir.data, deps.registry);
+  });
+
+  const importSchema = z
+    .object({
+      xperimentExport: z.number().int(),
+      name: z.string().min(1).max(200),
+      definition: z.unknown(),
+      // The manifest is informational on the way in: `planImport` re-derives it from the
+      // registry, so a file claiming a node needs `postgres` cannot wire it a credential.
+      requiredConnections: z.unknown().optional(),
+      /** What to call it here, when the name in the file is somebody else's. */
+      overrideName: z.string().min(1).max(200).optional(),
+    })
+    .strict();
+
+  app.post('/v1/workflows/import', async (req, reply) => {
+    const ctx = authOf(req);
+    if (!requirePermission(reply, ctx, 'workflow:write')) return;
+    const parsed = importSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
+    if (parsed.data.xperimentExport !== EXPORT_FORMAT) {
+      // Refusing a format we do not know beats importing the parts we happen to recognise.
+      return sendProblem(reply, 400, 'Unsupported export format', `unsupported_format: ${parsed.data.xperimentExport}`);
+    }
+    const ir = workflowIrSchema.safeParse(parsed.data.definition);
+    if (!ir.success) return sendProblem(reply, 422, 'Not a workflow document', ir.error.message);
+
+    const name = parsed.data.overrideName ?? parsed.data.name;
+    const wf = await createWorkflow(deps.pool, { workspaceId: ctx.workspaceId, name });
+    const plan = planImport({
+      ir: ir.data,
+      registry: deps.registry,
+      connections: await workspaceConnections(ctx.workspaceId),
+      identity: { id: wf.id, name },
+    });
+    // A draft, never a version: importing a file must not put a workflow live.
+    await updateDraft(deps.pool, { workflowId: wf.id, definition: plan.definition, expectedRevision: 1 });
+    await appendAuditEvent(deps.pool, {
+      ...auditActor(req),
+      workspaceId: ctx.workspaceId,
+      action: 'workflow.import',
+      targetType: 'workflow',
+      targetId: wf.id,
+      metadata: { nodeCount: plan.definition.nodes.length, reconnectCount: plan.reconnect.length },
+    });
+    return reply.status(201).send({ id: wf.id, name: wf.name, reconnect: plan.reconnect });
   });
 
   app.post('/v1/workflows/:id/versions/:versionId/rollback', async (req, reply) => {

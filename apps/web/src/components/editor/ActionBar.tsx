@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, getBrowserClient, type Finding, type TriggerView, type WorkflowDetail } from '../../lib/api';
+import { exportFilename } from '../../lib/portableFile';
 import { useEditorStore } from '../../stores/editorStore';
 import { LiveChip, StatusChip } from '../ui/StatusChip';
 import { FindingsPanel } from './FindingsPanel';
@@ -125,6 +126,24 @@ export function ActionBar({
     onError: (e) => setNotice({ kind: 'err', text: e instanceof Error ? e.message : 'Validation failed' }),
   });
 
+  /**
+   * Fetching JSON and handing the browser a Blob, rather than linking at the endpoint:
+   * the API authenticates with a bearer header, which a plain <a href> cannot carry.
+   */
+  const exportWorkflow = useMutation({
+    mutationFn: () => getBrowserClient().exportWorkflow(workflow.id),
+    onSuccess: (doc) => {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportFilename(workflow.name);
+      a.click();
+      URL.revokeObjectURL(url);
+      setNotice({ kind: 'ok', text: `Exported ${a.download}` });
+    },
+    onError: (e) => setNotice({ kind: 'err', text: e instanceof Error ? e.message : 'Export failed' }),
+  });
+
   const publish = useMutation({
     mutationFn: () => getBrowserClient().publish(workflow.id),
     onSuccess: async (r) => {
@@ -185,7 +204,8 @@ export function ActionBar({
     publish.isPending ||
     activate.isPending ||
     deactivate.isPending ||
-    run.isPending;
+    run.isPending ||
+    exportWorkflow.isPending;
 
   const triggerSave = useCallback(() => {
     if (!dirty) return;
@@ -298,6 +318,15 @@ export function ActionBar({
           data-testid="action-run"
         >
           Run
+        </button>
+        <button
+          className="q-btn q-btn--ghost q-btn--sm"
+          disabled={busy}
+          title="Download this workflow as a file you can keep or import elsewhere"
+          onClick={() => exportWorkflow.mutate()}
+          data-testid="action-export"
+        >
+          Export
         </button>
         <button
           className="q-btn q-btn--sm"

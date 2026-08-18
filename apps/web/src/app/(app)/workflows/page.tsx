@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { LiveChip, StatusChip } from '../../../components/ui/StatusChip';
+import { ImportButton } from '../../../components/workflows/ImportButton';
 import { Dialog } from '../../../components/ui/Dialog';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { PermissionNotice } from '../../../components/ui/PermissionNotice';
@@ -39,9 +40,12 @@ export default function WorkflowsPage() {
       <div className="q-page-head">
         <h1>Workflows</h1>
         {forbidden ? null : (
-          <button className="q-btn" data-testid="wf-create" onClick={() => setDialogOpen(true)}>
-            New workflow
-          </button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+            <ImportButton onImported={() => void queryClient.invalidateQueries({ queryKey: ['workflows'] })} />
+            <button className="q-btn" data-testid="wf-create" onClick={() => setDialogOpen(true)}>
+              New workflow
+            </button>
+          </div>
         )}
       </div>
 

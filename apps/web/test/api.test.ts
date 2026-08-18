@@ -137,6 +137,9 @@ describe('endpoint helpers', () => {
     await client.listTemplates();
     await client.getTemplate('wa-lead-auto-reply');
     await client.cloneTemplate('wa-lead-auto-reply');
+    await client.exportWorkflow('wf1');
+    await client.exportWorkflow('wf1', 'v1');
+    await client.importWorkflow({ xperimentExport: 1, name: 'X', definition: {}, requiredConnections: [] });
     await client.getDiff('wf1', 'draft', 'v1');
     await client.rollbackVersion('wf1', 'v1');
     await client.listAlerts();
@@ -183,6 +186,9 @@ describe('endpoint helpers', () => {
       'GET /v1/templates',
       'GET /v1/templates/wa-lead-auto-reply',
       'POST /v1/templates/wa-lead-auto-reply/clone',
+      'GET /v1/workflows/wf1/export',
+      'GET /v1/workflows/wf1/export?version=v1',
+      'POST /v1/workflows/import',
       'GET /v1/workflows/wf1/diff?from=draft&to=v1',
       'POST /v1/workflows/wf1/versions/v1/rollback',
       'GET /v1/alerts',
@@ -241,6 +247,17 @@ describe('endpoint helpers', () => {
     expect(calls[1]!.init.body).toBe(JSON.stringify({ code: '123456', password: 'pw' }));
     expect(calls[4]!.init.body).toBe(JSON.stringify({ challenge: 'qm_c', code: '123456' }));
     expect(calls[5]!.init.body).toBe(JSON.stringify({ requireMfa: true }));
+  });
+
+  test('importWorkflow sends the document, and a rename rides alongside it', async () => {
+    responder = () => json(201, { id: 'wf2', name: 'Milik saya', reconnect: [] });
+    const client = makeClient();
+    const doc = { xperimentExport: 1, name: 'From file', definition: { nodes: [] }, requiredConnections: [] };
+    await client.importWorkflow(doc, 'Milik saya');
+    expect(calls[0]!.init.body).toBe(JSON.stringify({ ...doc, overrideName: 'Milik saya' }));
+    await client.importWorkflow(doc);
+    // No override key at all when there is no rename — an empty string would be a name.
+    expect(calls[1]!.init.body).toBe(JSON.stringify(doc));
   });
 
   test('template client builds the category query and the clone name body', async () => {

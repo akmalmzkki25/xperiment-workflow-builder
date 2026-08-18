@@ -94,6 +94,18 @@ export const OPENAPI_DOCUMENT = {
     },
     '/v1/workflows/{id}': { get: { summary: 'Get a workflow with its draft + versions', tags: ['workflows'] } },
     '/v1/workflows/{id}/draft': { put: { summary: 'Update the draft (If-Match revision)', tags: ['workflows'] } },
+    '/v1/workflows/{id}/export': {
+      get: {
+        summary: 'Download a workflow as a portable document (?version= for a published one; carries no secrets)',
+        tags: ['workflows'],
+      },
+    },
+    '/v1/workflows/import': {
+      post: {
+        summary: 'Create a workflow from an exported document; connections that do not resolve here are reported',
+        tags: ['workflows'],
+      },
+    },
     '/v1/workflows/{id}/diff': { get: { summary: 'Diff two versions or a draft (from/to = version id or "draft")', tags: ['workflows'] } },
     '/v1/workflows/{id}/versions/{versionId}/rollback': { post: { summary: 'Roll back: publish an old version forward as a new version', tags: ['workflows'] } },
     '/v1/workflows/{id}/validate': { post: { summary: 'Validate the draft', tags: ['workflows'] } },

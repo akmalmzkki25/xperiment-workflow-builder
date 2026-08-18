@@ -191,6 +191,27 @@ export interface WorkflowDiff {
   changed: boolean;
 }
 
+export interface RequiredConnection {
+  nodeId: string;
+  connectorKey: string;
+  wasConnected: boolean;
+}
+
+/** The shape of a `.xperiment.json` file. Deliberately loose about `definition`: the server
+ * re-validates it, and the browser has no business deciding what a workflow is. */
+export interface WorkflowExportDoc {
+  xperimentExport: number;
+  name: string;
+  definition: unknown;
+  requiredConnections: RequiredConnection[];
+}
+
+export interface ImportResult {
+  id: string;
+  name: string;
+  reconnect: RequiredConnection[];
+}
+
 export interface AlertRule {
   id: string;
   name: string;
@@ -503,6 +524,16 @@ export class ApiClient {
 
   cloneTemplate(id: string, name?: string): Promise<{ id: string; name: string }> {
     return this.request('POST', `/v1/templates/${id}/clone`, name ? { body: { name } } : {});
+  }
+
+  exportWorkflow(id: string, versionId?: string): Promise<WorkflowExportDoc> {
+    return this.request('GET', `/v1/workflows/${id}/export${versionId ? `?version=${encodeURIComponent(versionId)}` : ''}`);
+  }
+
+  importWorkflow(doc: WorkflowExportDoc, overrideName?: string): Promise<ImportResult> {
+    return this.request('POST', '/v1/workflows/import', {
+      body: overrideName ? { ...doc, overrideName } : doc,
+    });
   }
 
   getDiff(id: string, from: string, to: string): Promise<{ from: string; to: string; diff: WorkflowDiff }> {

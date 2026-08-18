@@ -639,6 +639,47 @@ and any version can be rolled forward:
 The web **History** page (linked from the workflows list) lists versions and renders
 the compare + rollback UI.
 
+## Export & import a workflow
+
+A workflow you built is a file you can keep. **Export** on the editor toolbar downloads
+`<name>.xperiment.json`; **Import** on the workflows list creates a new workflow from one.
+
+```bash
+curl -H "Authorization: Bearer $XPERIMENT_TOKEN" \
+  "$API/v1/workflows/$WF_ID/export" -o pesanan-baru.xperiment.json
+curl -X POST -H "Authorization: Bearer $XPERIMENT_TOKEN" -H 'content-type: application/json' \
+  --data @pesanan-baru.xperiment.json "$API/v1/workflows/import"
+```
+
+- `GET /v1/workflows/:id/export` (`workflow:read`) exports the **draft**. Add
+  `?version=<versionId>` to export a published version instead — useful when the draft
+  is mid-edit, which is a 422 rather than a half-written file.
+- `POST /v1/workflows/import` (`workflow:write`) creates a **draft**, never a published
+  version. Add `overrideName` to name it something else here. Importing a file must not
+  put a workflow live; publishing stays a decision.
+- Both are recorded in the audit log as `workflow.export` / `workflow.import`.
+
+**The document carries no secrets.** Connection payloads and trigger secrets are separate
+rows and were never part of a definition. What a definition *does* carry is
+`connectionRef` — a UUID meaningful only in the workspace it came from. So the export
+also lists, in words, which connector each of those nodes needed:
+
+```json
+{ "xperimentExport": 1, "name": "Pesanan baru", "definition": { ... },
+  "requiredConnections": [{ "nodeId": "notify", "connectorKey": "telegram", "wasConnected": true }] }
+```
+
+On import each reference is **kept** when it resolves to a connection of the *same
+connector* in the receiving workspace — which makes importing into the same workspace a
+fully wired duplicate — and otherwise **stripped and reported** in `reconnect`. Stripping
+rather than leaving a foreign UUID dangling is the deliberate half: a surviving reference
+would fail later at publish as `connection_not_found` on a node nobody was told about,
+whereas removing it produces `connection_required` on exactly the nodes the import already
+named. The two answers agree.
+
+The connector is re-derived from the registry, not trusted from the file, so a document
+claiming a node needs `postgres` cannot make the import wire it a `telegram` credential.
+
 ## Alerts (Phase 2J)
 
 Define alert rules that the scheduler evaluates every sweep over the usage ledger:

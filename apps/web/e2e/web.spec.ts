@@ -432,3 +432,53 @@ test('a user turns on two-factor and is challenged at the next sign in', async (
   await expect(page.getByTestId('mfa-recovery')).toBeVisible();
   await page.screenshot({ path: `${ARTIFACTS}/10-mfa.png` });
 });
+
+test('a workflow exports to a file and imports back as a wired duplicate', async ({ page }) => {
+  await loginWithToken(page);
+  // 'Lead intake' was built, published and activated by the canvas test above, so this
+  // exports a real workflow rather than an empty one.
+  await page.getByTestId('wf-row-Lead intake').getByRole('link', { name: 'Lead intake' }).click();
+  await expect(page.getByTestId('action-export')).toBeVisible();
+
+  const download = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByTestId('action-export').click(),
+  ]).then(([d]) => d);
+  expect(download.suggestedFilename()).toBe('lead-intake.xperiment.json');
+  const file = `${ARTIFACTS}/lead-intake.xperiment.json`;
+  await download.saveAs(file);
+
+  await page.getByTestId('nav-workflows').click();
+  await page.getByTestId('wf-import-input').setInputFiles(file);
+
+  // This workflow's whatsapp node was never wired to a credential — the canvas test left
+  // it that way on purpose — so the import stops and says which node needs one. That is
+  // the whole reason the manifest travels in the file.
+  await expect(page.getByTestId('wf-import-reconnect')).toContainText('whatsapp_sendMessage');
+  await expect(page.getByTestId('wf-import-reconnect')).toContainText('whatsapp');
+  await page.screenshot({ path: `${ARTIFACTS}/11-import-reconnect.png` });
+
+  await page.getByTestId('wf-import-open').click();
+  await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}/, { timeout: 15_000 });
+  // The canvas came back whole, layout and all — an import that stacked every node at
+  // the origin would be technically complete and practically useless.
+  await expect(page.getByTestId('node-webhook_trigger')).toBeVisible();
+  await expect(page.getByTestId('node-whatsapp_sendMessage')).toBeVisible();
+  await page.screenshot({ path: `${ARTIFACTS}/12-imported-canvas.png` });
+
+  // The import is a new workflow, not a second view of the old one.
+  await page.getByTestId('nav-workflows').click();
+  await expect(page.getByTestId('wf-row-Lead intake')).toHaveCount(2);
+});
+
+test('picking a file that is not an export says so instead of creating a workflow', async ({ page }) => {
+  await loginWithToken(page);
+  const before = await page.locator('table.q-table tbody tr').count();
+  await page.getByTestId('wf-import-input').setInputFiles({
+    name: 'package.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{"name":"some-project","version":"1.0.0"}'),
+  });
+  await expect(page.getByTestId('wf-import-error')).toContainText('not a Xperiment workflow export');
+  await expect(page.locator('table.q-table tbody tr')).toHaveCount(before);
+});
