@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
-import { createOpenRouterClient, type ChatClient } from '@xperiment/ai';
 import type { ConnectorRegistry } from '@xperiment/connectors';
 import {
   createSecretVault,
@@ -21,7 +20,7 @@ import { registerAuthPlugin } from './auth/plugin.js';
 import { registerRateLimit } from './rateLimit/plugin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerMfaRoutes } from './routes/mfa.js';
-import { registerAiRoutes } from './routes/ai.js';
+import { registerAgentRoutes } from './routes/agent.js';
 import { registerAlertRoutes } from './routes/alerts.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
 import { registerAuditRoutes } from './routes/audit.js';
@@ -58,7 +57,6 @@ export interface ServerDeps {
   credentialsVault?: SecretVault;
   triggerVault?: SecretVault;
   ai?: AiConfig;
-  aiClientFactory?: (cfg: { apiKey: string; model: string; baseUrl: string; appUrl?: string }) => ChatClient;
   /**
    * Where login attempt counters live. Omitted means in-process.
    *
@@ -168,7 +166,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
           deps.triggerKey ?? deriveLegacyKey(process.env['TRIGGER_SECRET_KEY'] ?? 'xperiment-dev-trigger-secret-change-me'),
       }),
     ai: resolveAiConfig(deps.ai),
-    aiClientFactory: deps.aiClientFactory ?? createOpenRouterClient,
   };
   registerAuthPlugin(app, { pool: deps.pool });
   registerRateLimit(app, {
@@ -187,7 +184,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerTriggerRoutes(app, resolvedDeps);
   registerConnectionRoutes(app, resolvedDeps);
   registerConnectorRoutes(app, resolvedDeps);
-  registerAiRoutes(app, resolvedDeps);
+  registerAgentRoutes(app, resolvedDeps);
   registerApprovalRoutes(app, resolvedDeps);
   registerUsageRoutes(app, resolvedDeps);
   registerPlanRoutes(app, resolvedDeps);

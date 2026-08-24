@@ -119,17 +119,28 @@ describe('stock limits', () => {
     expect((seats.rows[0] as { c: number }).c).toBe(2);
   });
 
-  test('an AI call past the token cap is refused with 402', async () => {
+  test('an agent turn past the token cap is refused with 402, before the stream commits', async () => {
     const user = await createAuthedUser(app);
     await setLimit(user.workspaceId, { aiTokensPerMonth: 1 });
     await pool.query(
+      // The WIB month, matching how billing periods are keyed since 0022. A UTC key
+      // silently misses on the first of a month between midnight and 07:00 WIB.
       `INSERT INTO workspace_usage_counters (workspace_id, period_start, metric, quantity)
-       VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 'ai_tokens', 10)
+       VALUES ($1, date_trunc('month', now() AT TIME ZONE 'Asia/Jakarta')::date, 'ai_tokens', 10)
        ON CONFLICT (workspace_id, period_start, metric) DO UPDATE SET quantity = 10`,
       [user.workspaceId],
     );
-    const r = await user.inject({ method: 'POST', url: '/v1/ai/generate', payload: { prompt: 'hi' } });
+    const conv = await user.inject({ method: 'POST', url: '/v1/agent/conversations', payload: {} });
+    const id = conv.json<{ conversationId: string }>().conversationId;
+    const r = await user.inject({
+      method: 'POST',
+      url: `/v1/agent/conversations/${id}/messages`,
+      payload: { message: 'hi' },
+    });
+    // A quota refusal has to be a problem document, which is only possible before the
+    // hijack — once text/event-stream is on the wire there is no way to send one.
     expect(r.statusCode).toBe(402);
+    expect(r.headers['content-type']).toContain('problem+json');
   });
 });
 

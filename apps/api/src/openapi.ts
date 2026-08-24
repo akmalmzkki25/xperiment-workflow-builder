@@ -183,7 +183,15 @@ export const OPENAPI_DOCUMENT = {
       delete: { summary: 'Delete a connection', tags: ['connections'] },
     },
     '/v1/connections/{id}/test': { post: { summary: 'Test a connection', tags: ['connections'] } },
-    '/v1/ai/generate': { post: { summary: 'Generate a workflow from a prompt', tags: ['ai'] } },
-    '/v1/ai/edit': { post: { summary: 'Edit a workflow from a prompt', tags: ['ai'] } },
+    '/v1/agent/conversations': { post: { summary: 'Start a conversation with the workflow builder', tags: ['ai'] } },
+    '/v1/agent/conversations/{id}': {
+      get: { summary: 'Read a conversation transcript and its open credential requests', tags: ['ai'] },
+    },
+    '/v1/agent/conversations/{id}/messages': {
+      post: {
+        summary: 'Send one message and stream the reply as server-sent events (text, tool progress, canvas updates)',
+        tags: ['ai'],
+      },
+    },
   },
 } as const;

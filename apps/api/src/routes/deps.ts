@@ -37,10 +37,4 @@ export interface ResolvedServerDeps {
    */
   limiterStore?: import('@xperiment/queue').LimiterStore | undefined;
   ai: AiConfig;
-  aiClientFactory: (cfg: {
-    apiKey: string;
-    model: string;
-    baseUrl: string;
-    appUrl?: string;
-  }) => import('@xperiment/ai').ChatClient;
 }

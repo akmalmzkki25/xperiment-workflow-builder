@@ -13,9 +13,9 @@ importers:
       '@fastify/cors':
         specifier: ^10.0.0
         version: 10.1.0
-      '@xperiment/ai':
-        specifier: workspace:^
-        version: link:../../packages/ai
+      '@xperiment/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@xperiment/connectors':
         specifier: workspace:*
         version: link:../../packages/connectors
@@ -427,31 +427,6 @@ importers:
       tsx:
         specifier: ^4.16.0
         version: 4.23.1
-      typescript:
-        specifier: ^5.5.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.0.0
-        version: 2.1.9(@types/node@22.20.1)
-
-  packages/ai:
-    dependencies:
-      '@xperiment/ir':
-        specifier: workspace:*
-        version: link:../ir
-      zod:
-        specifier: ^3.23.0
-        version: 3.25.76
-    devDependencies:
-      '@xperiment/connectors':
-        specifier: workspace:*
-        version: link:../connectors
-      '@types/node':
-        specifier: ^22.13.0
-        version: 22.20.1
-      '@vitest/coverage-v8':
-        specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3

@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
-    "@xperiment/ai": "workspace:^",
+    "@xperiment/agent": "workspace:*",
     "@xperiment/connectors": "workspace:*",
     "@xperiment/db": "workspace:*",
     "@xperiment/engine-core": "workspace:*",
