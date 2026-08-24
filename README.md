@@ -9,7 +9,7 @@ delivery with idempotency, automatic retry, and a full execution audit trail.
 
 ## Prerequisites
 
-- Node.js >= 20, pnpm >= 10, Docker Desktop
+- Node.js >= 22.13, pnpm >= 10, Docker Desktop
 
 ## Quickstart
 

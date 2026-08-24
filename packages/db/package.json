@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@xperiment/ir": "workspace:*",
-    "@types/node": "^20.14.0",
+    "@types/node": "^22.13.0",
     "@types/pg": "^8.11.0",
     "@vitest/coverage-v8": "^2.0.0",
     "tsx": "^4.16.0",

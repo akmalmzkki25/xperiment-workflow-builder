@@ -9,7 +9,7 @@
 # the one genuine exception, because Next has a real build and `next start` refuses
 # without it.
 
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 RUN corepack enable
 ENV HOME=/home/node PNPM_HOME=/home/node/.pnpm CI=true
 WORKDIR /app

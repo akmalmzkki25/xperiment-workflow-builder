@@ -57,8 +57,8 @@ importers:
         version: 3.25.76
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/nodemailer':
         specifier: ^8.0.1
         version: 8.0.1
@@ -67,7 +67,7 @@ importers:
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       pg:
         specifier: ^8.12.0
         version: 8.22.0
@@ -79,7 +79,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   apps/cli:
     dependencies:
@@ -103,14 +103,14 @@ importers:
         specifier: workspace:*
         version: link:../../packages/connectors
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/pg':
         specifier: ^8.11.0
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       fastify:
         specifier: ^5.0.0
         version: 5.10.0
@@ -122,7 +122,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   apps/gateway:
     dependencies:
@@ -146,14 +146,14 @@ importers:
         version: 9.14.0
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/pg':
         specifier: ^8.11.0
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       pg:
         specifier: ^8.12.0
         version: 8.22.0
@@ -165,7 +165,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   apps/orchestrator:
     dependencies:
@@ -192,14 +192,14 @@ importers:
         version: 9.14.0
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/pg':
         specifier: ^8.11.0
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       pg:
         specifier: ^8.12.0
         version: 8.22.0
@@ -211,7 +211,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   apps/scheduler:
     dependencies:
@@ -238,14 +238,14 @@ importers:
         version: 9.14.0
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/pg':
         specifier: ^8.11.0
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       pg:
         specifier: ^8.12.0
         version: 8.22.0
@@ -257,7 +257,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   apps/web:
     dependencies:
@@ -296,8 +296,8 @@ importers:
         specifier: workspace:^
         version: link:../../packages/connectors
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/qrcode':
         specifier: ^1.5.5
         version: 1.5.6
@@ -309,13 +309,13 @@ importers:
         version: 18.3.7(@types/react@18.3.31)
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   apps/worker:
     dependencies:
@@ -348,14 +348,14 @@ importers:
         version: 9.14.0
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/pg':
         specifier: ^8.11.0
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       pg:
         specifier: ^8.12.0
         version: 8.22.0
@@ -367,7 +367,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   e2e:
     dependencies:
@@ -376,8 +376,8 @@ importers:
         version: link:../packages/db
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/pg':
         specifier: ^8.11.0
         version: 8.20.0
@@ -389,7 +389,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/ai:
     dependencies:
@@ -404,17 +404,17 @@ importers:
         specifier: workspace:*
         version: link:../connectors
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/connectors:
     dependencies:
@@ -438,8 +438,8 @@ importers:
         version: 3.25.2(zod@3.25.76)
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/nodemailer':
         specifier: ^8.0.1
         version: 8.0.1
@@ -448,13 +448,13 @@ importers:
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/db:
     dependencies:
@@ -472,14 +472,14 @@ importers:
         specifier: workspace:*
         version: link:../ir
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/pg':
         specifier: ^8.11.0
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       tsx:
         specifier: ^4.16.0
         version: 4.23.1
@@ -488,7 +488,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/engine-core:
     dependencies:
@@ -503,32 +503,32 @@ importers:
         version: 4.9.0
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/expressions:
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/ir:
     dependencies:
@@ -540,17 +540,17 @@ importers:
         version: 3.25.76
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/observability:
     dependencies:
@@ -559,47 +559,47 @@ importers:
         version: 15.1.3
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/payments:
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/plans:
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/queue:
     dependencies:
@@ -614,14 +614,14 @@ importers:
         version: 5.11.1
     devDependencies:
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@types/pg':
         specifier: ^8.11.0
         version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       pg:
         specifier: ^8.12.0
         version: 8.22.0
@@ -630,7 +630,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
   tools/devstack:
     devDependencies:
@@ -638,11 +638,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/db
       '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
+        specifier: ^22.13.0
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^2.0.0
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.1))
       tsx:
         specifier: ^4.16.0
         version: 4.23.1
@@ -651,7 +651,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.43)
+        version: 2.1.9(@types/node@22.20.1)
 
 packages:
 
@@ -1444,8 +1444,8 @@ packages:
   '@types/geojson@7946.0.16':
     resolution: {integrity: sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==}
 
-  '@types/node@20.19.43':
-    resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
+  '@types/node@22.20.1':
+    resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
 
   '@types/nodemailer@8.0.1':
     resolution: {integrity: sha512-PxpaInm8V1JQDd4j0ds5HfvWQk8JupS1C0Picb96QJsrrRDjBH+DlK7L4ZdNSqNULhiZRQHc40nLVShaGxXAMw==}
@@ -3196,17 +3196,17 @@ snapshots:
 
   '@types/geojson@7946.0.16': {}
 
-  '@types/node@20.19.43':
+  '@types/node@22.20.1':
     dependencies:
       undici-types: 6.21.0
 
   '@types/nodemailer@8.0.1':
     dependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.1
 
   '@types/pg@8.20.0':
     dependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.1
       pg-protocol: 1.15.0
       pg-types: 2.2.0
 
@@ -3214,7 +3214,7 @@ snapshots:
 
   '@types/qrcode@1.5.6':
     dependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.1
 
   '@types/react-dom@18.3.7(@types/react@18.3.31)':
     dependencies:
@@ -3225,7 +3225,7 @@ snapshots:
       '@types/prop-types': 15.7.15
       csstype: 3.2.3
 
-  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@20.19.43))':
+  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@22.20.1))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -3239,7 +3239,7 @@ snapshots:
       std-env: 3.10.0
       test-exclude: 7.0.2
       tinyrainbow: 1.2.0
-      vitest: 2.1.9(@types/node@20.19.43)
+      vitest: 2.1.9(@types/node@22.20.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -3250,13 +3250,13 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
-  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@20.19.43))':
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@22.20.1))':
     dependencies:
       '@vitest/spy': 2.1.9
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 5.4.21(@types/node@20.19.43)
+      vite: 5.4.21(@types/node@22.20.1)
 
   '@vitest/pretty-format@2.1.9':
     dependencies:
@@ -4054,7 +4054,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.2
-      '@types/node': 20.19.43
+      '@types/node': 22.20.1
       long: 5.3.2
 
   qrcode@1.5.4:
@@ -4297,13 +4297,13 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite-node@2.1.9(@types/node@20.19.43):
+  vite-node@2.1.9(@types/node@22.20.1):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 1.1.2
-      vite: 5.4.21(@types/node@20.19.43)
+      vite: 5.4.21(@types/node@22.20.1)
     transitivePeerDependencies:
       - '@types/node'
       - less
@@ -4315,19 +4315,19 @@ snapshots:
       - supports-color
       - terser
 
-  vite@5.4.21(@types/node@20.19.43):
+  vite@5.4.21(@types/node@22.20.1):
     dependencies:
       esbuild: 0.21.5
       postcss: 8.5.22
       rollup: 4.62.2
     optionalDependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.1
       fsevents: 2.3.3
 
-  vitest@2.1.9(@types/node@20.19.43):
+  vitest@2.1.9(@types/node@22.20.1):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@20.19.43))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.20.1))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
@@ -4343,11 +4343,11 @@ snapshots:
       tinyexec: 0.3.2
       tinypool: 1.1.1
       tinyrainbow: 1.2.0
-      vite: 5.4.21(@types/node@20.19.43)
-      vite-node: 2.1.9(@types/node@20.19.43)
+      vite: 5.4.21(@types/node@22.20.1)
+      vite-node: 2.1.9(@types/node@22.20.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.1
     transitivePeerDependencies:
       - less
       - lightningcss
