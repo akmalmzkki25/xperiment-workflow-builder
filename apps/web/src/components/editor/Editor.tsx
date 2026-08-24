@@ -43,7 +43,8 @@ import { useEditorStore } from '../../stores/editorStore';
 import { ActionBar } from './ActionBar';
 import { useEditorHotkeys } from './useEditorHotkeys';
 import { RunBanner } from './RunBanner';
-import { AiDock } from './AiDock';
+import { decideCanvasSync } from '../../lib/canvasSync';
+import { AiChat } from './AiChat';
 import { Canvas } from './Canvas';
 import { EditorProvider, type EditorContextValue } from './EditorContext';
 import { Inspector } from './Inspector';
@@ -83,6 +84,10 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<{ ir: IRNodeData }>([]);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [revision, setRevision] = useState<number | null>(null);
+  /** A draft the agent saved while the canvas had unsaved work. Never applied silently. */
+  const [canvasOffer, setCanvasOffer] = useState<{ workflowId: string; revision: number; definition: unknown } | null>(
+    null,
+  );
   const [findings, setFindings] = useState<Finding[]>([]);
   const [aiOpen, setAiOpen] = useState(false);
   const [runExecutionId, setRunExecutionId] = useState<string | null>(null);
@@ -470,12 +475,13 @@ function EditorInner({ workflowId }: { workflowId: string }) {
   );
 
   const applyDefinition = useCallback(
-    (ir: unknown) => {
-      // Applying an AI draft replaces the whole graph — the one edit most worth undoing.
+    (ir: unknown, opts: { saved?: boolean } = {}) => {
+      // Replacing the whole graph is the one edit most worth undoing, so the snapshot
+      // goes first and a single Ctrl+Z restores exactly what was there.
       recordEdit();
       const canvas = definitionToCanvas(ir);
-      // Preserve the user's arrangement for any node the AI kept — the model's
-      // IR usually omits metadata.layout, which would otherwise flatten the graph.
+      // Preserve the user's arrangement for any node kept by id — a generated IR usually
+      // omits metadata.layout, which would otherwise flatten the graph.
       setNodes((prev) => {
         const priorPositions = new Map(prev.map((n) => [n.id, n.position]));
         return canvas.nodes.map((n) => {
@@ -485,11 +491,43 @@ function EditorInner({ workflowId }: { workflowId: string }) {
       });
       setEdges(canvas.edges as Edge[]);
       select(null);
-      markDirty();
-      setAiOpen(false);
+      // Latent bug fixed in passing: this was never updated, so `canvasToDefinition`'s
+      // `previous` kept pointing at the pre-apply definition and the next save could
+      // resurrect a stale metadata.executionTimeoutMs. Harmless until something other
+      // than the browser started writing drafts.
+      previousDefinitionRef.current = ir;
+      // When the server already holds this exact draft, the canvas is NOT dirty: Save
+      // should go quiet and Publish should light up.
+      if (!opts.saved) markDirty();
       if (canvas.nodes.length > 0) setTimeout(() => void flow.fitView({ padding: 0.3, maxZoom: 1 }), 80);
     },
     [setNodes, setEdges, select, markDirty, flow, recordEdit],
+  );
+
+  /**
+   * A draft the agent saved on the server.
+   *
+   * The browser did no PUT, so without this the editor's revision goes stale and the next
+   * Ctrl+S returns 412 with a "changed in another session" banner — for the change they
+   * asked for. Note the chat is NOT closed here: closing it because the assistant saved
+   * would be absurd.
+   */
+  const applyAgentDefinition = useCallback(
+    (frame: { workflowId: string; revision: number; definition: unknown }) => {
+      const decision = decideCanvasSync(frame, {
+        workflowId,
+        revision,
+        dirty: useEditorStore.getState().dirty,
+      });
+      if (decision.action === 'ignore') return;
+      if (decision.action === 'offer') {
+        setCanvasOffer(frame);
+        return;
+      }
+      applyDefinition(frame.definition, { saved: true });
+      setRevision(decision.revision);
+    },
+    [applyDefinition, revision, workflowId],
   );
 
   if (workflowQ.isLoading || catalogQ.isLoading) {
@@ -567,12 +605,40 @@ function EditorInner({ workflowId }: { workflowId: string }) {
               onDuplicate={onDuplicate}
             />
           ) : null}
-          <AiDock
+          {canvasOffer ? (
+            <div className="q-banner q-banner--warn" data-testid="ai-canvas-offer">
+              <span>
+                The assistant saved a new version of this draft (rev {canvasOffer.revision}). You have unsaved changes
+                on the canvas.
+              </span>
+              <button
+                className="q-btn q-btn--sm"
+                data-testid="ai-canvas-apply"
+                onClick={() => {
+                  applyDefinition(canvasOffer.definition, { saved: true });
+                  setRevision(canvasOffer.revision);
+                  setCanvasOffer(null);
+                }}
+              >
+                Load it
+              </button>
+              <button
+                className="q-btn q-btn--ghost q-btn--sm"
+                data-testid="ai-canvas-dismiss"
+                // Deliberately does NOT bump the local revision: doing so would let the
+                // next save overwrite the assistant's work with no record. Their next
+                // save 412s instead, and the existing conflict banner does its job.
+                onClick={() => setCanvasOffer(null)}
+              >
+                Keep mine
+              </button>
+            </div>
+          ) : null}
+          <AiChat
             open={aiOpen}
             onClose={() => setAiOpen(false)}
-            hasNodes={nodes.length > 0}
-            currentDefinition={buildDefinition}
-            onApply={applyDefinition}
+            workflowId={workflowId}
+            onCanvasFrame={applyAgentDefinition}
           />
         </div>
       </div>

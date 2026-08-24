@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { getBrowserClient } from '../../lib/api';
+import { type ConnectionRow, getBrowserClient } from '../../lib/api';
 import { buildPayload, deriveFields, type JsonSchemaLike } from '../../lib/connectionFields';
 import { Dialog } from '../ui/Dialog';
 import { TextField } from '../ui/TextField';
@@ -18,10 +18,15 @@ export function ConnectionDialog({
   open,
   onClose,
   rotate,
+  presetConnectorKey,
+  onCreated,
 }: {
   open: boolean;
   onClose: () => void;
   rotate?: RotateTarget | undefined;
+  /** Preselect only — the select stays enabled, since they may have meant another one. */
+  presetConnectorKey?: string | undefined;
+  onCreated?: ((row: ConnectionRow) => void) | undefined;
 }) {
   const queryClient = useQueryClient();
   const [connectorKey, setConnectorKey] = useState('telegram');
@@ -35,9 +40,9 @@ export function ConnectionDialog({
     if (!open) return;
     setValues({});
     setError(null);
-    setConnectorKey(rotate?.connectorKey ?? 'telegram');
+    setConnectorKey(rotate?.connectorKey ?? presetConnectorKey ?? 'telegram');
     setName(rotate?.name ?? '');
-  }, [open, rotate?.id, rotate?.connectorKey, rotate?.name]);
+  }, [open, rotate?.id, rotate?.connectorKey, rotate?.name, presetConnectorKey]);
 
   // The catalog is fixed for the server's lifetime, so it is fetched once and kept.
   // `enabled` on `open` keeps a closed dialog from costing a request on every page load.
@@ -63,8 +68,9 @@ export function ConnectionDialog({
         ? client.rotateConnection(rotate.id, payload, name.trim())
         : client.createConnection(connectorKey, name.trim(), payload);
     },
-    onSuccess: () => {
+    onSuccess: (row) => {
       void queryClient.invalidateQueries({ queryKey: ['connections'] });
+      onCreated?.(row as ConnectionRow);
       setName('');
       setValues({});
       setError(null);

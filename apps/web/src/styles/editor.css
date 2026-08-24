@@ -520,3 +520,102 @@
 .q-loop[data-run='WAITING'] {
   --run-colour: var(--status-retry);
 }
+
+/* The conversational builder. Wider than the old 320px dock: minus padding that left
+   288px of text, and an identifier like whatsapp_sendMessage in mono wrapped mid-word. */
+.q-aichat {
+  display: flex;
+  flex-direction: column;
+  width: clamp(360px, 26vw, 460px);
+  border-left: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.q-aichat__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+.q-aichat__thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.q-aichat__empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+.q-aichat__example {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.q-aichat__example:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+/* One column, left aligned. No bubbles, no avatars: the speaker is a label, and the tool
+   chips are what actually communicate progress. */
+.q-aichat__turn--mine {
+  border-left: 2px solid var(--border-strong);
+  padding-left: var(--space-3);
+}
+.q-aichat__who {
+  display: block;
+  font-size: var(--text-small);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+.q-aichat__body {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--text-primary);
+}
+.q-aichat__caret {
+  animation: xperiment-pulse 1s ease-in-out infinite;
+}
+.q-aichat__tool {
+  align-self: flex-start;
+}
+.q-aichat__callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+.q-aichat__callout p {
+  margin: 0;
+}
+.q-aichat__composer {
+  border-top: 1px solid var(--border-default);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.q-aichat__composer .q-textarea {
+  font-family: var(--font-ui);
+  min-height: 72px;
+}
+.q-aichat__composer .q-btn {
+  align-self: flex-end;
+}

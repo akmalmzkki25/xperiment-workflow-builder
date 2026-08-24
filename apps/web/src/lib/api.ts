@@ -1,4 +1,5 @@
 import { clearToken, getToken, getWorkspace } from './auth';
+import { createSseParser, parseFrame } from './sseFrames';
 
 /**
  * A connection type's payload shape, keyed by connector (`telegram`) rather than node
@@ -189,6 +190,31 @@ export interface WorkflowDiff {
   nodes: { added: string[]; removed: string[]; modified: { nodeId: string; changedFields: string[] }[] };
   edges: { added: string[]; removed: string[]; modified: { edgeId: string }[] };
   changed: boolean;
+}
+
+export interface AgentMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  toolCalls: unknown[];
+  outcome: string;
+  createdAt: string;
+}
+
+export interface AgentConversation {
+  conversationId: string;
+  workflowId: string | null;
+  title: string;
+  messages: AgentMessage[];
+  openCredentialRequests: { id: string; connectorKey: string; nodeId: string | null; reason: string }[];
+}
+
+/** Raised when the stream ends without a `done` frame, so the caller can resume. */
+export class StreamInterrupted extends Error {
+  constructor(readonly lastSeq: number) {
+    super('stream interrupted');
+    this.name = 'StreamInterrupted';
+  }
 }
 
 export interface RequiredConnection {
@@ -524,6 +550,76 @@ export class ApiClient {
 
   cloneTemplate(id: string, name?: string): Promise<{ id: string; name: string }> {
     return this.request('POST', `/v1/templates/${id}/clone`, name ? { body: { name } } : {});
+  }
+
+  createConversation(workflowId?: string): Promise<{ conversationId: string; workflowId: string | null }> {
+    return this.request('POST', '/v1/agent/conversations', { body: workflowId ? { workflowId } : {} });
+  }
+
+  getConversation(conversationId: string): Promise<AgentConversation> {
+    return this.request('GET', `/v1/agent/conversations/${conversationId}`);
+  }
+
+  /**
+   * One turn, as an async generator.
+   *
+   * A generator rather than a callback so the caller can `break` and have the `finally`
+   * cancel the reader — a callback would need a separate teardown handle. Everything
+   * before the first byte behaves exactly like `request()`: a non-2xx becomes the same
+   * ApiError, so 402, 403, 429 and 503 keep the meanings they already had.
+   */
+  async *streamChat(
+    conversationId: string,
+    message: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<Record<string, unknown>, void, void> {
+    const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'text/event-stream' };
+    const token = this.deps.getToken();
+    if (token) headers['authorization'] = `Bearer ${token}`;
+    const workspace = this.deps.getWorkspace?.();
+    if (workspace) headers['x-xperiment-workspace'] = workspace;
+
+    const fetchImpl = this.deps.fetchImpl ?? fetch;
+    const res = await fetchImpl(`${this.deps.baseUrl}/v1/agent/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message }),
+      ...(signal ? { signal } : {}),
+    });
+    if (res.status === 401) this.deps.onUnauthorized?.();
+    if (!res.ok) {
+      const problem = await parseProblem(res);
+      throw new ApiError(res.status, problem.title, problem.detail);
+    }
+    // A proxy returning an HTML error page with a 200 would otherwise be parsed as frames.
+    if (!(res.headers.get('content-type') ?? '').includes('text/event-stream')) {
+      throw new ApiError(res.status, 'Unexpected response', 'The server did not return a stream.');
+    }
+    if (!res.body) throw new ApiError(res.status, 'Unexpected response', 'The stream had no body.');
+
+    const reader = res.body.getReader();
+    // `stream: true` matters: without it a multi-byte character split across a chunk
+    // boundary corrupts silently.
+    const decoder = new TextDecoder();
+    const parser = createSseParser();
+    let lastSeq = 0;
+    let sawDone = false;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const ev of parser.push(decoder.decode(value, { stream: true }))) {
+          const frame = parseFrame(ev);
+          if (!frame) continue;
+          if (ev.id) lastSeq = Number(ev.id);
+          if (frame['type'] === 'done') sawDone = true;
+          yield frame;
+        }
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+    if (!sawDone && !signal?.aborted) throw new StreamInterrupted(lastSeq);
   }
 
   exportWorkflow(id: string, versionId?: string): Promise<WorkflowExportDoc> {
