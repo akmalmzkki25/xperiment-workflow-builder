@@ -171,6 +171,48 @@ describe('list_workflows', () => {
   });
 });
 
+describe('the fallbacks nobody exercises until they matter', () => {
+  test('a connector with no docsUrl still returns a whole guide', async () => {
+    const ws = await newWorkspace();
+    const out = await guard(getCredentialGuide, { connectorKey: 'smtp' }, ctx(ws));
+    expect((out as { steps: unknown[] }).steps.length).toBeGreaterThan(0);
+    expect((out as { docsUrl?: string }).docsUrl).toBeUndefined();
+  });
+
+  test('list_connections filters to one connector when asked', async () => {
+    const ws = await newWorkspace();
+    for (const k of ['telegram', 'slack']) {
+      await pool.query(
+        `INSERT INTO connections (workspace_id, connector_key, name, encrypted_payload, enc_version)
+         VALUES ($1,$2,$3,'\\x00'::bytea,1)`,
+        [ws, k, `${k} conn`],
+      );
+    }
+    const out = await guard(listConnectionsTool, { connectorKey: 'slack' }, ctx(ws));
+    expect((out as { items: { connectorKey: string }[] }).items.map((i) => i.connectorKey)).toEqual(['slack']);
+  });
+
+  test('list_workflows with no query returns the workspace, bounded by limit', async () => {
+    const ws = await newWorkspace();
+    for (const n of ['a', 'b', 'c']) await pool.query(`INSERT INTO workflows (workspace_id, name) VALUES ($1,$2)`, [ws, n]);
+    const out = await guard(listWorkflowsTool, { limit: 2 }, ctx(ws));
+    expect((out as { items: unknown[] }).items).toHaveLength(2);
+  });
+
+  test('a workflow with no draft row still reads back', async () => {
+    const ws = await newWorkspace();
+    const wf = await pool.query(`INSERT INTO workflows (workspace_id, name) VALUES ($1,'bare') RETURNING id`, [ws]);
+    const out = await guard(getWorkflowTool, { workflowId: (wf.rows[0] as { id: string }).id }, ctx(ws));
+    expect(out).toMatchObject({ name: 'bare', definition: null });
+  });
+
+  test('a node type with no authoring notes returns an empty list, not undefined', async () => {
+    const ws = await newWorkspace();
+    const out = await guard(describeNodeType, { type: 'core.transform' }, ctx(ws));
+    expect((out as { authoringNotes: unknown[] }).authoringNotes).toEqual([]);
+  });
+});
+
 describe('no read tool has a workspace-shaped input', () => {
   test('the model cannot name a tenant, because there is no field for it', () => {
     // Structurally absent, not validated away: no token sequence reaches it.
