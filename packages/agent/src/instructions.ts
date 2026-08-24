@@ -7,6 +7,12 @@ export interface ConnectionSummary {
 export interface InstructionInput {
   catalogIndex: string;
   connections: readonly ConnectionSummary[];
+  /**
+   * The workflow this conversation is already attached to, when it was opened from an
+   * editor. Without it the agent calls create_workflow and quietly builds a SECOND
+   * workflow beside the one on screen — whose canvas then, correctly, ignores the update.
+   */
+  workflowId?: string | undefined;
 }
 
 /**
@@ -65,9 +71,15 @@ Short sentences. Say what you did, then what you need from them. Do not narrate 
 const NO_CONNECTIONS = `There are no connections in this workspace yet. This does not restrict which nodes you may use: build with the correct node, leave its connectionRef unset, and call request_credential to ask for the credential.`;
 
 export function buildInstructions(input: InstructionInput): string {
+  const target = input.workflowId
+    ? `
+
+THE WORKFLOW YOU ARE EDITING
+This conversation is already attached to workflow ${input.workflowId}, which is open on the person's canvas. Do NOT call create_workflow — call put_draft with that id. Creating another one would build a second workflow beside the one they are looking at.`
+    : '';
   const connectionsBlock =
     input.connections.length > 0
       ? input.connections.map((c) => `- id ${c.id} · ${c.connectorKey} · "${c.name}"`).join('\n')
       : NO_CONNECTIONS;
-  return `${CONTRACT}\n\nNODE TYPES AVAILABLE\n${input.catalogIndex}\n\nCONNECTIONS IN THIS WORKSPACE\n${connectionsBlock}`;
+  return `${CONTRACT}${target}\n\nNODE TYPES AVAILABLE\n${input.catalogIndex}\n\nCONNECTIONS IN THIS WORKSPACE\n${connectionsBlock}`;
 }

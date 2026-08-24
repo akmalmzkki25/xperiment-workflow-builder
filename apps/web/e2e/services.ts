@@ -33,16 +33,6 @@ const SERVICE_ENV = {
 };
 
 /** Canned workflow the OpenRouter stub returns — a webhook trigger → transform. */
-const STUB_WORKFLOW = {
-  schemaVersion: '0.1',
-  workflow: { id: 'wf_ai_e2e', name: 'AI generated' },
-  entrypoints: ['ai_hook'],
-  nodes: [
-    { id: 'ai_hook', kind: 'trigger', type: 'webhook.trigger', operationVersion: '0.1.0', parameters: { authMode: 'none' } },
-    { id: 'ai_shape', kind: 'logic', type: 'core.transform', operationVersion: '0.1.0', parameters: { fields: { greeted: true } } },
-  ],
-  edges: [{ id: 'e_ai_hook_main_ai_shape', from: { nodeId: 'ai_hook', port: 'main' }, to: { nodeId: 'ai_shape', port: 'input' } }],
-};
 
 const SERVICES = ['@xperiment/api', '@xperiment/orchestrator', '@xperiment/worker', '@xperiment/gateway', '@xperiment/scheduler'] as const;
 
@@ -92,18 +82,128 @@ function startTelegramStub(): Promise<Server> {
   return new Promise((resolve) => server.listen(TELEGRAM_STUB_PORT, '127.0.0.1', () => resolve(server)));
 }
 
-/** Marker in a prompt that makes the stub decline, exercising the 422 path. */
+/** Marker in a prompt that makes the stub decline, exercising the error path. */
 export const AI_FAIL_MARKER = 'TRIGGER_AI_FAILURE';
+/** Holds the socket open, exercising the keep-alive and the Stop button. */
+export const AI_STALL_MARKER = 'TRIGGER_AI_STALL';
 
-/** Minimal OpenRouter chat-completions stub returning the canned workflow. */
+const REMINDER_IR = {
+  schemaVersion: '0.1',
+  workflow: { id: 'wf_reminder', name: 'Pengingat makan' },
+  entrypoints: ['at_noon'],
+  nodes: [
+    {
+      id: 'at_noon',
+      kind: 'trigger',
+      type: 'schedule.trigger',
+      operationVersion: '0.1.0',
+      parameters: { cron: '0 12 * * *', timezone: 'Asia/Jakarta' },
+    },
+    {
+      id: 'notify',
+      kind: 'action',
+      type: 'telegram.sendMessage',
+      operationVersion: '0.1.0',
+      parameters: { chatId: '123', text: 'Waktunya makan siang.' },
+    },
+  ],
+  edges: [{ id: 'e1', from: { nodeId: 'at_noon', port: 'main' }, to: { nodeId: 'notify', port: 'input' } }],
+  metadata: { layout: { at_noon: { x: 80, y: 120 }, notify: { x: 440, y: 120 } } },
+};
+
+const USAGE = { prompt_tokens: 80, completion_tokens: 12, total_tokens: 92 };
+
+function chunk(delta: Record<string, unknown>, finish: string | null = null): string {
+  const body = {
+    id: 'x',
+    object: 'chat.completion.chunk',
+    created: 0,
+    model: 'stub',
+    choices: [{ index: 0, delta, finish_reason: finish }],
+    usage: USAGE,
+  };
+  return ['data: ', JSON.stringify(body), '\n\n'].join('');
+}
+
+function sayText(content: string): string {
+  const half = Math.ceil(content.length / 2);
+  return (
+    chunk({ role: 'assistant', content: content.slice(0, half) }) +
+    chunk({ content: content.slice(half) }) +
+    chunk({}, 'stop') +
+    'data: [DONE]\n\n'
+  );
+}
+
+function callTool(name: string, args: unknown): string {
+  return (
+    chunk({
+      role: 'assistant',
+      tool_calls: [{ index: 0, id: `c_${name}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+    }) +
+    chunk({}, 'tool_calls') +
+    'data: [DONE]\n\n'
+  );
+}
+
+/**
+ * A scripted, tool-calling, streaming OpenAI-compatible stub.
+ *
+ * The step is derived from how many tool results the incoming message list already
+ * carries, NOT from a counter on the server. A counter leaks between tests in a serial
+ * suite and produces the worst kind of flake.
+ */
+function scriptFor(messages: { role: string; content?: unknown }[], workflowId: string | null): string {
+  const done = messages.filter((m) => m.role === 'tool').length;
+  switch (done) {
+    case 0:
+      // A real model reads the id out of its instructions, which say which workflow is
+      // open. Creating another one would build a second workflow beside it.
+      return workflowId
+        ? callTool('put_draft', { workflowId, definition: JSON.stringify(REMINDER_IR) })
+        : callTool('create_workflow', { name: 'Pengingat makan' });
+    case 1:
+      return callTool('request_credential', {
+        connectorKey: 'telegram',
+        reason: 'to send the reminder',
+        nodeId: 'notify',
+      });
+    default:
+      return sayText('Sudah saya buatkan. Hubungkan Telegram, lalu tinjau dan tekan Publish.');
+  }
+}
+
+/**
+ * The workflow in play: the one named in the system instructions when the conversation
+ * was opened from an editor, else the one a create_workflow result handed back.
+ */
+function targetWorkflowId(raw: string): string | null {
+  const all = raw;
+  const attached = /already attached to workflow ([0-9a-f-]{36})/.exec(all);
+  if (attached) return attached[1] ?? null;
+  const created = /\?"workflowId\?"\s*:\s*\?"([0-9a-f-]{36})/.exec(all);
+  return created?.[1] ?? null;
+}
+
 function startOpenRouterStub(): Promise<Server> {
   const server = createServer((req, res) => {
     let raw = '';
     req.on('data', (c: Buffer) => (raw += c.toString()));
     req.on('end', () => {
-      res.setHeader('content-type', 'application/json');
-      const content = raw.includes(AI_FAIL_MARKER) ? 'I cannot help with that.' : JSON.stringify(STUB_WORKFLOW);
-      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }));
+      const body = JSON.parse(raw || '{}') as { messages?: { role: string; content?: unknown }[] };
+      const messages = body.messages ?? [];
+      const asText = JSON.stringify(messages);
+      res.setHeader('content-type', 'text/event-stream');
+      if (asText.includes(AI_STALL_MARKER)) return; // hold the socket, never answer
+      if (asText.includes(AI_FAIL_MARKER)) {
+        res.statusCode = 500;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: { message: 'declined' } }));
+        return;
+      }
+      // A beat before answering, so a chip's running state is observable rather than a
+      // coin flip in the browser.
+      setTimeout(() => res.end(scriptFor(messages, targetWorkflowId(raw))), 250);
     });
   });
   return new Promise((resolve) => server.listen(OPENROUTER_STUB_PORT, '127.0.0.1', () => resolve(server)));

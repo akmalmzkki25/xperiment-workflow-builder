@@ -40,6 +40,8 @@ export interface ChatTurnInput {
   conversationId: string;
   /** Prior turns, oldest first, already loaded from the transcript. */
   history: { role: 'user' | 'assistant'; content: string }[];
+  /** The workflow the conversation is attached to, when opened from an editor. */
+  workflowId: string | null;
   prompt: string;
   grantedPermissions: ReadonlySet<RequiredPermission>;
   signal: AbortSignal;
@@ -77,7 +79,7 @@ export async function runChatTurn(deps: ChatTurnDeps, input: ChatTurnInput, emit
     ...(deps.appUrl ? { appUrl: deps.appUrl } : {}),
   };
 
-  await emit({ type: 'turn', turnId, conversationId: conversation, workflowId: null });
+  await emit({ type: 'turn', turnId, conversationId: conversation, workflowId: input.workflowId });
 
   // Before anything is stored or sent anywhere.
   if (looksLikeCredential(input.prompt)) {
@@ -131,6 +133,7 @@ export async function runChatTurn(deps: ChatTurnDeps, input: ChatTurnInput, emit
     instructions: buildInstructions({
       catalogIndex: buildCatalogIndex(connectorCatalog(deps.registry)),
       connections,
+      ...(input.workflowId ? { workflowId: input.workflowId } : {}),
     }),
     specs: ALL_SPECS,
     ctx,

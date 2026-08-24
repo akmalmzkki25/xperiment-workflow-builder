@@ -261,34 +261,77 @@ test('a second user sees an empty workspace', async ({ page }) => {
   await page.screenshot({ path: `${ARTIFACTS}/05-isolation.png` });
 });
 
-test('the AI dock generates a workflow onto the canvas', async ({ page }) => {
-  await loginWithToken(page);
+test('the assistant builds a Telegram reminder, credential handoff and all', async ({ page }) => {
+  // A THIRD user, deliberately: the suite already creates a telegram connection earlier,
+  // and with one present the credential callout would never appear. Ordering would be a
+  // trap for whoever reorders these next.
+  const email = `web3-${runId}@xperiment.test`;
+  await page.goto('/register');
+  await page.getByTestId('auth-email').fill(email);
+  await page.getByTestId('auth-password').fill(PASSWORD);
+  await page.getByTestId('auth-submit').click();
+  await expect(page).toHaveURL(/\/workflows/);
+
   await page.getByTestId('wf-create').click();
-  await page.getByTestId('wf-name-input').fill('AI intake');
+  await page.getByTestId('wf-name-input').fill('Pengingat makan');
   await page.getByTestId('wf-create-submit').click();
   await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}/);
 
   await page.getByTestId('ai-open').click();
   await expect(page.getByTestId('ai-dock')).toBeVisible();
-  await page.getByTestId('ai-prompt').fill('When a webhook arrives, transform the payload.');
-  await page.getByTestId('ai-generate').click();
+  await expect(page.getByTestId('ai-empty')).toBeVisible();
 
-  // The stub returns a webhook trigger + transform; both should land on the canvas.
-  await expect(page.getByTestId('node-ai_hook')).toBeVisible();
-  await expect(page.getByTestId('node-ai_shape')).toBeVisible();
+  await page.getByTestId('ai-prompt').fill('Ingatkan aku makan siang tiap jam 12 lewat Telegram.');
+  await page.getByTestId('ai-send').click();
+
+  // Tool chips are the progress indicator, and they land in the order the work happened.
+  // Not asserted here: that they arrive one at a time. Playwright's matchers retry until
+  // a FINAL state, so they cannot observe an intermediate one, and these tools are local
+  // database writes that finish in single-digit milliseconds. Incremental arrival is
+  // proven where it can be — sseFrames.test.ts, which asserts nothing is emitted before a
+  // record completes.
+  await expect(page.getByTestId('ai-tool-put_draft')).toHaveAttribute('data-state', 'ok');
+  // And it edited the workflow already open rather than creating a second one beside it.
+  await expect(page.getByTestId('ai-tool-create_workflow')).toHaveCount(0);
+  const chipOrder = await page.getByTestId(/^ai-tool-/).all();
+  expect(await chipOrder[0]!.getAttribute('data-testid')).toBe('ai-tool-put_draft');
+
+  // THE REPORTED BUG. The correct nodes, not a core.transform placeholder.
+  await expect(page.getByTestId('node-at_noon')).toBeVisible();
+  await expect(page.getByTestId('node-notify')).toBeVisible();
   await expect(page.locator('.react-flow__edge')).toHaveCount(1);
 
-  // The AI applies a draft the user reviews; save it, then it validates clean.
-  await page.getByTestId('action-save').click();
-  await expect(page.getByTestId('editor-banner')).toContainText('Draft saved');
-  await page.getByTestId('action-validate').click();
-  await expect(page.getByTestId('editor-banner')).toContainText('Draft is valid');
-  await page.screenshot({ path: `${ARTIFACTS}/06-ai-generated.png` });
+  // And it says what is missing rather than quietly building something inert.
+  await expect(page.getByTestId('ai-connection-callout')).toBeVisible();
+  await expect(page.getByTestId('ai-connect-telegram')).toBeVisible();
+  await page.screenshot({ path: `${ARTIFACTS}/13-ai-chat-telegram.png` });
 
-  // When the model can't produce a valid workflow, the dock surfaces the error.
+  // The credential goes through the encrypted form, never through the chat.
+  await page.getByTestId('ai-connect-telegram').click();
+  await expect(page.getByTestId('conn-connector-select')).toHaveValue('telegram');
+  await page.getByTestId('conn-name').fill('Bot pengingat');
+  await page.getByTestId('conn-field-botToken').fill(BOT_TOKEN);
+  await page.getByTestId('conn-field-baseUrl').fill(`http://127.0.0.1:${TELEGRAM_STUB_PORT}`);
+  await page.getByTestId('conn-submit').click();
+  await expect(page.getByTestId('ai-connected')).toBeVisible();
+
+  const transcript = (await page.getByTestId('ai-thread').innerText()).toLowerCase();
+  expect(transcript).not.toContain(BOT_TOKEN.toLowerCase());
+
+  // The agent never publishes. That stays a human click.
+  await page.getByTestId('nav-workflows').click();
+  await expect(page.getByTestId('wf-row-Pengingat makan')).toContainText('Draft');
+});
+
+test('the assistant surfaces a provider failure instead of falling silent', async ({ page }) => {
+  await loginWithToken(page);
+  await page.getByTestId('wf-create').click();
+  await page.getByTestId('wf-name-input').fill('AI failure path');
+  await page.getByTestId('wf-create-submit').click();
   await page.getByTestId('ai-open').click();
   await page.getByTestId('ai-prompt').fill(`please ${AI_FAIL_MARKER}`);
-  await page.getByTestId('ai-generate').click();
+  await page.getByTestId('ai-send').click();
+  // A turn that says nothing and does nothing must read as a failure, not as success.
   await expect(page.getByTestId('ai-error')).toBeVisible();
 });
 

@@ -74,6 +74,16 @@ describe('buildInstructions', () => {
     expect(text.toLowerCase()).toContain('connection form');
   });
 
+  test('when a workflow is already open, it says so and forbids creating a second one', () => {
+    // Without this the agent calls create_workflow and quietly builds a workflow BESIDE
+    // the one on screen, whose canvas then correctly ignores every update — which looks
+    // to the person like the assistant did nothing at all.
+    const text = buildInstructions({ catalogIndex: index, connections: [], workflowId: 'wf-open-123' });
+    expect(text).toContain('already attached to workflow wf-open-123');
+    expect(text).toContain('Do NOT call create_workflow');
+    expect(withNoConnections()).not.toContain('already attached to workflow');
+  });
+
   test('it carries the cross-field rules no parameter schema can express', () => {
     const text = withNoConnections();
     expect(text).toContain('whatsapp.sendMessage');

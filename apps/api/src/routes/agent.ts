@@ -141,6 +141,7 @@ export function registerAgentRoutes(app: FastifyInstance, deps: ResolvedServerDe
           workspaceId: ctx.workspaceId,
           userId: ctx.userId ?? null,
           conversationId: id,
+          workflowId: conversation.workflowId,
           history,
           prompt: parsed.data.message,
           grantedPermissions: granted,
