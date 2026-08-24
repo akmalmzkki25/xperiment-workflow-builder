@@ -80,3 +80,5 @@ export {
   type SecretVault,
 } from './crypto/vault.js';
 export { rekeyAll, type RekeyProgress } from './crypto/rekey.js';
+export { redactSecrets, REDACTED, looksLikeCredential } from './redact.js';
+export * from './repos/agentConversations.js';

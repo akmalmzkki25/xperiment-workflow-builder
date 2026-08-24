@@ -11,6 +11,9 @@ export interface RetentionPolicy {
   auditDays: number;
   usageDays: number;
   outboxDays: number;
+  /** Dated by `updated_at`: a three-week-old conversation somebody is still using must
+   *  not vanish mid-sentence. */
+  conversationDays: number;
 }
 
 export interface PruneResult {
@@ -22,6 +25,7 @@ export interface PruneResult {
   usageEvents: number;
   outbox: number;
   deadLetters: number;
+  agentConversations: number;
 }
 
 /** Bound so one sweep cannot hold a transaction over a million rows. */
@@ -44,6 +48,7 @@ export function clampPolicy(requested: Partial<RetentionPolicy>): RetentionPolic
     auditDays: Math.max(requested.auditDays ?? AUDIT_RETENTION_FLOOR_DAYS, AUDIT_RETENTION_FLOOR_DAYS),
     usageDays: Math.max(requested.usageDays ?? USAGE_RETENTION_FLOOR_DAYS, USAGE_RETENTION_FLOOR_DAYS),
     outboxDays: Math.max(1, requested.outboxDays ?? OUTBOX_RETENTION_DAYS),
+    conversationDays: Math.max(1, requested.conversationDays ?? 90),
   };
 }
 
@@ -80,9 +85,21 @@ export async function pruneExpired(
     usageEvents: 0,
     outbox: 0,
     deadLetters: 0,
+    agentConversations: 0,
   };
   try {
     await client.query('BEGIN');
+
+    // Messages and credential requests cascade from the conversation, so only the parent
+    // needs a batched delete. `updated_at` rather than `created_at`, because the row a
+    // sweep must not take is the long conversation somebody is still in the middle of.
+    result.agentConversations = await deleteBatch(
+      client,
+      `DELETE FROM agent_conversations WHERE id IN (
+         SELECT id FROM agent_conversations WHERE updated_at < now() - make_interval(days => $1) LIMIT ${batch}
+       )`,
+      [policy.conversationDays],
+    );
 
     const oldExecutions = `SELECT id FROM executions WHERE created_at < now() - make_interval(days => $1) LIMIT ${batch}`;
 
