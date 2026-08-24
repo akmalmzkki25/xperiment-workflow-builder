@@ -21,6 +21,12 @@ x-app-env: &app-env
   # Deliberately not production: `assertBootSafe` refuses a production boot on the
   # committed development credentials above, so every service would fail to start.
   NODE_ENV: development
+  # The AI builder. Passed through from the host rather than committed — an absent key
+  # only makes the agent routes answer 503, which the rest of the app is unaffected by.
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-5.6-luna}
+  OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai}
+  MASTRA_TELEMETRY_DISABLED: "1"
 
 x-app: &app
   profiles: ["app"]

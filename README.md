@@ -826,30 +826,120 @@ still recorded **FAILED** — the database records what happened, the scheduler 
 means — and a handled failure contributes `{ error: … }` so the branch handling it can read the
 failure. Inside a loop body an error edge must stay inside that body.
 
-## AI Builder (Phase 1E)
+## AI Workflow Builder
 
-Describe a workflow in plain language and get a validated draft on the canvas.
-The AI dock in the editor calls two builder-gated endpoints:
+Describe the automation you want. The assistant builds it in your workspace, tells you
+which credentials it needs and how to get them, and asks when something is genuinely
+ambiguous.
 
-- `POST /v1/ai/generate` `{ prompt }` → a new draft workflow IR.
-- `POST /v1/ai/edit` `{ prompt, definition }` → a revised IR from the current draft.
+```
+POST /v1/agent/conversations                     start a conversation (workflow:write)
+GET  /v1/agent/conversations/:id                 transcript + open credential requests
+POST /v1/agent/conversations/:id/messages        one turn, streamed as server-sent events
+```
 
-Generation runs server-side through OpenRouter (OpenAI-compatible). The model's
-output is JSON-extracted and run through the same `validateWorkflow` gate that
-publishing uses; on failure the findings are fed back for a bounded **repair loop**
-(3 attempts) before returning `422` with the findings. Nothing is auto-saved or
-published — the draft lands on the canvas for the user to review.
+A turn streams typed frames rather than answering once at the end: text deltas, a start
+and end for every tool call, a `canvas` frame when the draft changes, and
+`connection.required` when a credential is missing. A turn that calls four tools takes
+tens of seconds, and silence for that long is indistinguishable from a hang — **the tool
+chips are the progress indicator**, which is the whole reason the protocol exists.
 
-Configure via env (the key stays server-side; the browser only sends a prompt):
+### What it can and cannot do
+
+Ten tools, each declaring the Xperiment permission it needs, all built per request around the
+caller's own `workspaceId`. **No tool input schema has a field capable of naming a
+workspace** — a cross-tenant read is not something the model is trusted not to attempt,
+it has no vocabulary to express it, and a test walks every schema to prove it.
+
+| | |
+|---|---|
+| Reads | `describe_node_type` · `list_connections` · `get_credential_guide` · `list_workflows` · `get_workflow` |
+| Writes | `create_workflow` · `put_draft` · `set_node_connection` · `validate_workflow` · `request_credential` |
+| **Absent** | publish · activate · execute · delete · create a connection |
+
+Those five are not merely unimplemented. The instructions tell the model it cannot do
+them, because a model told it cannot behaves far better than one that finds no tool and
+improvises — and a test asserts none can be added without the decision being made again.
+**Publish and Activate stay your click.**
+
+### Credentials never enter the chat
+
+`request_credential` creates nothing. It records the ask and opens Xperiment's existing
+encrypted connection form, preselected to the right connector. Its input schema has no
+field that could hold a secret.
+
+If somebody pastes one anyway, **the turn is refused** rather than scrubbed: a redacted
+transcript still means the value transited the logs and went upstream to the model
+provider. `redactSecrets` matches key *names*, so it cannot see a token pasted as free
+text — `looksLikeCredential` matches the *shapes* Xperiment's own connectors take
+(BotFather tokens, `xoxb-`, `sk-`, PEM keys, connection strings with a password).
+
+Ten `CREDENTIAL_GUIDES` back this, one per connection payload schema, served from
+`GET /v1/connectors` so the form and the assistant read one source. They are exhaustive
+over `ConnectorKey`, so an eleventh payload schema will not compile until its guide
+exists, and a drift test checks the documented fields are exactly the fields the form
+renders. The Telegram guide names the thing that actually traps people: **chatId is a
+node parameter, not part of the credential.**
+
+### The bug this replaces
+
+Asked for a Telegram lunch reminder in an empty workspace, the old one-shot builder
+produced a `core.transform` node called `telegram_message_placeholder` — a workflow that
+fires on time and sends nothing. Not a hallucination: when a workspace had no
+connections the prompt said *"None. Do not use any node that requiresConnection."* and
+the model obeyed.
+
+Which node is correct follows from what you asked for. Whether a credential exists is a
+separate fact that changes the *report*, never the *graph*. The assistant now builds
+`telegram.sendMessage` with `connectionRef` unset, saves it, and says exactly which
+connector is missing on exactly which node. That sentence is a regression test; putting
+the old string back turns it red.
+
+### Configuration
 
 ```bash
 OPENROUTER_API_KEY=sk-or-...
-OPENROUTER_MODEL=google/gemini-3.1-flash-lite
+# Must be a capable tool-calling model — this drives a ten-tool agent over several turns.
+OPENROUTER_MODEL=openai/gpt-5.6-luna
 OPENROUTER_BASE_URL=https://openrouter.ai
+MASTRA_TELEMETRY_DISABLED=1
 ```
 
-Without `OPENROUTER_API_KEY` the AI routes return `503 ai_unconfigured` and the rest
-of the app is unaffected.
+Without `OPENROUTER_API_KEY` the agent routes return `503` and the rest of the app is
+unaffected. A bare model name is prefixed with `openrouter/` automatically.
+
+### Cost
+
+The instructions are **8,813 characters against the old prompt's 25,260** — the parameter
+JSON Schemas moved behind `describe_node_type`, while the node type index stayed inline
+because a model that can only discover types by calling a tool will sometimes not call it
+and invent something plausible instead, which is the bug.
+
+Every model round trip is metered the moment it is answered, accumulated in
+`onStepFinish` — measured to fire per step and to survive a run that then throws, while
+the thrown error carries neither steps nor usage. A turn holds one slot per workspace and
+a second gets `429`: the rate limiter counts requests, so a 90-second stream making a
+dozen calls counts as one.
+
+**Measured against a real model, not estimated.** One conversation that built the Telegram
+reminder end to end — six tool calls, 177 streamed text frames — billed **36,615 tokens**.
+That is most of a free month's 50,000 allowance in a single build, so the honest reading
+is that a conversation is *not* cheaper than the old one-shot path once the model chooses
+to work: the prompt got 65% smaller, and the agent then makes six round trips where the
+old path made one. Plan limits should be read with that in mind.
+
+### Undo, and what it does not undo
+
+An agent draft lands as **one** undo entry, so a single Ctrl+Z restores the canvas you
+had. It does **not** revert the server draft — after undoing, the canvas is dirty
+relative to the agent's revision, and saving writes your older graph forward as a new
+one. Coherent, but not obvious.
+
+If the canvas has unsaved work when the agent saves, nothing is replaced: you are offered
+the new revision. **Keep mine** deliberately does not advance your local revision, because
+advancing it would let your next save overwrite the assistant's work with no record —
+instead that save returns `412` and the existing conflict banner does its job. There is
+no merge.
 
 ## Security: envelope encryption & audit (Phase 3P)
 
