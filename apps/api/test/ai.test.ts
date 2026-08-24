@@ -15,6 +15,8 @@ let stubUrl: string;
 /** Queue of assistant `content` strings the stub returns, in order. */
 let scripted: string[] = [];
 let stubStatus = 200;
+/** Per-call status overrides, consumed in order, so one run can succeed then fail. */
+let statusScript: number[] = [];
 let lastAuthHeader: string | undefined;
 
 const validIr = () => ({
@@ -44,9 +46,10 @@ beforeAll(async () => {
     let raw = '';
     req.on('data', (c: Buffer) => (raw += c.toString()));
     req.on('end', () => {
-      res.statusCode = stubStatus;
+      const status = statusScript.shift() ?? stubStatus;
+      res.statusCode = status;
       res.setHeader('content-type', 'application/json');
-      if (stubStatus >= 400) {
+      if (status >= 400) {
         // Provider error bodies can echo the request Authorization header.
         res.end(JSON.stringify({ error: { message: `upstream failure for ${lastAuthHeader}` } }));
         return;
@@ -70,6 +73,7 @@ afterAll(async () => {
 });
 beforeEach(() => {
   scripted = [];
+  statusScript = [];
   stubStatus = 200;
   lastAuthHeader = undefined;
 });
@@ -100,6 +104,56 @@ describe('POST /v1/ai/generate', () => {
     expect(rows.rowCount).toBe(1);
     expect(Number((rows.rows[0] as { quantity: string }).quantity)).toBe(42);
     expect((rows.rows[0] as { kind: string }).kind).toBe('generate');
+    await app.close();
+  });
+
+  test('a generation that never validates still bills the tokens it burnt', async () => {
+    // The tokens were spent whatever the outcome. Recording them only on success means a
+    // free-tier user can loop failures forever without ever reaching the cap that would
+    // stop them, because the counter the pre-check reads is the one they never write.
+    const app = buildAiServer(FAKE_KEY);
+    const auth = await createAuthedUser(app);
+    scripted = ['nonsense', 'still nonsense', 'nope'];
+    const r = await auth.inject({ method: 'POST', url: '/v1/ai/generate', payload: { prompt: 'build it' } });
+    expect(r.statusCode).toBe(422);
+    const rows = await pool.query(
+      `SELECT quantity FROM usage_events WHERE workspace_id=$1 AND metric='ai_tokens'`,
+      [auth.workspaceId],
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(Number((rows.rows[0] as { quantity: string }).quantity)).toBe(42 * 3);
+    await app.close();
+  });
+
+  test('a provider failure part way through still bills the calls that answered', async () => {
+    const app = buildAiServer(FAKE_KEY);
+    const auth = await createAuthedUser(app);
+    // First call answers with something unusable, second call fails at the provider.
+    statusScript = [200, 500];
+    scripted = ['nonsense'];
+    const r = await auth.inject({ method: 'POST', url: '/v1/ai/generate', payload: { prompt: 'build it' } });
+    expect(r.statusCode).toBe(502);
+    const rows = await pool.query(
+      `SELECT quantity FROM usage_events WHERE workspace_id=$1 AND metric='ai_tokens'`,
+      [auth.workspaceId],
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(Number((rows.rows[0] as { quantity: string }).quantity)).toBe(42);
+    await app.close();
+  });
+
+  test('a run that fails on its very first call bills nothing', async () => {
+    // Nothing answered, so nothing was consumed. An empty row would be a lie.
+    const app = buildAiServer(FAKE_KEY);
+    const auth = await createAuthedUser(app);
+    stubStatus = 500;
+    const r = await auth.inject({ method: 'POST', url: '/v1/ai/generate', payload: { prompt: 'build it' } });
+    expect(r.statusCode).toBe(502);
+    const rows = await pool.query(
+      `SELECT quantity FROM usage_events WHERE workspace_id=$1 AND metric='ai_tokens'`,
+      [auth.workspaceId],
+    );
+    expect(rows.rowCount).toBe(0);
     await app.close();
   });
 
