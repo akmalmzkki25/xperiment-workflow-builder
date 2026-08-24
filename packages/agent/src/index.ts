@@ -17,3 +17,4 @@ export {
 export { buildCatalogIndex } from './catalogIndex.js';
 export { buildInstructions, type ConnectionSummary, type InstructionInput } from './instructions.js';
 export { READ_TOOLS } from './tools/read.js';
+export { WRITE_TOOLS, type MissingConnection } from './tools/write.js';

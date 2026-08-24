@@ -52,6 +52,10 @@ export interface AgentRunContext {
   userId: string | null;
   grantedPermissions: ReadonlySet<RequiredPermission>;
   runState: RunState;
+  /** Set once the turn has a transcript to attach a credential request to. */
+  conversationId?: string;
+  /** Where the browser is, for the connection-form link. From ResolvedServerDeps. */
+  appUrl?: string;
 }
 
 export interface XperimentToolSpec<I extends z.ZodTypeAny, O extends z.ZodTypeAny> {

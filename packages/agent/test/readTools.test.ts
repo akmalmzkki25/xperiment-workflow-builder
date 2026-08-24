@@ -217,7 +217,7 @@ describe('no read tool has a workspace-shaped input', () => {
   test('the model cannot name a tenant, because there is no field for it', () => {
     // Structurally absent, not validated away: no token sequence reaches it.
     for (const tool of [describeNodeType, getCredentialGuide, listConnectionsTool, getWorkflowTool, listWorkflowsTool]) {
-      const shape = Object.keys((tool.inputSchema as { shape?: Record<string, unknown> }).shape ?? {});
+      const shape = Object.keys((tool.inputSchema as unknown as { shape?: Record<string, unknown> }).shape ?? {});
       for (const key of shape) expect(key, `${tool.id}.${key}`).not.toMatch(/workspace|tenant|org/i);
     }
   });
