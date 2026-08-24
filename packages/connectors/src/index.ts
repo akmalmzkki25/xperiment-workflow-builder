@@ -33,6 +33,13 @@ export { createHttpRequest } from './http/request.js';
 export { webhookTrigger } from './webhook/trigger.js';
 export { scheduleTrigger } from './schedule/trigger.js';
 export { CONNECTION_PAYLOAD_SCHEMAS, type ConnectorKey } from './payloads.js';
+export {
+  CREDENTIAL_GUIDES,
+  CREDENTIAL_GUIDE_KEYS,
+  type CredentialGuide,
+  type CredentialGuideField,
+  type CredentialGuideStep,
+} from './credentialGuides.js';
 export { postgresQuery } from './postgres/query.js';
 export { telegramSendMessage } from './telegram/sendMessage.js';
 export { whatsappSendMessage } from './whatsapp/sendMessage.js';

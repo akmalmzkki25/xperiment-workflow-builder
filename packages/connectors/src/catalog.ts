@@ -1,6 +1,7 @@
 import type { EffectClass, NodeKind } from '@xperiment/ir';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { CONNECTION_PAYLOAD_SCHEMAS } from './payloads.js';
+import { CREDENTIAL_GUIDES, type CredentialGuide } from './credentialGuides.js';
+import { CONNECTION_PAYLOAD_SCHEMAS, type ConnectorKey } from './payloads.js';
 import type { ConnectorRegistry } from './registry.js';
 
 export interface ConnectorCatalogItem {
@@ -47,6 +48,12 @@ export interface ConnectionSchemaItem {
   connectorKey: string;
   /** Draft-7 JSON Schema of the connection payload, for schema-driven forms. */
   payloadJsonSchema: unknown;
+  /**
+   * How a person obtains this credential. Served here rather than from its own endpoint
+   * because the form needs both in the same breath, and two round trips is two chances
+   * for one of them to be missing.
+   */
+  guide: CredentialGuide;
 }
 
 /**
@@ -67,5 +74,6 @@ export function connectionSchemas(): ConnectionSchemaItem[] {
   return Object.entries(CONNECTION_PAYLOAD_SCHEMAS).map(([connectorKey, schema]) => ({
     connectorKey,
     payloadJsonSchema: zodToJsonSchema(schema, { target: 'jsonSchema7', $refStrategy: 'none' }),
+    guide: CREDENTIAL_GUIDES[connectorKey as ConnectorKey],
   }));
 }

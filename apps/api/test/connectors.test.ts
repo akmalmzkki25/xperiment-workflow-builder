@@ -29,6 +29,20 @@ describe('GET /v1/connectors', () => {
     expect(r.statusCode).toBe(401);
   });
 
+  test('every connection schema arrives with the guide for getting that credential', async () => {
+    // The form needs both in one breath: what the fields are, and how to obtain what
+    // goes in them. Two round trips is two chances for one of them to be missing.
+    const r = await auth.inject({ method: 'GET', url: '/v1/connectors' });
+    const body = r.json<{ connections: { connectorKey: string; guide?: { steps: unknown[] } }[] }>();
+    expect(body.connections.length).toBeGreaterThan(0);
+    for (const c of body.connections) {
+      expect(c.guide, c.connectorKey).toBeDefined();
+      expect(c.guide!.steps.length, c.connectorKey).toBeGreaterThan(0);
+    }
+    const telegram = body.connections.find((c) => c.connectorKey === 'telegram');
+    expect(JSON.stringify(telegram)).toContain('BotFather');
+  });
+
   test('returns full catalog with JSON-Schema params and no internals', async () => {
     const r = await auth.inject({ method: 'GET', url: '/v1/connectors' });
     expect(r.statusCode).toBe(200);
