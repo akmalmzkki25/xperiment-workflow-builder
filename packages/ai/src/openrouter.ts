@@ -14,8 +14,14 @@ export interface OpenRouterConfig {
   baseUrl: string;
   appUrl?: string;
   appTitle?: string;
+  /** Per-call wall clock. Without one, a provider that accepts the socket and then says
+   *  nothing holds this request — and the Fastify request behind it — open forever. */
+  timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }
+
+/** Generous: a long completion against a busy model legitimately takes tens of seconds. */
+export const DEFAULT_TIMEOUT_MS = 60_000;
 
 export interface TokenUsage {
   promptTokens: number;
@@ -56,11 +62,21 @@ export function createOpenRouterClient(cfg: OpenRouterConfig): ChatClient {
         };
       }
       let res: Response;
+      const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       try {
-        res = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body) });
-      } catch {
+        res = await fetchImpl(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (e) {
+        // A timeout is worth telling apart from a refused connection: one means the
+        // provider is slow, the other that it is gone, and they call for different
+        // responses from whoever reads the log.
+        const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
         // Never surface the underlying error text — it can echo request headers.
-        throw new AiProviderError(null, 'AI provider request failed');
+        throw new AiProviderError(null, timedOut ? `AI provider timed out after ${timeoutMs}ms` : 'AI provider request failed');
       }
       if (!res.ok) {
         throw new AiProviderError(res.status, `AI provider returned ${res.status}`);

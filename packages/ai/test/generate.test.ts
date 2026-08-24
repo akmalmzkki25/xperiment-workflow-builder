@@ -92,6 +92,21 @@ describe('generateWorkflow', () => {
     expect(result.ir).toBeDefined();
   });
 
+  test('stops starting attempts once the deadline has passed', async () => {
+    // Three attempts against a slow provider is three timeouts end to end. The per-call
+    // clock bounds one call; this bounds the run.
+    const { client } = scriptedClient(['nope', 'still nope', 'nope again']);
+    const res = await generateWorkflow('build it', {
+      client,
+      registry,
+      catalog,
+      connections: [],
+      deadlineAt: Date.now() - 1, // already past
+    });
+    expect(res.attempts).toBe(1);
+    expect(res.ir).toBeUndefined();
+  });
+
   test('respects a custom maxAttempts', async () => {
     const bad = '{}';
     const { client } = scriptedClient([bad, bad, bad, bad, bad]);

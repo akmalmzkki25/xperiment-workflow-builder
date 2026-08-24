@@ -107,6 +107,11 @@ function resolveAiConfig(override?: AiConfig): AiConfig {
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({
     logger: { level: process.env['LOG_LEVEL'] ?? 'info' },
+    // Node's own receive-side clock: how long a client may take to deliver a request.
+    // Deliberately NOT the answer to a slow upstream — it does not bound handler
+    // execution, so the AI path carries its own deadline. This bounds a client that
+    // opens a socket and dribbles.
+    requestTimeout: 30_000,
     genReqId: (req) => (req.headers['x-request-id'] as string | undefined) ?? randomUUID(),
   });
   // Registered here, before any route, because `onRoute` only fires for routes added

@@ -8,6 +8,13 @@ import { quotaBlocks } from './plan.js';
 import { sendProblem } from '../problem.js';
 import type { ResolvedServerDeps } from './deps.js';
 
+/**
+ * Whole-run budget. The client's own per-call timeout bounds one round trip; three
+ * repair attempts against a slow provider would otherwise add up to three of them in
+ * series, with nothing above watching the clock.
+ */
+const RUN_BUDGET_MS = 90_000;
+
 const generateSchema = z.object({ prompt: z.string().min(1).max(4000) }).strict();
 const editSchema = z.object({ prompt: z.string().min(1).max(4000), definition: z.unknown() }).strict();
 
@@ -66,7 +73,11 @@ export function registerAiRoutes(app: FastifyInstance, deps: ResolvedServerDeps)
     }));
     let result;
     try {
-      result = await generateWorkflow(prompt, { client: metered, registry: deps.registry, catalog, connections }, currentIr);
+      result = await generateWorkflow(
+        prompt,
+        { client: metered, registry: deps.registry, catalog, connections, deadlineAt: Date.now() + RUN_BUDGET_MS },
+        currentIr,
+      );
     } catch {
       // AiProviderError etc. — never surface provider text (may echo the key).
       return {

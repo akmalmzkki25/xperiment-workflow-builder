@@ -26,7 +26,7 @@ afterAll(async () => {
 
 async function newWorkspace(): Promise<string> {
   const user = await createUser(pool, { email: `wib-${randomUUID()}@xperiment.test`, passwordHash: 'x' });
-  const ws = await createWorkspaceWithOwner(pool, { name: 'WIB', userId: user.id, actor: { actorKind: 'system' } });
+  const ws = await createWorkspaceWithOwner(pool, { name: 'WIB', userId: user!.id, actor: { actorKind: 'system' } });
   return ws.id;
 }
 

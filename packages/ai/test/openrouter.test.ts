@@ -99,6 +99,27 @@ describe('createOpenRouterClient', () => {
     await expect(client.chat(messages)).rejects.toBeInstanceOf(AiProviderError);
   });
 
+  test('gives up on a provider that never answers, instead of hanging forever', async () => {
+    // No AbortSignal meant a hung provider held the socket — and the Fastify request
+    // behind it — open indefinitely. Nothing upstream had a clock either.
+    const client = createOpenRouterClient({
+      apiKey: 'k',
+      model: 'm',
+      baseUrl: 'https://openrouter.ai',
+      timeoutMs: 40,
+      fetchImpl: ((_u: Parameters<typeof fetch>[0], init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        })) as typeof fetch,
+    });
+    const started = Date.now();
+    const err = await client.chat([{ role: 'user', content: 'hi' }]).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiProviderError);
+    expect((err as AiProviderError).status).toBeNull();
+    expect((err as AiProviderError).message).toContain('timed out');
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
   test('wraps network failures as AiProviderError with null status', async () => {
     const fetchImpl = (async () => {
       throw new TypeError('network down');

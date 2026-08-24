@@ -11,6 +11,12 @@ export interface GenerateDeps {
   catalog: CatalogEntry[];
   connections: ConnectionSummary[];
   maxAttempts?: number;
+  /**
+   * Epoch ms after which no further attempt is started. The client's per-call timeout
+   * bounds one call; this bounds the run, so three repair attempts against a slow
+   * provider cannot add up to three timeouts in series.
+   */
+  deadlineAt?: number;
 }
 
 export interface GenerateResult {
@@ -35,6 +41,11 @@ export async function generateWorkflow(
   let lastFindings: ValidationFinding[] = [];
   let tokensUsed = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    // Checked before the call, not after: the point is not to start work we already know
+    // there is no time to finish.
+    if (attempt > 1 && deps.deadlineAt !== undefined && Date.now() >= deps.deadlineAt) {
+      return { findings: lastFindings, attempts: attempt - 1, tokensUsed };
+    }
     const res = await deps.client.chat(messages);
     tokensUsed += res.usage.totalTokens;
     const content = res.content;
