@@ -44,6 +44,12 @@ export interface PlanRetention {
   triggerEventDays: number;
 }
 
+/**
+ * NOT WIRED YET. `pruneExpired` takes its policy from the CLI, which defaults to 30 days
+ * for every workspace — so a free plan currently keeps four weeks it is not entitled to
+ * and a business plan loses eleven months it paid for. This is the intended schedule,
+ * kept here rather than deleted so the gap stays visible.
+ */
 export const PLAN_RETENTION: Record<PlanCode, PlanRetention> = {
   free: { executionDays: 7, triggerEventDays: 7 },
   builder: { executionDays: 30, triggerEventDays: 30 },

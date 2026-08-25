@@ -206,14 +206,3 @@ function applyFrame(state: ChatState, frame: Record<string, unknown>): ChatState
       return state;
   }
 }
-
-/** The canvas frame's payload, for the editor to decide what to do with. */
-export function latestCanvas(frames: Record<string, unknown>[]): { workflowId: string; revision: number; definition: unknown } | null {
-  for (let i = frames.length - 1; i >= 0; i -= 1) {
-    const f = frames[i];
-    if (f && f['type'] === 'canvas') {
-      return { workflowId: String(f['workflowId']), revision: Number(f['revision']), definition: f['definition'] };
-    }
-  }
-  return null;
-}

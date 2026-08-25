@@ -18,6 +18,7 @@ import {
   diffWorkflows,
   EXPORT_FORMAT,
   planImport,
+  readFormat,
   validateWorkflow,
   workflowIrSchema,
   type WorkflowIR,
@@ -301,7 +302,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
     if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const parsed = importSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    const declared = parsed.data.xperimentExport ?? parsed.data.xperimentExport;
+    const declared = readFormat(parsed.data);
     if (declared !== EXPORT_FORMAT) {
       // Refusing a format we do not know beats importing the parts we happen to recognise.
       return sendProblem(reply, 400, 'Unsupported export format', `unsupported_format: ${declared ?? 'missing'}`);

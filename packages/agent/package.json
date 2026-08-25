@@ -15,7 +15,6 @@
     "@xperiment/connectors": "workspace:*",
     "@xperiment/db": "workspace:*",
     "@xperiment/ir": "workspace:*",
-    "@xperiment/plans": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {
