@@ -7,6 +7,21 @@ delivery with idempotency, automatic retry, and a full execution audit trail.
 - Spec: `docs/superpowers/specs/2026-07-23-phase0-technical-proof-design.md`
 - Plan: `docs/superpowers/plans/2026-07-23-phase0-technical-proof.md`
 
+## A note on the name
+
+The product is **Xperiment**. It was called Xperiment, and three things still are, on
+purpose:
+
+| Still says `xperiment` | Why |
+|---|---|
+| The `@xperiment/*` package scope, the repo directory, the `xperiment` database | Internal names with no user reading them. Renaming the scope touches every import in the monorepo and buys nothing. |
+| `X-Xperiment-Workspace`, `X-Xperiment-Signature` | Wire protocol. The signature header is what external senders already compute against; renaming it breaks live webhooks. |
+| `XPERIMENT_HOME`, `XPERIMENT_TOKEN`, `XPERIMENT_API_URL`, `XPERIMENT_MASTER_KEY` | Renamed, but the old names are still read as a fallback, so an existing shell profile or deployment keeps working. |
+
+Workflow exports changed key: files now say `"xperimentExport"` and download as
+`<name>.xperiment.json`. Readers accept `"xperimentExport"` too — a rename should not
+cost anyone a workflow they saved.
+
 ## Prerequisites
 
 - Node.js >= 22.13, pnpm >= 10, Docker Desktop

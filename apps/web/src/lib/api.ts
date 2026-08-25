@@ -223,7 +223,7 @@ export interface RequiredConnection {
   wasConnected: boolean;
 }
 
-/** The shape of a `.xperiment.json` file. Deliberately loose about `definition`: the server
+/** The shape of an `.xperiment.json` file. Deliberately loose about `definition`: the server
  * re-validates it, and the browser has no business deciding what a workflow is. */
 export interface WorkflowExportDoc {
   xperimentExport: number;

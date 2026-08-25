@@ -21,6 +21,8 @@ export interface BootCheckEnv {
   REDIS_URL?: string | undefined;
   KMS_KEY_URI?: string | undefined;
   XPERIMENT_MASTER_KEY?: string | undefined;
+  /** Pre-rename name, still honoured so a deploy is not silently downgraded. */
+  XPERIMENT_MASTER_KEY?: string | undefined;
 }
 
 export interface BootProblem {
@@ -71,7 +73,7 @@ export function bootProblems(env: BootCheckEnv): BootProblem[] {
 
   // Envelope encryption needs a key from somewhere. Without either, the vault would
   // fall back to a development key and seal every workspace secret under it.
-  if (!env.KMS_KEY_URI && !env.XPERIMENT_MASTER_KEY) {
+  if (!env.KMS_KEY_URI && !env.XPERIMENT_MASTER_KEY && !env.XPERIMENT_MASTER_KEY) {
     problems.push({
       variable: 'KMS_KEY_URI',
       detail: 'unset with no XPERIMENT_MASTER_KEY either, so workspace secrets would be sealed with a development key',

@@ -11,7 +11,7 @@ export function verifyEmailMessage(to: string, appUrl: string, token: string): M
       'Confirm this address by opening the link below:',
       `${appUrl}/verify-email?token=${token}`,
       '',
-      'The link is valid for 24 hours. If you did not create a Xperiment account, ignore this email.',
+      'The link is valid for 24 hours. If you did not create an Xperiment account, ignore this email.',
     ].join('\n'),
   };
 }

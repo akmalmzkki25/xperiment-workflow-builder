@@ -241,6 +241,25 @@ describe('POST /v1/workflows/import', () => {
     expect(after.json<{ items: unknown[] }>().items).toHaveLength(before.json<{ items: unknown[] }>().items.length);
   });
 
+  test('a file written before the rename still imports', async () => {
+    // The format key changed with the product name; the file on disk did not.
+    const r = await auth.inject({
+      method: 'POST',
+      url: '/v1/workflows/import',
+      payload: { xperimentExport: 1, name: 'Lama', definition: notifyIr() },
+    });
+    expect(r.statusCode).toBe(201);
+  });
+
+  test('a file declaring neither key is refused rather than imported blind', async () => {
+    const r = await auth.inject({
+      method: 'POST',
+      url: '/v1/workflows/import',
+      payload: { name: 'X', definition: notifyIr() },
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
   test('the name in the request wins over the name in the file', async () => {
     const r = await auth.inject({
       method: 'POST',

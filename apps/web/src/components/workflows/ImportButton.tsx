@@ -12,12 +12,12 @@ import { Dialog } from '../common/Dialog';
 const REASONS: Record<string, string> = {
   too_large: 'That file is too large to be a workflow export.',
   not_json: 'That file is not JSON.',
-  not_an_export: 'That is not a Xperiment workflow export.',
+  not_an_export: 'That is not an Xperiment workflow export.',
   unsupported_format: 'That file was written by a newer Xperiment. Update, then try again.',
 };
 
 /**
- * Import a `.xperiment.json`.
+ * Import an `.xperiment.json`.
  *
  * A file input rather than a paste box: a workflow document is a file people keep, and
  * the browser's own picker is the only part of this the operating system should own.

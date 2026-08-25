@@ -16,6 +16,22 @@ import type { WorkflowIR } from './types.js';
 
 export const EXPORT_FORMAT = 1;
 
+/**
+ * The format key files written before the rename carry.
+ *
+ * Files already on people's disks say `xperimentExport`, and refusing them would turn a
+ * cosmetic rename into data loss. Readers accept either key; writers only ever emit the
+ * current one.
+ */
+export const LEGACY_FORMAT_KEY = 'xperimentExport';
+export const FORMAT_KEY = 'xperimentExport';
+
+/** The declared format of an export document, whichever key it used. */
+export function readFormat(doc: Record<string, unknown>): number | undefined {
+  const v = doc[FORMAT_KEY] ?? doc[LEGACY_FORMAT_KEY];
+  return typeof v === 'number' ? v : undefined;
+}
+
 /** What a node needed a connection for, in words rather than a UUID. */
 export interface RequiredConnection {
   nodeId: string;

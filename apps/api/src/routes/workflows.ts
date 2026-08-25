@@ -283,7 +283,9 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
 
   const importSchema = z
     .object({
-      xperimentExport: z.number().int(),
+      xperimentExport: z.number().int().optional(),
+      /** Files written before the rename. Accepted so a rename is not data loss. */
+      xperimentExport: z.number().int().optional(),
       name: z.string().min(1).max(200),
       definition: z.unknown(),
       // The manifest is informational on the way in: `planImport` re-derives it from the
@@ -299,9 +301,10 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
     if (!requirePermission(reply, ctx, 'workflow:write')) return;
     const parsed = importSchema.safeParse(req.body ?? {});
     if (!parsed.success) return sendProblem(reply, 400, 'Invalid request body', parsed.error.message);
-    if (parsed.data.xperimentExport !== EXPORT_FORMAT) {
+    const declared = parsed.data.xperimentExport ?? parsed.data.xperimentExport;
+    if (declared !== EXPORT_FORMAT) {
       // Refusing a format we do not know beats importing the parts we happen to recognise.
-      return sendProblem(reply, 400, 'Unsupported export format', `unsupported_format: ${parsed.data.xperimentExport}`);
+      return sendProblem(reply, 400, 'Unsupported export format', `unsupported_format: ${declared ?? 'missing'}`);
     }
     const ir = workflowIrSchema.safeParse(parsed.data.definition);
     if (!ir.success) return sendProblem(reply, 422, 'Not a workflow document', ir.error.message);

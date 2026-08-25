@@ -1,7 +1,7 @@
 import type { WorkflowExportDoc } from './api';
 
 /**
- * Reading a `.xperiment.json` somebody hands you.
+ * Reading an `.xperiment.json` somebody hands you.
  *
  * The server re-validates everything and is the authority; this exists so that picking
  * the wrong file in a folder produces a sentence about that file rather than a 422 about
@@ -33,7 +33,9 @@ export function parseExportFile(text: string): ParseResult {
     return { ok: false, reason: 'not_json' };
   }
   if (!isRecord(raw)) return { ok: false, reason: 'not_an_export' };
-  const format = raw['xperimentExport'];
+  // Either key: files written before the rename say `xperimentExport`, and refusing those
+  // would make a cosmetic rename cost people their saved workflows.
+  const format = raw['xperimentExport'] ?? raw['xperimentExport'];
   if (typeof format !== 'number' || typeof raw['name'] !== 'string' || !isRecord(raw['definition'])) {
     return { ok: false, reason: 'not_an_export' };
   }

@@ -10,6 +10,15 @@ describe('parseExportFile', () => {
     if (r.ok) expect(r.doc.name).toBe('Pesanan baru');
   });
 
+  test('a file written before the rename still opens', () => {
+    // Exports on people's disks say `xperimentExport`. Refusing them would make renaming the
+    // product cost them their saved workflows.
+    const legacy = { xperimentExport: 1, name: 'Pesanan lama', definition: { nodes: [] }, requiredConnections: [] };
+    const r = parseExportFile(JSON.stringify(legacy));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.name).toBe('Pesanan lama');
+  });
+
   test('a file that is not JSON says so, rather than throwing at the caller', () => {
     const r = parseExportFile('{not json');
     expect(r).toEqual({ ok: false, reason: 'not_json' });

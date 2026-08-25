@@ -522,6 +522,6 @@ test('picking a file that is not an export says so instead of creating a workflo
     mimeType: 'application/json',
     buffer: Buffer.from('{"name":"some-project","version":"1.0.0"}'),
   });
-  await expect(page.getByTestId('wf-import-error')).toContainText('not a Xperiment workflow export');
+  await expect(page.getByTestId('wf-import-error')).toContainText('not an Xperiment workflow export');
   await expect(page.locator('[data-testid="wf-table"] tbody tr')).toHaveCount(before);
 });
