@@ -19,8 +19,9 @@ beforeAll(async () => {
   queues = createQueues(connection);
 });
 afterAll(async () => {
-  // Drain leftover jobs so they don't linger in the shared Redis DB and get
-  // picked up (and harmlessly rejected) by the e2e worker on a later run.
+  // Drain leftover jobs. The suite has its own Redis logical database now
+  // (vitest.shared.ts), so this no longer protects the dev stack — it keeps one run of
+  // this file from leaving work for the next one.
   for (const q of Object.values(queues)) await q.obliterate({ force: true });
   for (const q of Object.values(queues)) await q.close();
   connection.disconnect();

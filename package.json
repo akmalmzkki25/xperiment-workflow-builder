@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "pnpm --filter @xperiment/devstack start",
-    "test": "pnpm -r --workspace-concurrency=1 test",
-    "test:cov": "pnpm -r --workspace-concurrency=1 test:cov",
+    "test": "node tools/test-all.mjs",
+    "test:cov": "node tools/test-all.mjs --coverage",
     "typecheck": "pnpm -r typecheck",
     "migrate": "pnpm --filter @xperiment/db migrate",
     "xperiment": "pnpm --filter @xperiment/cli xperiment --"

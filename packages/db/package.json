@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:cov": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "migrate": "tsx src/migrateCli.ts"
+    "migrate": "tsx src/migrateCli.ts",
+    "ensure-test-db": "tsx testing/ensureTestDb.ts"
   },
   "dependencies": {
     "@google-cloud/kms": "^5.7.0",

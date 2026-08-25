@@ -5,6 +5,7 @@
 import { exec, spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { promisify } from 'node:util';
+import { TEST_DATABASE_URL, TEST_REDIS_URL } from '../../../vitest.shared.js';
 
 const execAsync = promisify(exec);
 
@@ -16,6 +17,12 @@ export const OPENROUTER_STUB_PORT = 3312;
 
 const SERVICE_ENV = {
   ...process.env,
+  // The same isolated stack the vitest suites use. Playwright is not vitest, so the
+  // `test.env` in vitest.shared.ts does not reach here — without these two lines this
+  // suite would spawn five services against whatever database `pnpm dev` is using, and
+  // its worker would compete with the running one for the same queues.
+  DATABASE_URL: TEST_DATABASE_URL,
+  REDIS_URL: TEST_REDIS_URL,
   API_PORT: '3100',
   ORCH_PORT: '3101',
   WORKER_PORT: '3102',

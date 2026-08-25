@@ -154,6 +154,37 @@ against a local stub HTTP server, and includes the Phase 0 exit criterion:
 the same workflow + input executed 5 times must produce identical terminal
 results, plus worker-crash recovery via BullMQ stalled-job redelivery.
 
+### The suite has its own database
+
+Tests run against `xperiment_test` and Redis logical database 1, never the `xperiment`
+database and db 0 that `pnpm dev` uses. **You can run the whole suite with the
+dev stack up.**
+
+That separation is load-bearing, not tidiness. The orchestrator's outbox
+publisher polls `task_outbox` every 250ms and claims whatever it finds, so a
+suite that seeds rows and then asserts on claiming them used to lose a random
+handful of them; the failures moved between runs and every package passed on
+its own. The queue suite is worse: it calls `obliterate` on the BullMQ queues
+in `beforeEach`, which would delete the running stack's jobs.
+
+`xperiment_test` is created on first use — nothing to set up, and dropping it is a
+safe way to start clean. Point either stack elsewhere with `TEST_DATABASE_URL`
+or `TEST_REDIS_URL`; db 1 is a claim about what is free on a developer's
+machine, not a fact. The wiring is in `vitest.shared.ts`.
+
+The Playwright suite in `apps/web` is isolated the same way, and runs its own
+Next dev server on **3105** with its own build directory — on 3005 it reused
+whatever dev server was already listening, which points at the real API on
+:3000, so it silently tested the dev stack and wrote into the dev database.
+
+### `pnpm test` runs every package
+
+`pnpm -r test` stops at the first failing package, so the ones after it never
+run and the output still reads like a finished suite — that is how a real bug
+in `apps/web` hid behind an unrelated failure in `packages/db`. `pnpm test`
+now runs all of them, prints a pass/FAIL line per package, and exits non-zero
+if any failed.
+
 ## Triggers (Phase 1A)
 
 Webhook and schedule triggers start executions without `POST /execute`:

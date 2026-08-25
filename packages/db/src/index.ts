@@ -10,6 +10,7 @@ export {
 } from './pool.js';
 export { assertBootSafe, bootProblems, DEFAULT_REDIS_URL, type BootProblem } from './bootCheck.js';
 export { runMigrations } from './migrate.js';
+export { ensureDatabaseExists } from './ensureDatabase.js';
 export { withTx } from './tx.js';
 export * from './repos/workflows.js';
 export * from './repos/executions.js';

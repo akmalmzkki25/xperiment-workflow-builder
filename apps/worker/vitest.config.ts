@@ -1,7 +1,11 @@
 import { defineConfig } from 'vitest/config';
+import { testEnv } from '../../vitest.shared.js';
 
 export default defineConfig({
   test: {
+    // Isolated from the dev stack: see vitest.shared.ts.
+    env: testEnv,
+    globalSetup: '../../packages/db/testing/globalSetup.ts',
     fileParallelism: false,
     testTimeout: 20000,
     hookTimeout: 20000,
