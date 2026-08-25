@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { Wordmark } from '@/components/common/Wordmark';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { TextField } from '../../components/common/TextField';
@@ -24,11 +26,11 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <main className="q-auth" data-testid="forgot-password-page">
-      <div className="q-auth__card">
+    <main className="grid min-h-screen place-items-center bg-[var(--color-lontar)] p-8" data-testid="forgot-password-page">
+      <Card className="flex w-[min(400px,100%)] flex-col gap-6 rounded-[14px] p-10">
         <div>
-          <div className="q-wordmark">Xperiment</div>
-          <p className="q-auth__tagline" style={{ marginTop: 4 }}>
+          <Wordmark />
+          <p className="mt-1 text-secondary-foreground">
             Reset your password.
           </p>
         </div>
@@ -53,7 +55,7 @@ export default function ForgotPasswordPage() {
         <p style={{ color: 'var(--text-secondary)' }}>
           <Link href="/login">Back to sign in</Link>
         </p>
-      </div>
+      </Card>
     </main>
   );
 }

@@ -1,6 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { Wordmark } from '@/components/common/Wordmark';
+import { Card } from '@/components/ui/card';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
@@ -52,9 +55,9 @@ function ResetForm() {
         testId="reset-password"
       />
       {error ? (
-        <div className="q-banner" data-testid="reset-error">
+        <Alert className="flex flex-wrap items-center gap-3" data-testid="reset-error">
           {error}
-        </div>
+        </Alert>
       ) : null}
       <Button  type="submit" disabled={busy || password.length < 8} data-testid="reset-submit">
         Set new password
@@ -65,11 +68,11 @@ function ResetForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <main className="q-auth" data-testid="reset-password-page">
-      <div className="q-auth__card">
+    <main className="grid min-h-screen place-items-center bg-[var(--color-lontar)] p-8" data-testid="reset-password-page">
+      <Card className="flex w-[min(400px,100%)] flex-col gap-6 rounded-[14px] p-10">
         <div>
-          <div className="q-wordmark">Xperiment</div>
-          <p className="q-auth__tagline" style={{ marginTop: 4 }}>
+          <Wordmark />
+          <p className="mt-1 text-secondary-foreground">
             Choose a new password.
           </p>
         </div>
@@ -77,7 +80,7 @@ export default function ResetPasswordPage() {
         <Suspense fallback={null}>
           <ResetForm />
         </Suspense>
-      </div>
+      </Card>
     </main>
   );
 }

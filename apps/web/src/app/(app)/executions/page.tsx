@@ -1,6 +1,10 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -97,10 +101,9 @@ function ExecutionsList() {
 
   return (
     <>
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Executions</h1>
-        <select
-          className="q-select"
+        <NativeSelect
           value={choice}
           onChange={(e) => setChoice(e.target.value)}
           aria-label="Filter by status"
@@ -111,26 +114,25 @@ function ExecutionsList() {
               {c.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
 
       {forbidden ? null : (
         <form
-          className="q-search"
+          className="mb-3 flex flex-wrap items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
             setSearchTerm(searchDraft.trim());
           }}
         >
-          <input
-            className="q-input"
+          <Input
             value={searchDraft}
             onChange={(e) => setSearchDraft(e.target.value)}
             placeholder="Find a run by order number, phone, email…"
             aria-label="Search runs by trigger payload"
             data-testid="exec-search-input"
           />
-          <Button size="sm"  type="submit" data-testid="exec-search-submit">
+          <Button size="sm" type="submit" data-testid="exec-search-submit">
             Search
           </Button>
           {searching ? (
@@ -147,7 +149,7 @@ function ExecutionsList() {
             </Button>
           ) : null}
           {searchDraft.trim().length > 0 && searchDraft.trim().length < 3 ? (
-            <span className="q-field__hint">At least three characters — shorter than that cannot be indexed.</span>
+            <span className="text-[length:var(--text-small)] text-muted-foreground">At least three characters — shorter than that cannot be indexed.</span>
           ) : null}
         </form>
       )}
@@ -155,7 +157,7 @@ function ExecutionsList() {
       {searching && !forbidden ? (
         <div data-testid="exec-search-results">
           {search.isPending ? <p style={{ color: 'var(--text-muted)' }}>Searching…</p> : null}
-          {search.isError ? <div className="q-banner">Search failed.</div> : null}
+          {search.isError ? <Alert className="flex flex-wrap items-center gap-3">Search failed.</Alert> : null}
           {search.data && search.data.items.length === 0 ? (
             <EmptyState
               title="No run matched"
@@ -163,40 +165,40 @@ function ExecutionsList() {
             />
           ) : null}
           {search.data && search.data.items.length > 0 ? (
-            <table className="q-table">
-              <thead>
-                <tr>
-                  <th>Run</th>
-                  <th>Workflow</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Run</TableHead>
+                  <TableHead>Workflow</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {search.data.items.map((m) => (
-                  <tr key={m.executionId} data-testid={`search-row-${shortId(m.executionId)}`}>
-                    <td>
-                      <Link href={`/executions/${m.executionId}`} className="q-table__rowlink mono">
+                  <TableRow key={m.executionId} data-testid={`search-row-${shortId(m.executionId)}`}>
+                    <TableCell>
+                      <Link href={`/executions/${m.executionId}`} className="font-mono text-[length:var(--text-mono)] font-semibold text-inherit">
                         {shortId(m.executionId)}
                       </Link>
-                    </td>
-                    <td className="mono" style={{ color: 'var(--text-muted)' }}>
+                    </TableCell>
+                    <TableCell className="mono" style={{ color: 'var(--text-muted)' }}>
                       {shortId(m.workflowId)}
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       <StatusChip status={m.status} />
-                    </td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(m.createdAt)}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell style={{ color: 'var(--text-secondary)' }}>{fmtTime(m.createdAt)}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           ) : null}
         </div>
       ) : null}
 
       {!searching && canBulkRetry && !forbidden ? (
-        <div className="q-banner" data-testid="bulk-retry-bar">
+        <Alert className="flex flex-wrap items-center gap-3" data-testid="bulk-retry-bar">
           <span>{retryNotice ?? 'Fixed whatever broke these? Re-run them all.'}</span>
           <Button variant="ghost" size="sm"
             
@@ -218,7 +220,7 @@ function ExecutionsList() {
           >
             Re-run matching
           </Button>
-        </div>
+        </Alert>
       ) : null}
 
       {/* A search replaces the list rather than sitting beside it: two tables of runs on
@@ -237,36 +239,36 @@ function ExecutionsList() {
           }
         />
       ) : (
-        <table className="q-table">
-          <thead>
-            <tr>
-              <th>Run</th>
-              <th>Workflow</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Duration</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table data-testid="exec-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Run</TableHead>
+              <TableHead>Workflow</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Duration</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {items.map((exec) => (
-              <tr key={exec.id} data-testid={`exec-row-${shortId(exec.id)}`}>
-                <td>
-                  <Link href={`/executions/${exec.id}`} className="q-table__rowlink mono">
+              <TableRow key={exec.id} data-testid={`exec-row-${shortId(exec.id)}`}>
+                <TableCell>
+                  <Link href={`/executions/${exec.id}`} className="font-mono text-[length:var(--text-mono)] font-semibold text-inherit">
                     {shortId(exec.id)}
                   </Link>
-                </td>
-                <td className="mono" style={{ color: 'var(--text-muted)' }}>
+                </TableCell>
+                <TableCell className="mono" style={{ color: 'var(--text-muted)' }}>
                   {shortId(exec.workflowId)}
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>
                   <StatusChip status={exec.status} />
-                </td>
-                <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(exec.createdAt)}</td>
-                <td style={{ color: 'var(--text-secondary)' }}>{fmtDuration(exec.startedAt, exec.completedAt)}</td>
-              </tr>
+                </TableCell>
+                <TableCell style={{ color: 'var(--text-secondary)' }}>{fmtTime(exec.createdAt)}</TableCell>
+                <TableCell style={{ color: 'var(--text-secondary)' }}>{fmtDuration(exec.startedAt, exec.completedAt)}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
 
       {forbidden || searching || items.length === 0 ? null : (

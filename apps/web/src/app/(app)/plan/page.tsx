@@ -1,6 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert } from '@/components/ui/alert';
 import { useState } from 'react';
 import { InvoiceTable } from '../../../components/plan/InvoiceTable';
 import { PermissionNotice } from '../../../components/common/PermissionNotice';
@@ -27,21 +30,21 @@ const STATUS_COLOR: Record<QuotaLineView['status'], string> = {
 function Meter({ line }: { line: QuotaLineView }) {
   const pct = line.limit === null ? 0 : Math.min(100, Math.round((line.used / Math.max(line.limit, 1)) * 100));
   return (
-    <tr data-testid={`quota-${line.metric}`}>
-      <td>{LABELS[line.metric]}</td>
-      <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+    <TableRow data-testid={`quota-${line.metric}`}>
+      <TableCell>{LABELS[line.metric]}</TableCell>
+      <TableCell className="mono" style={{ whiteSpace: 'nowrap' }}>
         {fmtCount(line.used)} / {line.limit === null ? '∞' : fmtCount(line.limit)}
-      </td>
-      <td style={{ width: '40%' }}>
+      </TableCell>
+      <TableCell style={{ width: '40%' }}>
         <div
           aria-hidden
           style={{ height: 8, borderRadius: 4, background: 'var(--surface-raised)', overflow: 'hidden' }}
         >
           <div style={{ width: `${pct}%`, height: '100%', background: STATUS_COLOR[line.status] }} />
         </div>
-      </td>
-      <td style={{ color: STATUS_COLOR[line.status] }}>{line.status}</td>
-    </tr>
+      </TableCell>
+      <TableCell style={{ color: STATUS_COLOR[line.status] }}>{line.status}</TableCell>
+    </TableRow>
   );
 }
 
@@ -65,7 +68,7 @@ export default function PlanPage() {
 
   return (
     <div data-testid="plan-page">
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Plan</h1>
       </div>
 
@@ -74,12 +77,12 @@ export default function PlanPage() {
       ) : (
         <>
           {error ? (
-            <div className="q-banner" data-testid="plan-error">
+            <Alert className="flex flex-wrap items-center gap-3" data-testid="plan-error">
               {error}
-            </div>
+            </Alert>
           ) : null}
           {planQ.isLoading ? <p style={{ color: 'var(--text-muted)' }}>Loading plan…</p> : null}
-          {planQ.isError && !forbidden ? <div className="q-banner">Could not load the plan.</div> : null}
+          {planQ.isError && !forbidden ? <Alert className="flex flex-wrap items-center gap-3">Could not load the plan.</Alert> : null}
 
           {plan ? (
             <>
@@ -95,10 +98,9 @@ export default function PlanPage() {
                   marginBottom: 'var(--space-6)',
                 }}
               >
-                <label className="q-field__hint">
+                <label className="text-[length:var(--text-small)] text-muted-foreground">
                   Plan
-                  <select
-                    className="q-select"
+                  <NativeSelect
                     value={plan.planCode}
                     disabled={change.isPending}
                     onChange={(e) => change.mutate({ planCode: e.target.value })}
@@ -110,9 +112,9 @@ export default function PlanPage() {
                         {c}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </label>
-                <label className="q-field__hint" style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                <label className="text-[length:var(--text-small)] text-muted-foreground" style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
                   <input
                     type="checkbox"
                     checked={plan.allowOverage}
@@ -124,23 +126,23 @@ export default function PlanPage() {
                 </label>
               </div>
 
-              <table className="q-table">
-                <thead>
-                  <tr>
-                    <th>Limit</th>
-                    <th>Used</th>
-                    <th></th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Limit</TableHead>
+                    <TableHead>Used</TableHead>
+                    <TableHead></TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {plan.lines.map((l) => (
                     <Meter key={l.metric} line={l} />
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
 
-              <p className="q-field__hint" style={{ marginTop: 'var(--space-3)' }}>
+              <p className="text-[length:var(--text-small)] text-muted-foreground" style={{ marginTop: 'var(--space-3)' }}>
                 Period-to-date usage counts executions from the moment they start; the Usage page reports runs that
                 have finished, so a run in flight appears here first.
               </p>

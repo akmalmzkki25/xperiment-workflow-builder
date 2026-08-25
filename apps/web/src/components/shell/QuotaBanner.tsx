@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { getBrowserClient } from '../../lib/api';
@@ -17,13 +18,17 @@ export function QuotaBanner() {
   const worst = lines.find((l) => l.status === 'blocked') ?? lines.find((l) => l.status === 'warn');
   if (!worst) return null;
   return (
-    <div className={worst.status === 'blocked' ? 'q-banner' : 'q-banner q-banner--warn'} data-testid="quota-banner">
+    <Alert
+      variant={worst.status === 'blocked' ? 'default' : 'warn'}
+      className="flex flex-wrap items-center gap-3"
+      data-testid="quota-banner"
+    >
       <span>
         {worst.metric}: {worst.used} of {worst.limit} used this period.
       </span>
       <Button asChild variant="ghost" size="sm"><Link href="/plan">
         View plan
       </Link></Button>
-    </div>
+    </Alert>
   );
 }

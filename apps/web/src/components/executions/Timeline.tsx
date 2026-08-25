@@ -19,7 +19,7 @@ export function Timeline({ detail }: { detail: ExecutionDetail }) {
           <strong className="mono">
             {nodeLabel(nodeId).text}
             {nodeLabel(nodeId).iteration !== null ? (
-              <span className="q-field__hint" style={{ marginLeft: 'var(--space-2)' }}>
+              <span className="text-[length:var(--text-small)] text-muted-foreground" style={{ marginLeft: 'var(--space-2)' }}>
                 iteration {nodeLabel(nodeId).iteration}
               </span>
             ) : null}
@@ -32,11 +32,11 @@ export function Timeline({ detail }: { detail: ExecutionDetail }) {
                 key={attempt.attempt}
                 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}
               >
-                <span className="q-field__hint mono">#{attempt.attempt}</span>
+                <span className="font-mono text-[length:var(--text-small)] text-muted-foreground">#{attempt.attempt}</span>
                 <StatusChip status={attempt.status} testId={`timeline-status-${nodeId}-${attempt.attempt}`} />
-                <span className="q-field__hint">{fmtDuration(attempt.startedAt, attempt.completedAt)}</span>
-                {port ? <span className="q-field__hint mono">→ {port}</span> : null}
-                {error ? <span className="q-field__error">{error}</span> : null}
+                <span className="text-[length:var(--text-small)] text-muted-foreground">{fmtDuration(attempt.startedAt, attempt.completedAt)}</span>
+                {port ? <span className="font-mono text-[length:var(--text-small)] text-muted-foreground">→ {port}</span> : null}
+                {error ? <span className="text-[length:var(--text-small)] text-destructive">{error}</span> : null}
                 {detail.payloadsVisible ? (
                   <div style={{ width: '100%', marginTop: 'var(--space-1)' }}>
                     <PayloadPanel
@@ -53,7 +53,7 @@ export function Timeline({ detail }: { detail: ExecutionDetail }) {
       ))}
 
       {!detail.payloadsVisible ? (
-        <span className="q-field__hint" data-testid="payloads-hidden">
+        <span className="text-[length:var(--text-small)] text-muted-foreground" data-testid="payloads-hidden">
           Node data is shown to members who can run workflows.
         </span>
       ) : null}
@@ -61,7 +61,7 @@ export function Timeline({ detail }: { detail: ExecutionDetail }) {
       <WaitsPanel waits={detail.waits} />
 
       <div className="q-trigger-panel" style={{ gap: 'var(--space-1)' }}>
-        <div className="q-inspector__section-title">Event log</div>
+        <div className="text-[length:var(--text-small)] font-medium uppercase tracking-[0.05em] text-muted-foreground">Event log</div>
         {detail.events.map((event) => (
           <div key={event.sequence} className="mono" style={{ fontSize: 'var(--text-mono)', color: 'var(--text-secondary)' }}>
             {String(event.sequence).padStart(3, '0')} · {fmtTime(event.createdAt)} · {event.eventType}

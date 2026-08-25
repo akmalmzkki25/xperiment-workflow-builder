@@ -1,6 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { Wordmark } from '@/components/common/Wordmark';
+import { Card } from '@/components/ui/card';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -45,11 +48,11 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   };
 
   return (
-    <main className="q-auth">
-      <div className="q-auth__card">
+    <main className="grid min-h-screen place-items-center bg-[var(--color-lontar)] p-8">
+      <Card className="flex w-[min(400px,100%)] flex-col gap-6 rounded-[14px] p-10">
         <div>
-          <div className="q-wordmark">Xperiment</div>
-          <p className="q-auth__tagline" style={{ marginTop: 4 }}>
+          <Wordmark />
+          <p className="mt-1 text-secondary-foreground">
             Workflow automation for teams that ship.
           </p>
         </div>
@@ -81,13 +84,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             </>
           )}
           {error ? (
-            <div className="q-banner" data-testid="auth-error">
+            <Alert className="flex flex-wrap items-center gap-3" data-testid="auth-error">
               {error}
-            </div>
+            </Alert>
           ) : null}
           {challenge ? (
             <Button
-              
               type="button"
               disabled={busy || code.length < 6}
               data-testid="mfa-login-submit"
@@ -132,7 +134,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             </>
           )}
         </p>
-      </div>
+      </Card>
     </main>
   );
 }

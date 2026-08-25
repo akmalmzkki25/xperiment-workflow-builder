@@ -1,12 +1,14 @@
 'use client';
 
 import type { ChatItem } from '../../lib/chatMessages';
+import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
 /**
  * One row of the transcript.
  *
- * Tool chips reuse `.q-chip`, coloured from the status tokens — never `--color-arus`.
+ * Tool chips use Badge's `tone` variant, coloured from the status tokens — never `--color-arus`.
  * The lime is reserved for live/active signals, and an agent calling a tool is not a
  * running workflow. That rule lives in a CSS comment nobody reads, so `toolTone` below is
  * the only place it can be got wrong, and a test asserts it.
@@ -42,28 +44,28 @@ export function AiChatMessage({ item, onConnect }: Props): JSX.Element {
   if (item.kind === 'tool') {
     const tone = toolTone(item.state);
     return (
-      <span
-        className="q-chip q-aichat__tool"
+      <Badge
+        variant="tone" className="q-aichat__tool"
         style={{ color: tone.colorVar }}
         data-testid={`ai-tool-${item.tool}`}
         data-state={item.state}
       >
-        <span className={item.state === 'running' ? 'q-chip__glyph q-chip__glyph--pulse' : 'q-chip__glyph'}>
+        <span className={item.state === 'running' ? 'animate-pulse-soft' : undefined}>
           {tone.glyph}
         </span>
         {item.state === 'failed' ? `${item.title} — ${item.summary ?? 'failed'}` : item.title}
-      </span>
+      </Badge>
     );
   }
 
   if (item.kind === 'connection') {
-    // Deliberately not `.q-banner`: that class is coral-bordered and reads as an error,
-    // and needing a credential is not an error.
+    // Deliberately not an Alert: that reads as an error, and needing a credential is not
+    // an error. A plain raised surface with a tide chip instead.
     return (
       <div className="q-aichat__callout" data-testid="ai-connection-callout">
-        <span className="q-chip" style={{ color: 'var(--color-tide)' }}>
+        <Badge variant="tone" style={{ color: 'var(--color-tide)' }}>
           {item.connectorKey}
-        </span>
+        </Badge>
         <p>
           This needs a {item.displayName} connection
           {item.nodeIds.length > 0 ? (
@@ -74,11 +76,11 @@ export function AiChatMessage({ item, onConnect }: Props): JSX.Element {
           ) : null}
           .
         </p>
-        <p className="q-field__hint">Xperiment stores this encrypted. Paste it into the form — never into the chat.</p>
+        <p className="text-[length:var(--text-small)] text-muted-foreground">Xperiment stores this encrypted. Paste it into the form — never into the chat.</p>
         {item.resolved ? (
-          <span className="q-chip" style={{ color: 'var(--status-succeeded)' }} data-testid="ai-connected">
+          <Badge variant="tone" style={{ color: 'var(--status-succeeded)' }} data-testid="ai-connected">
             ✓ Connected
-          </span>
+          </Badge>
         ) : (
           <Button size="sm"
             
@@ -93,9 +95,9 @@ export function AiChatMessage({ item, onConnect }: Props): JSX.Element {
   }
 
   return (
-    <div className="q-banner" data-testid="ai-error">
+    <Alert className="flex flex-wrap items-center gap-3" data-testid="ai-error">
       {item.title}
       {item.detail ? ` — ${item.detail}` : ''}
-    </div>
+    </Alert>
   );
 }

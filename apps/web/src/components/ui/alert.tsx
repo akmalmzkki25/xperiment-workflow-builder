@@ -8,7 +8,13 @@ const alertVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-background text-foreground",
+        // The default is the error tone. Every inline notice in this app started life
+        // meaning "something went wrong", so the default keeps that meaning rather than
+        // quietly turning thirty call sites neutral.
+        default: "border-destructive/40 bg-destructive/[0.06] text-foreground",
+        neutral: "bg-background text-foreground",
+        ok: "border-succeeded/40 bg-succeeded/[0.07] text-foreground",
+        warn: "border-retry/40 bg-retry/[0.08] text-foreground",
         destructive:
           "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
       },

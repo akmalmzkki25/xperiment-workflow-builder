@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ApiError, getBrowserClient, StreamInterrupted } from '../../lib/api';
@@ -111,7 +112,7 @@ export function AiChat({ open, onClose, workflowId, onCanvasFrame }: AiChatProps
   return (
     <aside className="q-aichat" data-testid="ai-dock" aria-label="Workflow builder">
       <div className="q-aichat__head">
-        <span className="q-inspector__section-title">Build with AI</span>
+        <span className="text-[length:var(--text-small)] font-medium uppercase tracking-[0.05em] text-muted-foreground">Build with AI</span>
         <Button variant="ghost" size="sm"
           
           onClick={onClose}
@@ -142,9 +143,9 @@ export function AiChat({ open, onClose, workflowId, onCanvasFrame }: AiChatProps
           ))
         )}
         {fatal ? (
-          <div className="q-banner" data-testid="ai-error">
+          <Alert className="flex flex-wrap items-center gap-3" data-testid="ai-error">
             {fatal}
-          </div>
+          </Alert>
         ) : null}
       </div>
 

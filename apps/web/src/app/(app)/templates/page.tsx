@@ -1,6 +1,8 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { getBrowserClient } from '../../../lib/api';
@@ -33,7 +35,7 @@ function TemplateCard({ template }: { template: TemplateSummary }) {
       <div style={{ display: 'flex', gap: 'var(--space-1)', flexWrap: 'wrap' }}>
         <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-small)' }}>Needs:</span>
         {template.requiredConnectors.map((c) => (
-          <span key={c} className="q-chip">{c}</span>
+          <Badge key={c} variant="tone">{c}</Badge>
         ))}
       </div>
       <Button size="sm"
@@ -53,14 +55,14 @@ export default function TemplatesPage() {
   const q = useQuery({ queryKey: ['templates'], queryFn: () => getBrowserClient().listTemplates() });
 
   if (q.isLoading) return <p style={{ color: 'var(--text-muted)' }}>Loading templates…</p>;
-  if (q.isError || !q.data) return <div className="q-banner">Could not load templates.</div>;
+  if (q.isError || !q.data) return <Alert className="flex flex-wrap items-center gap-3">Could not load templates.</Alert>;
 
   const items = q.data.items;
   const categories = [...new Set(items.map((t) => t.category))];
 
   return (
     <div data-testid="templates-page">
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Templates</h1>
       </div>
       {items.length === 0 ? (

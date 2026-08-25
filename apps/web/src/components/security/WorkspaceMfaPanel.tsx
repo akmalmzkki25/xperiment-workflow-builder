@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { ApiError, getBrowserClient } from '../../lib/api';
@@ -46,7 +47,6 @@ export function WorkspaceMfaPanel({
         </p>
       ) : null}
       <Button
-        
         disabled={busy || (!selfEnrolled && !requireMfa)}
         onClick={() => void toggle()}
         data-testid="policy-toggle"
@@ -54,9 +54,9 @@ export function WorkspaceMfaPanel({
         {requireMfa ? 'Stop requiring it' : 'Require it'}
       </Button>
       {error ? (
-        <div className="q-banner" data-testid="policy-error">
+        <Alert className="flex flex-wrap items-center gap-3" data-testid="policy-error">
           {error}
-        </div>
+        </Alert>
       ) : null}
     </section>
   );

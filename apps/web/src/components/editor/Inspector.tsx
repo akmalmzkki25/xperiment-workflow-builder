@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useMemo, useState } from 'react';
 import type { IRNodeData } from '../../lib/irCanvas';
@@ -51,18 +53,18 @@ export function Inspector({
   return (
     <aside className="q-inspector" data-testid="inspector">
       <div>
-        <div className="q-inspector__section-title">Node</div>
+        <div className="text-[length:var(--text-small)] font-medium uppercase tracking-[0.05em] text-muted-foreground">Node</div>
         <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start', marginTop: 8 }}>
           <div style={{ flex: 1 }}>
-            <input
-              className="q-input q-input--mono"
+            <Input
+              className="font-mono text-[length:var(--text-mono)]"
               style={{ width: '100%' }}
               value={idDraft}
               onChange={(e) => setIdDraft(e.target.value)}
               aria-label="Node id"
               data-testid="node-id-input"
             />
-            {idError ? <span className="q-field__error">{idError}</span> : null}
+            {idError ? <span className="text-[length:var(--text-small)] text-destructive">{idError}</span> : null}
           </div>
           <Button variant="ghost" size="sm"
             
@@ -80,9 +82,8 @@ export function Inspector({
 
       {item?.requiresConnection ? (
         <div>
-          <div className="q-inspector__section-title">Connection ({item.requiresConnection})</div>
-          <select
-            className="q-select"
+          <div className="text-[length:var(--text-small)] font-medium uppercase tracking-[0.05em] text-muted-foreground">Connection ({item.requiresConnection})</div>
+          <NativeSelect
             style={{ width: '100%', marginTop: 8 }}
             value={ir.connectionRef ?? ''}
             onChange={(e) => onConnectionRef(ir.id, e.target.value || undefined)}
@@ -99,15 +100,15 @@ export function Inspector({
                 {c.name}
               </option>
             ))}
-          </select>
-          <p className="q-field__hint" style={{ marginTop: 4 }}>
+          </NativeSelect>
+          <p className="text-[length:var(--text-small)] text-muted-foreground" style={{ marginTop: 4 }}>
             <Link href="/connections">Create connection →</Link>
           </p>
         </div>
       ) : null}
 
       <div>
-        <div className="q-inspector__section-title" style={{ marginBottom: 8 }}>
+        <div className="text-[length:var(--text-small)] font-medium uppercase tracking-[0.05em] text-muted-foreground" style={{ marginBottom: 8 }}>
           Parameters
         </div>
         <SchemaForm
@@ -127,7 +128,7 @@ export function Inspector({
         >
           Duplicate
         </Button>
-        <Button variant="destructive" size="sm"  onClick={() => onDelete(ir.id)} data-testid="node-delete">
+        <Button variant="destructive" size="sm" onClick={() => onDelete(ir.id)} data-testid="node-delete">
           Delete node
         </Button>
       </div>

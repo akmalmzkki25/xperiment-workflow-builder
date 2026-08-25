@@ -131,5 +131,25 @@
     @apply bg-background text-foreground;
     font-family: var(--font-ui);
     font-size: var(--text-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Tailwind's preflight flattens every heading to `font-size: inherit`, which is the
+     right default for a utility-first codebase but wrong here: this app writes plain
+     `<h1>Connections</h1>` on twelve pages and expects the type scale to apply. Restoring
+     it from the tokens keeps those pages correct without a utility class on each one. */
+  h1 {
+    font-size: var(--text-h1);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  h2 {
+    font-size: var(--text-h2);
+    font-weight: 600;
+  }
+  h3 {
+    font-size: var(--text-body);
+    font-weight: 600;
   }
 }

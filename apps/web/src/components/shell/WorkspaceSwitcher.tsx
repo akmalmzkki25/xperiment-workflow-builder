@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { NativeSelect } from '@/components/common/NativeSelect';
 import { getBrowserClient } from '../../lib/api';
 import { getWorkspace, setWorkspace } from '../../lib/auth';
 
@@ -10,8 +11,10 @@ export function WorkspaceSwitcher() {
   if (!data) return null;
   const current = getWorkspace() ?? data.currentWorkspaceId;
   return (
-    <select
-      className="q-select"
+    <NativeSelect
+      // The topbar sizes to its content; a full-width select would push Sign out to the
+      // far edge and make the bar read as a form.
+      className="w-auto max-w-[22rem]"
       value={current}
       aria-label="Workspace"
       data-testid="workspace-switcher"
@@ -25,6 +28,6 @@ export function WorkspaceSwitcher() {
           {ws.name} · {ws.role}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }

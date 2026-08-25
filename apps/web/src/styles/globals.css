@@ -1,32 +1,18 @@
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+/*
+ * What Tailwind's preflight does not cover.
+ *
+ * Preflight already zeroes margins, normalises box-sizing, and makes form controls inherit
+ * typography, so none of that is repeated here. The base element styling lives in
+ * tokens.css's `@layer base`. What is left is the handful of decisions preflight has no
+ * opinion about.
+ */
 
 html,
 body {
-  margin: 0;
-  padding: 0;
   height: 100%;
 }
 
-body {
-  background: var(--surface-page);
-  color: var(--text-primary);
-  font-family: var(--font-ui);
-  font-size: var(--text-body);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-}
-
-h1,
-h2,
-h3,
-p {
-  margin: 0;
-}
-
+/* Preflight makes links inherit their colour; this app wants them tide-blue. */
 a {
   color: var(--color-tide);
   text-decoration: none;
@@ -36,15 +22,8 @@ a:hover {
   text-decoration: underline;
 }
 
-button,
-input,
-select,
-textarea {
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
-}
-
+/* The lime focus ring is the one place Arus appears on a non-live element — it is the
+   accessibility affordance, and it has to be visible against both page and ink surfaces. */
 :focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -57,7 +36,10 @@ code,
   font-size: var(--text-mono);
 }
 
-@keyframes xperiment-pulse {
+/* Declared here as well as in the Tailwind config: the canvas CSS animates it by name in
+   plain CSS, and Tailwind only emits the keyframe while some element still uses the
+   `animate-pulse-soft` utility. */
+@keyframes pulse-soft {
   0%,
   100% {
     opacity: 1;

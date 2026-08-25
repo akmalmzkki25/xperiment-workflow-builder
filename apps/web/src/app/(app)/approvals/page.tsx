@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -37,7 +38,7 @@ export default function ApprovalsPage() {
 
   return (
     <>
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Pending approvals</h1>
       </div>
 
@@ -56,13 +57,12 @@ export default function ApprovalsPage() {
             <div className="q-trigger-panel" key={item.waitId} data-testid={`approvals-row-${item.nodeId}`}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                 <strong>{item.message ?? 'Approval requested'}</strong>
-                <Link href={`/executions/${item.executionId}`} className="q-field__hint mono">
+                <Link href={`/executions/${item.executionId}`} className="font-mono text-[length:var(--text-small)] text-muted-foreground">
                   run {shortId(item.executionId)} · {item.nodeId}
                 </Link>
               </div>
-              <p className="q-field__hint">Expires {fmtTime(item.expiresAt)}</p>
-              <textarea
-                className="q-textarea"
+              <p className="text-[length:var(--text-small)] text-muted-foreground">Expires {fmtTime(item.expiresAt)}</p>
+              <Textarea
                 placeholder="Optional comment"
                 value={comments[item.waitId] ?? ''}
                 onChange={(e) => setComments((prev) => ({ ...prev, [item.waitId]: e.target.value }))}

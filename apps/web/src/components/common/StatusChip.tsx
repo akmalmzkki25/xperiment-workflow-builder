@@ -15,7 +15,7 @@ export function StatusChip({ status, testId }: { status: string; testId?: string
       style={{ color: `var(${meta.colorVar})` }}
       data-testid={testId}
     >
-      <span aria-hidden className={cn(meta.pulse && 'animate-xperiment-pulse')}>
+      <span aria-hidden className={cn(meta.pulse && 'animate-pulse-soft')}>
         {meta.glyph}
       </span>
       {meta.label}

@@ -24,7 +24,7 @@ export function FindingsPanel({ findings }: { findings: Finding[] }) {
 
   return (
     <div className="q-findings" data-testid="findings-panel">
-      <div className="q-inspector__section-title">
+      <div className="text-[length:var(--text-small)] font-medium uppercase tracking-[0.05em] text-muted-foreground">
         {findings.length} validation finding{findings.length > 1 ? 's' : ''}
       </div>
       {findings.map((f, index) => {

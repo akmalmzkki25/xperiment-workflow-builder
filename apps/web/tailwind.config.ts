@@ -55,12 +55,12 @@ const config: Config = {
       keyframes: {
         'accordion-down': { from: { height: '0' }, to: { height: 'var(--radix-accordion-content-height)' } },
         'accordion-up': { from: { height: 'var(--radix-accordion-content-height)' }, to: { height: '0' } },
-        'xperiment-pulse': { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.35' } },
+        'pulse-soft': { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.35' } },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'xperiment-pulse': 'xperiment-pulse 1s ease-in-out infinite',
+        'pulse-soft': 'pulse-soft 1.2s ease-in-out infinite',
       },
     },
   },

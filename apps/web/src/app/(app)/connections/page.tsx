@@ -1,6 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { ConnectionDialog, type RotateTarget } from '../../../components/connections/ConnectionDialog';
@@ -50,7 +53,7 @@ export default function ConnectionsPage() {
 
   return (
     <>
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Connections</h1>
         {forbidden ? null : (
           <Button  data-testid="conn-create" onClick={() => setDialogOpen(true)}>
@@ -60,12 +63,12 @@ export default function ConnectionsPage() {
       </div>
 
       {pageError ? (
-        <div className="q-banner">
+        <Alert className="flex flex-wrap items-center gap-3">
           <span>{pageError}</span>
-          <Button variant="ghost" size="sm"  onClick={() => setPageError(null)}>
+          <Button variant="ghost" size="sm" onClick={() => setPageError(null)}>
             Dismiss
           </Button>
-        </div>
+        </Alert>
       ) : null}
 
       {forbidden ? (
@@ -83,42 +86,42 @@ export default function ConnectionsPage() {
           }
         />
       ) : (
-        <table className="q-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Connector</th>
-              <th>Created</th>
-              <th>Health</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Connector</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Health</TableHead>
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {items.map((conn) => {
               const result = testResults[conn.id];
               return (
-                <tr key={conn.id} data-testid={`conn-row-${conn.name}`}>
-                  <td style={{ fontWeight: 600 }}>{conn.name}</td>
-                  <td>
-                    <span className="q-chip" style={{ color: 'var(--color-tide)' }}>
+                <TableRow key={conn.id} data-testid={`conn-row-${conn.name}`}>
+                  <TableCell style={{ fontWeight: 600 }}>{conn.name}</TableCell>
+                  <TableCell>
+                    <Badge variant="tone" style={{ color: 'var(--color-tide)' }}>
                       {conn.connectorKey}
-                    </span>
-                  </td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(conn.createdAt)}</td>
-                  <td>
+                    </Badge>
+                  </TableCell>
+                  <TableCell style={{ color: 'var(--text-secondary)' }}>{fmtTime(conn.createdAt)}</TableCell>
+                  <TableCell>
                     {result ? (
-                      <span
-                        className="q-chip"
+                      <Badge
+                        variant="tone"
                         style={{ color: result.ok ? 'var(--status-succeeded)' : 'var(--status-failed)' }}
                         data-testid={`conn-status-${conn.name}`}
                       >
                         {result.ok ? '✓ ok' : `✕ ${result.error ?? 'failed'}`}
-                      </span>
+                      </Badge>
                     ) : (
                       <span style={{ color: 'var(--text-muted)' }}>—</span>
                     )}
-                  </td>
-                  <td style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+                  </TableCell>
+                  <TableCell style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
                     <Button variant="ghost" size="sm"
                       
                       disabled={test.isPending}
@@ -146,12 +149,12 @@ export default function ConnectionsPage() {
                     >
                       Delete
                     </Button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
 
       <ConnectionDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />

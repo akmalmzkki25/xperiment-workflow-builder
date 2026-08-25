@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, getBrowserClient, type Finding, type TriggerView, type WorkflowDetail } from '../../lib/api';
@@ -247,7 +248,7 @@ export function ActionBar({
         <StatusChip status={workflow.status} />
         {workflow.active ? <LiveChip label="Active" testId="wf-active-chip" /> : null}
         {revision !== null ? (
-          <span className="q-field__hint mono">
+          <span className="font-mono text-[length:var(--text-small)] text-muted-foreground">
             rev {revision}
             {dirty ? ' · unsaved changes' : ''}
           </span>
@@ -279,10 +280,10 @@ export function ActionBar({
           data-testid="action-tidy">
           Tidy
         </Button>
-        <Button variant="live" size="sm"  onClick={onToggleAi} data-testid="ai-open">
+        <Button variant="live" size="sm" onClick={onToggleAi} data-testid="ai-open">
           ✦ AI
         </Button>
-        <Button variant="ghost" size="sm"  onClick={onToggleLibrary} data-testid="lib-open">
+        <Button variant="ghost" size="sm" onClick={onToggleLibrary} data-testid="lib-open">
           Add node
         </Button>
         <Button size="sm"
@@ -357,20 +358,24 @@ export function ActionBar({
       </div>
 
       {conflict ? (
-        <div className="q-banner" data-testid="draft-conflict">
+        <Alert className="flex flex-wrap items-center gap-3" data-testid="draft-conflict">
           <span>This draft changed in another session. Reload to pick up the latest revision.</span>
-          <Button size="sm"  onClick={() => window.location.reload()}>
+          <Button size="sm" onClick={() => window.location.reload()}>
             Reload
           </Button>
-        </div>
+        </Alert>
       ) : null}
       {notice ? (
-        <div className={notice.kind === 'ok' ? 'q-banner q-banner--ok' : 'q-banner'} data-testid="editor-banner">
+        <Alert
+          variant={notice.kind === 'ok' ? 'ok' : 'default'}
+          className="flex flex-wrap items-center gap-3"
+          data-testid="editor-banner"
+        >
           <span>{notice.text}</span>
-          <Button variant="ghost" size="sm"  onClick={() => setNotice(null)}>
+          <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
             Dismiss
           </Button>
-        </div>
+        </Alert>
       ) : null}
       <FindingsPanel findings={findings} />
       {workflow.active && !panelOpen ? (

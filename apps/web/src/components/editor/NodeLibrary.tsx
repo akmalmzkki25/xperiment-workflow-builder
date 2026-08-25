@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Input } from '@/components/ui/input';
 import type { ConnectorItem } from '../../lib/api';
 import { filterCatalog } from '../../lib/catalogSearch';
 import { FALLBACK_GLYPH } from './XperimentNode';
@@ -33,9 +34,8 @@ export function NodeLibrary({
 
   return (
     <aside className="q-library" data-testid="node-library">
-      <input
+      <Input
         ref={inputRef}
-        className="q-input"
         placeholder="Search nodes…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}

@@ -1,6 +1,7 @@
 'use client';
 
 import type { KeyboardEvent } from 'react';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 
 interface Props {
@@ -31,9 +32,8 @@ export function AiComposer({ value, onChange, onSubmit, onStop, streaming, disab
 
   return (
     <div className="q-aichat__composer">
-      {hint ? <p className="q-field__hint">{hint}</p> : null}
-      <textarea
-        className="q-textarea"
+      {hint ? <p className="text-[length:var(--text-small)] text-muted-foreground">{hint}</p> : null}
+      <Textarea
         data-testid="ai-prompt"
         rows={3}
         value={value}
@@ -43,7 +43,7 @@ export function AiComposer({ value, onChange, onSubmit, onStop, streaming, disab
         onKeyDown={onKeyDown}
       />
       {streaming ? (
-        <Button variant="ghost" size="sm"  data-testid="ai-stop" onClick={onStop}>
+        <Button variant="ghost" size="sm" data-testid="ai-stop" onClick={onStop}>
           Stop
         </Button>
       ) : (

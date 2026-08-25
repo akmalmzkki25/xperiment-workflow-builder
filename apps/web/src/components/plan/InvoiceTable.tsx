@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { getBrowserClient } from '../../lib/api';
 import type { InvoiceSummary } from '../../lib/api';
@@ -44,24 +45,24 @@ export function InvoiceTable() {
   }
 
   return (
-    <table className="q-table" data-testid="invoice-table">
-      <thead>
-        <tr>
-          <th>Period</th>
-          <th>Plan</th>
-          <th>Total</th>
-          <th>Status</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table data-testid="invoice-table">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Period</TableHead>
+          <TableHead>Plan</TableHead>
+          <TableHead>Total</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {items.map((inv) => (
-          <tr key={inv.id} data-testid={`invoice-${inv.id}`}>
-            <td className="mono">{inv.periodStart}</td>
-            <td>{inv.planCode}</td>
-            <td className="mono">{money(inv.totalMinor, inv.currency)}</td>
-            <td style={{ color: STATUS_COLOR[inv.status] }}>{inv.status}</td>
-            <td>
+          <TableRow key={inv.id} data-testid={`invoice-${inv.id}`}>
+            <TableCell className="mono">{inv.periodStart}</TableCell>
+            <TableCell>{inv.planCode}</TableCell>
+            <TableCell className="mono">{money(inv.totalMinor, inv.currency)}</TableCell>
+            <TableCell style={{ color: STATUS_COLOR[inv.status] }}>{inv.status}</TableCell>
+            <TableCell>
               {inv.status === 'issued' ? (
                 <Button variant="ghost" size="sm"
                   
@@ -72,10 +73,10 @@ export function InvoiceTable() {
                   Mark paid
                 </Button>
               ) : null}
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }

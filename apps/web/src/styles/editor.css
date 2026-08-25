@@ -257,14 +257,6 @@
   overflow-y: auto;
 }
 
-.q-inspector__section-title {
-  font-size: var(--text-small);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
 /* ---------- Findings panel ---------- */
 .q-findings {
   border: 1px solid var(--border-default);
@@ -291,35 +283,6 @@
   color: var(--text-muted);
   text-transform: uppercase;
   flex-shrink: 0;
-}
-
-/* ---------- AI dock ---------- */
-.q-aidock {
-  width: 320px;
-  border-left: 1px solid var(--border-default);
-  background: var(--surface-raised);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  overflow-y: auto;
-}
-
-.q-aidock__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.q-aidock textarea {
-  min-height: 120px;
-  font-family: var(--font-ui);
-  font-size: var(--text-body);
-}
-
-.q-aidock__actions {
-  display: flex;
-  gap: var(--space-2);
 }
 
 /* ---------- Trigger panel ---------- */
@@ -587,7 +550,7 @@
   color: var(--text-primary);
 }
 .q-aichat__caret {
-  animation: xperiment-pulse 1s ease-in-out infinite;
+  animation: pulse-soft 1s ease-in-out infinite;
 }
 .q-aichat__tool {
   align-self: flex-start;

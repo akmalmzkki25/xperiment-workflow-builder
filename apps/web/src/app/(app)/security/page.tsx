@@ -12,7 +12,7 @@ export default function SecurityPage() {
   const current = me.workspaces.find((w) => w.id === me.currentWorkspaceId);
   return (
     <div data-testid="security-page">
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Security</h1>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

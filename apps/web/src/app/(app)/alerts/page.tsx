@@ -1,6 +1,10 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { PermissionNotice } from '../../../components/common/PermissionNotice';
@@ -59,43 +63,43 @@ function CreateRuleForm({ onCreated }: { onCreated: (secret?: string) => void })
         maxWidth: 640,
       }}
     >
-      <input className="q-input" placeholder="Rule name" value={name} onChange={(e) => setName(e.target.value)} data-testid="alert-name" />
-      <select className="q-select" value={type} onChange={(e) => setType(e.target.value as typeof type)} data-testid="alert-type">
+      <Input placeholder="Rule name" value={name} onChange={(e) => setName(e.target.value)} data-testid="alert-name" />
+      <NativeSelect value={type} onChange={(e) => setType(e.target.value as typeof type)} data-testid="alert-type">
         <option value="failure_rate">Failure rate</option>
         <option value="usage_threshold">Usage threshold</option>
-      </select>
-      <label className="q-field__hint">
+      </NativeSelect>
+      <label className="text-[length:var(--text-small)] text-muted-foreground">
         Window (minutes)
-        <input className="q-input" type="number" min={1} value={windowMinutes} onChange={(e) => setWindowMinutes(Number(e.target.value))} />
+        <Input type="number" min={1} value={windowMinutes} onChange={(e) => setWindowMinutes(Number(e.target.value))} />
       </label>
       {type === 'failure_rate' ? (
         <>
-          <label className="q-field__hint">
+          <label className="text-[length:var(--text-small)] text-muted-foreground">
             Threshold (0–1)
-            <input className="q-input" type="number" step="0.05" min={0} max={1} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
+            <Input type="number" step="0.05" min={0} max={1} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
           </label>
-          <label className="q-field__hint">
+          <label className="text-[length:var(--text-small)] text-muted-foreground">
             Minimum sample
-            <input className="q-input" type="number" min={1} value={minSample} onChange={(e) => setMinSample(Number(e.target.value))} />
+            <Input type="number" min={1} value={minSample} onChange={(e) => setMinSample(Number(e.target.value))} />
           </label>
         </>
       ) : (
         <>
-          <select className="q-select" value={metric} onChange={(e) => setMetric(e.target.value as typeof metric)}>
+          <NativeSelect value={metric} onChange={(e) => setMetric(e.target.value as typeof metric)}>
             {METRICS.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>
             ))}
-          </select>
-          <label className="q-field__hint">
+          </NativeSelect>
+          <label className="text-[length:var(--text-small)] text-muted-foreground">
             Threshold
-            <input className="q-input" type="number" min={0} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
+            <Input type="number" min={0} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
           </label>
         </>
       )}
-      <input className="q-input" placeholder="Webhook URL (optional)" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} />
-      <Button size="sm"  type="submit" disabled={create.isPending || !name.trim()} data-testid="alert-create">
+      <Input placeholder="Webhook URL (optional)" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} />
+      <Button size="sm" type="submit" disabled={create.isPending || !name.trim()} data-testid="alert-create">
         Create rule
       </Button>
     </form>
@@ -113,20 +117,20 @@ function RuleRow({ rule }: { rule: AlertRule }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['alert-rules'] }),
   });
   return (
-    <tr data-testid={`alert-rule-${rule.id}`}>
-      <td>{rule.name}</td>
-      <td className="mono" style={{ color: 'var(--text-muted)' }}>{rule.type}</td>
-      <td>{rule.enabled ? 'On' : 'Off'}</td>
-      <td style={{ color: 'var(--text-secondary)' }}>{rule.cooldownMinutes}m</td>
-      <td style={{ display: 'flex', gap: 'var(--space-2)' }}>
-        <Button variant="ghost" size="sm"  onClick={() => toggle.mutate()} disabled={toggle.isPending}>
+    <TableRow data-testid={`alert-rule-${rule.id}`}>
+      <TableCell>{rule.name}</TableCell>
+      <TableCell className="mono" style={{ color: 'var(--text-muted)' }}>{rule.type}</TableCell>
+      <TableCell>{rule.enabled ? 'On' : 'Off'}</TableCell>
+      <TableCell style={{ color: 'var(--text-secondary)' }}>{rule.cooldownMinutes}m</TableCell>
+      <TableCell style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <Button variant="ghost" size="sm" onClick={() => toggle.mutate()} disabled={toggle.isPending}>
           {rule.enabled ? 'Disable' : 'Enable'}
         </Button>
-        <Button variant="destructive" size="sm"  onClick={() => remove.mutate()} disabled={remove.isPending}>
+        <Button variant="destructive" size="sm" onClick={() => remove.mutate()} disabled={remove.isPending}>
           Delete
         </Button>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -137,19 +141,19 @@ function FiringRow({ event }: { event: AlertEvent }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['alert-events'] }),
   });
   return (
-    <tr data-testid={`alert-event-${event.id}`}>
-      <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(event.firedAt)}</td>
-      <td className="mono" style={{ fontSize: 'var(--text-mono-sub)', color: 'var(--text-muted)' }}>{JSON.stringify(event.detail)}</td>
-      <td>
+    <TableRow data-testid={`alert-event-${event.id}`}>
+      <TableCell style={{ color: 'var(--text-secondary)' }}>{fmtTime(event.firedAt)}</TableCell>
+      <TableCell className="mono" style={{ fontSize: 'var(--text-mono-sub)', color: 'var(--text-muted)' }}>{JSON.stringify(event.detail)}</TableCell>
+      <TableCell>
         {event.acknowledgedAt ? (
           <span style={{ color: 'var(--text-muted)' }}>Acknowledged</span>
         ) : (
-          <Button variant="ghost" size="sm"  onClick={() => ack.mutate()} disabled={ack.isPending}>
+          <Button variant="ghost" size="sm" onClick={() => ack.mutate()} disabled={ack.isPending}>
             Acknowledge
           </Button>
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -162,7 +166,7 @@ export default function AlertsPage() {
   if (forbidden) {
     return (
       <div data-testid="alerts-page">
-        <div className="q-page-head">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <h1>Alerts</h1>
         </div>
         <PermissionNotice detail={forbidden} />
@@ -172,17 +176,17 @@ export default function AlertsPage() {
 
   return (
     <div data-testid="alerts-page">
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Alerts</h1>
       </div>
 
       {secret ? (
-        <div className="q-banner q-banner--warn" data-testid="alert-secret">
+        <Alert variant="warn" className="flex flex-wrap items-center gap-3" data-testid="alert-secret">
           Signing secret (shown once): <span className="mono">{secret}</span>
           <Button variant="ghost" size="sm"  style={{ marginLeft: 'var(--space-3)' }} onClick={() => setSecret(null)}>
             Dismiss
           </Button>
-        </div>
+        </Alert>
       ) : null}
 
       <CreateRuleForm onCreated={(s) => s && setSecret(s)} />
@@ -191,34 +195,34 @@ export default function AlertsPage() {
       {(rulesQ.data?.items ?? []).length === 0 ? (
         <p style={{ color: 'var(--text-muted)' }}>No alert rules yet.</p>
       ) : (
-        <table className="q-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Enabled</th>
-              <th>Cooldown</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>{(rulesQ.data?.items ?? []).map((r) => <RuleRow key={r.id} rule={r} />)}</tbody>
-        </table>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Enabled</TableHead>
+              <TableHead>Cooldown</TableHead>
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>{(rulesQ.data?.items ?? []).map((r) => <RuleRow key={r.id} rule={r} />)}</TableBody>
+        </Table>
       )}
 
       <h2 style={{ fontSize: 'var(--text-h2)', margin: 'var(--space-6) 0 var(--space-3)' }}>Recent firings</h2>
       {(eventsQ.data?.items ?? []).length === 0 ? (
         <p style={{ color: 'var(--text-muted)' }}>No alerts have fired.</p>
       ) : (
-        <table className="q-table">
-          <thead>
-            <tr>
-              <th>Fired</th>
-              <th>Detail</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>{(eventsQ.data?.items ?? []).map((e) => <FiringRow key={e.id} event={e} />)}</tbody>
-        </table>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fired</TableHead>
+              <TableHead>Detail</TableHead>
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>{(eventsQ.data?.items ?? []).map((e) => <FiringRow key={e.id} event={e} />)}</TableBody>
+        </Table>
       )}
     </div>
   );

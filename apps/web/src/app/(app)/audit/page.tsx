@@ -1,6 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { PermissionNotice } from '../../../components/common/PermissionNotice';
@@ -72,7 +75,7 @@ export default function AuditPage() {
 
   return (
     <div data-testid="audit-page">
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Audit</h1>
       </div>
 
@@ -81,8 +84,7 @@ export default function AuditPage() {
       ) : (
         <>
           <div style={{ marginBottom: '1rem' }}>
-            <select
-              className="q-select"
+            <NativeSelect
               value={action}
               onChange={(e) => {
                 setAction(e.target.value);
@@ -97,11 +99,11 @@ export default function AuditPage() {
                   {a}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           {auditQ.isLoading ? <p style={{ color: 'var(--text-muted)' }}>Loading…</p> : null}
-          {auditQ.isError && !forbidden ? <div className="q-banner">Could not load the audit log.</div> : null}
+          {auditQ.isError && !forbidden ? <Alert className="flex flex-wrap items-center gap-3">Could not load the audit log.</Alert> : null}
 
           {auditQ.data ? (
             auditQ.data.items.length === 0 ? (
@@ -110,28 +112,28 @@ export default function AuditPage() {
               </p>
             ) : (
               <>
-                <table className="q-table">
-                  <thead>
-                    <tr>
-                      <th>When</th>
-                      <th>Actor</th>
-                      <th>Action</th>
-                      <th>Target</th>
-                      <th>Outcome</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table data-testid="audit-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>When</TableHead>
+                      <TableHead>Actor</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Target</TableHead>
+                      <TableHead>Outcome</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {auditQ.data.items.map((e) => (
-                      <tr key={e.id} data-testid={`audit-${e.id}`}>
-                        <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(e.createdAt)}</td>
-                        <td>{actorOf(e)}</td>
-                        <td>{e.action}</td>
-                        <td style={{ color: 'var(--text-secondary)' }}>{targetOf(e)}</td>
-                        <td>{e.outcome}</td>
-                      </tr>
+                      <TableRow key={e.id} data-testid={`audit-${e.id}`}>
+                        <TableCell style={{ color: 'var(--text-secondary)' }}>{fmtTime(e.createdAt)}</TableCell>
+                        <TableCell>{actorOf(e)}</TableCell>
+                        <TableCell>{e.action}</TableCell>
+                        <TableCell style={{ color: 'var(--text-secondary)' }}>{targetOf(e)}</TableCell>
+                        <TableCell>{e.outcome}</TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
                 {auditQ.data.nextBefore ? (
                   <Button
                     type="button"

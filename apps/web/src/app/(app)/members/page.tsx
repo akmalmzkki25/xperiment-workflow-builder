@@ -1,6 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert } from '@/components/ui/alert';
 import { useState } from 'react';
 import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { ApiError, getBrowserClient } from '../../../lib/api';
@@ -26,11 +29,10 @@ function MemberRow({ member, onError }: { member: WorkspaceMember; onError: (mes
   });
 
   return (
-    <tr data-testid={`member-${member.userId}`}>
-      <td>{member.email}</td>
-      <td>
-        <select
-          className="q-select"
+    <TableRow data-testid={`member-${member.userId}`}>
+      <TableCell>{member.email}</TableCell>
+      <TableCell>
+        <NativeSelect
           value={member.role}
           disabled={change.isPending}
           onChange={(e) => change.mutate(e.target.value)}
@@ -42,10 +44,10 @@ function MemberRow({ member, onError }: { member: WorkspaceMember; onError: (mes
               {r}
             </option>
           ))}
-        </select>
-      </td>
-      <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(member.createdAt)}</td>
-    </tr>
+        </NativeSelect>
+      </TableCell>
+      <TableCell style={{ color: 'var(--text-secondary)' }}>{fmtTime(member.createdAt)}</TableCell>
+    </TableRow>
   );
 }
 
@@ -57,7 +59,7 @@ export default function MembersPage() {
 
   return (
     <div data-testid="members-page">
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Members</h1>
       </div>
 
@@ -66,29 +68,29 @@ export default function MembersPage() {
       ) : (
         <>
           {error ? (
-            <div className="q-banner" data-testid="member-error">
+            <Alert className="flex flex-wrap items-center gap-3" data-testid="member-error">
               {error}
-            </div>
+            </Alert>
           ) : null}
           {membersQ.isLoading ? <p style={{ color: 'var(--text-muted)' }}>Loading…</p> : null}
           {membersQ.isError && !forbidden ? (
-            <div className="q-banner">Could not load members.</div>
+            <Alert className="flex flex-wrap items-center gap-3">Could not load members.</Alert>
           ) : null}
           {membersQ.data ? (
-            <table className="q-table">
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Joined</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Joined</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {membersQ.data.items.map((m) => (
                   <MemberRow key={m.userId} member={m} onError={setError} />
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           ) : null}
         </>
       )}

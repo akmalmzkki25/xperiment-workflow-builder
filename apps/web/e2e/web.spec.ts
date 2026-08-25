@@ -177,8 +177,8 @@ test('a webhook fire appears in executions with a green timeline', async ({ page
   await loginWithToken(page);
   await page.getByTestId('nav-executions').click();
   await expect(page).toHaveURL(/\/executions$/);
-  await expect(page.locator('.q-table tbody tr')).toHaveCount(1, { timeout: 30_000 });
-  await page.locator('.q-table tbody tr td a').first().click();
+  await expect(page.locator('[data-testid="exec-table"] tbody tr')).toHaveCount(1, { timeout: 30_000 });
+  await page.locator('[data-testid="exec-table"] tbody tr td a').first().click();
   await expect(page).toHaveURL(/\/executions\/[0-9a-f-]{36}/);
   await expect(page.getByTestId('exec-status')).toContainText('Succeeded', { timeout: 45_000 });
   await expect(page.getByTestId('timeline-node-webhook_trigger')).toContainText('Succeeded');
@@ -212,7 +212,7 @@ test('the trigger panel shows deliveries, including one the gateway turned away'
 
   await loginWithToken(page);
   await page.getByTestId('nav-workflows').click();
-  await page.locator('.q-table tbody tr td a').first().click();
+  await page.locator('[data-testid="wf-table"] tbody tr td a').first().click();
   await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}/);
 
   // The panel is behind a deliberate press: fetching it writes an audit row per secret.
@@ -406,10 +406,10 @@ test('an admin reads the audit log and filters it', async ({ page }) => {
   await expect(page.getByTestId('audit-page')).toBeVisible();
   // Everything this suite already did — registering, creating a connection, activating a
   // trigger — emitted audit rows, so the log is never empty here.
-  await expect(page.locator('table.q-table tbody tr').first()).toBeVisible();
+  await expect(page.locator('[data-testid="audit-table"] tbody tr').first()).toBeVisible();
   // Registering this workspace emitted exactly one workspace.create.
   await page.getByTestId('audit-action-filter').selectOption('workspace.create');
-  await expect(page.locator('table.q-table tbody tr')).toHaveCount(1);
+  await expect(page.locator('[data-testid="audit-table"] tbody tr')).toHaveCount(1);
   await page.screenshot({ path: `${ARTIFACTS}/08-audit-log.png` });
 });
 
@@ -516,12 +516,12 @@ test('a workflow exports to a file and imports back as a wired duplicate', async
 
 test('picking a file that is not an export says so instead of creating a workflow', async ({ page }) => {
   await loginWithToken(page);
-  const before = await page.locator('table.q-table tbody tr').count();
+  const before = await page.locator('[data-testid="wf-table"] tbody tr').count();
   await page.getByTestId('wf-import-input').setInputFiles({
     name: 'package.json',
     mimeType: 'application/json',
     buffer: Buffer.from('{"name":"some-project","version":"1.0.0"}'),
   });
   await expect(page.getByTestId('wf-import-error')).toContainText('not a Xperiment workflow export');
-  await expect(page.locator('table.q-table tbody tr')).toHaveCount(before);
+  await expect(page.locator('[data-testid="wf-table"] tbody tr')).toHaveCount(before);
 });

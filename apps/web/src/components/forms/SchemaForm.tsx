@@ -1,6 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { fieldValueToParam, type FormField } from '../../lib/schemaForm';
 
 function initialText(field: FormField, value: unknown): string {
@@ -45,26 +48,25 @@ export function SchemaForm({
         const error = errors[field.name];
         if (field.kind === 'boolean') {
           return (
-            <label key={field.name} className="q-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <label key={field.name} className="flex flex-col gap-1.5" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <input
                 type="checkbox"
                 checked={values[field.name] === true}
                 onChange={(e) => onCommit(field.name, e.target.checked)}
                 data-testid={`field-${field.name}`}
               />
-              <span className="q-field__label">{field.label}</span>
+              <span className="text-[length:var(--text-small)] font-medium text-secondary-foreground">{field.label}</span>
             </label>
           );
         }
         if (field.kind === 'select') {
           return (
-            <label key={field.name} className="q-field">
-              <span className="q-field__label">
+            <label key={field.name} className="flex flex-col gap-1.5">
+              <span className="text-[length:var(--text-small)] font-medium text-secondary-foreground">
                 {field.label}
                 {field.required ? ' *' : ''}
               </span>
-              <select
-                className="q-select"
+              <NativeSelect
                 value={String(values[field.name] ?? '')}
                 onChange={(e) => onCommit(field.name, e.target.value)}
                 data-testid={`field-${field.name}`}
@@ -75,38 +77,37 @@ export function SchemaForm({
                     {opt}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
           );
         }
         if (field.kind === 'json') {
           return (
-            <label key={field.name} className="q-field">
-              <span className="q-field__label">
+            <label key={field.name} className="flex flex-col gap-1.5">
+              <span className="text-[length:var(--text-small)] font-medium text-secondary-foreground">
                 {field.label}
                 {field.required ? ' *' : ''}
               </span>
-              <textarea
-                className="q-textarea"
+              <Textarea
                 value={texts[field.name] ?? ''}
                 onChange={(e) => setTexts((prev) => ({ ...prev, [field.name]: e.target.value }))}
                 onBlur={() => commitText(field)}
                 spellCheck={false}
                 data-testid={`field-${field.name}`}
               />
-              <span className="q-field__hint">JSON — expressions like {'{{ trigger.body.x }}'} allowed in strings</span>
-              {error ? <span className="q-field__error">{error}</span> : null}
+              <span className="text-[length:var(--text-small)] text-muted-foreground">JSON — expressions like {'{{ trigger.body.x }}'} allowed in strings</span>
+              {error ? <span className="text-[length:var(--text-small)] text-destructive">{error}</span> : null}
             </label>
           );
         }
         return (
-          <label key={field.name} className="q-field">
-            <span className="q-field__label">
+          <label key={field.name} className="flex flex-col gap-1.5">
+            <span className="text-[length:var(--text-small)] font-medium text-secondary-foreground">
               {field.label}
               {field.required ? ' *' : ''}
             </span>
-            <input
-              className={field.kind === 'number' ? 'q-input' : 'q-input q-input--mono'}
+            <Input
+              className={field.kind === 'number' ? undefined : 'font-mono text-[length:var(--text-mono)]'}
               type="text"
               inputMode={field.kind === 'number' ? 'numeric' : undefined}
               value={texts[field.name] ?? ''}
@@ -115,8 +116,8 @@ export function SchemaForm({
               spellCheck={false}
               data-testid={`field-${field.name}`}
             />
-            {field.kind === 'text' ? <span className="q-field__hint">Supports {'{{ }}'} expressions</span> : null}
-            {error ? <span className="q-field__error">{error}</span> : null}
+            {field.kind === 'text' ? <span className="text-[length:var(--text-small)] text-muted-foreground">Supports {'{{ }}'} expressions</span> : null}
+            {error ? <span className="text-[length:var(--text-small)] text-destructive">{error}</span> : null}
           </label>
         );
       })}

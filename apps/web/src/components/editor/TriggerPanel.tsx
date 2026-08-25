@@ -1,6 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { getBrowserClient, type TriggerView } from '../../lib/api';
@@ -31,14 +33,14 @@ export function TriggerPanel({ workflowId, triggers, showSecrets, loading }: Tri
   if (loading) {
     return (
       <div className="q-trigger-panel" data-testid="trigger-panel">
-        <span className="q-field__hint">Loading triggers…</span>
+        <span className="text-[length:var(--text-small)] text-muted-foreground">Loading triggers…</span>
       </div>
     );
   }
   if (triggers.length === 0) return null;
   return (
     <div className="q-trigger-panel" data-testid="trigger-panel">
-      <div className="q-inspector__section-title">Triggers</div>
+      <div className="text-[length:var(--text-small)] font-medium uppercase tracking-[0.05em] text-muted-foreground">Triggers</div>
       {triggers.map((t) => (
         <div key={t.nodeId} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           <strong className="mono">{t.nodeId}</strong>
@@ -47,7 +49,7 @@ export function TriggerPanel({ workflowId, triggers, showSecrets, loading }: Tri
               {/* The API omits the URLs for a member without workflow:activate — holding
                   them is enough to start a production run through the gateway. */}
               {t.url === undefined ? (
-                <p className="q-field__hint" data-testid="trigger-url-hidden">
+                <p className="text-[length:var(--text-small)] text-muted-foreground" data-testid="trigger-url-hidden">
                   The endpoint URL is visible to members who can activate workflows.
                 </p>
               ) : (
@@ -64,24 +66,24 @@ export function TriggerPanel({ workflowId, triggers, showSecrets, loading }: Tri
               )}
               {t.authMode && t.authMode !== 'none' ? (
                 showSecrets && t.secret ? (
-                  <div className="q-banner q-banner--warn">
+                  <Alert variant="warn" className="flex flex-wrap items-center gap-3">
                     <span>
                       {t.authMode} secret (copy it now — treat it like a password):{' '}
                       <code data-testid="trigger-secret">{t.secret}</code>
                     </span>
                     <CopyButton value={t.secret} label="secret" />
-                  </div>
+                  </Alert>
                 ) : (
-                  <p className="q-field__hint">Auth: {t.authMode} — secret managed at activation.</p>
+                  <p className="text-[length:var(--text-small)] text-muted-foreground">Auth: {t.authMode} — secret managed at activation.</p>
                 )
               ) : (
-                <p className="q-field__hint">Auth: none</p>
+                <p className="text-[length:var(--text-small)] text-muted-foreground">Auth: none</p>
               )}
               {t.testUrl ? <SampleViewer workflowId={workflowId} nodeId={t.nodeId} testUrl={t.testUrl} /> : null}
               <DeliveryViewer workflowId={workflowId} nodeId={t.nodeId} />
             </>
           ) : (
-            <p className="q-field__hint">
+            <p className="text-[length:var(--text-small)] text-muted-foreground">
               cron <code>{t.cron}</code> · {t.timezone} · next fire {t.nextFireAt ?? '—'}
             </p>
           )}
@@ -115,24 +117,24 @@ function SampleViewer({ workflowId, nodeId, testUrl }: { workflowId: string; nod
     >
       <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Sample payloads</summary>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-        {q.isPending && open ? <span className="q-field__hint">Loading…</span> : null}
-        {q.isError ? <span className="q-field__error">Could not load samples.</span> : null}
+        {q.isPending && open ? <span className="text-[length:var(--text-small)] text-muted-foreground">Loading…</span> : null}
+        {q.isError ? <span className="text-[length:var(--text-small)] text-destructive">Could not load samples.</span> : null}
         {q.data && samples.length === 0 ? (
-          <span className="q-field__hint" data-testid={`trigger-samples-empty-${nodeId}`}>
+          <span className="text-[length:var(--text-small)] text-muted-foreground" data-testid={`trigger-samples-empty-${nodeId}`}>
             No sample payloads yet. POST to the test URL above and the body will appear here — production
             fires are not recorded as samples.
           </span>
         ) : null}
         {first !== undefined ? (
           <>
-            <pre className="q-payload" data-testid={`trigger-sample-body-${nodeId}`}>
+            <pre className="m-0 max-h-80 overflow-auto rounded-[var(--radius-node)] border bg-secondary p-3 font-mono text-[length:var(--text-mono)] leading-relaxed" data-testid={`trigger-sample-body-${nodeId}`}>
               {JSON.stringify(first, null, 2)}
             </pre>
-            <div className="q-inspector__section-title">Paths you can paste</div>
+            <div className="text-[length:var(--text-small)] font-medium uppercase tracking-[0.05em] text-muted-foreground">Paths you can paste</div>
             {expressionPaths(first).slice(0, 24).map((p) => (
               <div key={p.path} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                 <code className="mono" style={{ flex: 1 }}>{`{{ ${p.path} }}`}</code>
-                <span className="q-field__hint">{p.preview}</span>
+                <span className="text-[length:var(--text-small)] text-muted-foreground">{p.preview}</span>
                 <CopyButton value={`{{ ${p.path} }}`} label="path" />
               </div>
             ))}
@@ -170,18 +172,18 @@ function DeliveryViewer({ workflowId, nodeId }: { workflowId: string; nodeId: st
     >
       <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Recent deliveries</summary>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-        {q.isPending && open ? <span className="q-field__hint">Loading…</span> : null}
-        {q.isError ? <span className="q-field__error">Could not load deliveries.</span> : null}
+        {q.isPending && open ? <span className="text-[length:var(--text-small)] text-muted-foreground">Loading…</span> : null}
+        {q.isError ? <span className="text-[length:var(--text-small)] text-destructive">Could not load deliveries.</span> : null}
         {q.data && items.length === 0 ? (
-          <span className="q-field__hint" data-testid={`trigger-deliveries-empty-${nodeId}`}>
+          <span className="text-[length:var(--text-small)] text-muted-foreground" data-testid={`trigger-deliveries-empty-${nodeId}`}>
             Nothing has reached this endpoint yet. Rejected deliveries appear here too, so if a provider says it
             is sending and this stays empty, the request is not arriving at all.
           </span>
         ) : null}
         {items.map((d) => (
           <div key={d.id} className="q-delivery" data-testid={`delivery-${d.id}`}>
-            <span
-              className="q-chip"
+            <Badge
+              variant="tone"
               style={{
                 color:
                   deliveryTone(d.outcome) === 'succeeded'
@@ -192,8 +194,8 @@ function DeliveryViewer({ workflowId, nodeId }: { workflowId: string; nodeId: st
               }}
             >
               {d.statusCode} {d.outcome}
-            </span>
-            <span className="q-field__hint">{fmtTime(d.receivedAt)}</span>
+            </Badge>
+            <span className="text-[length:var(--text-small)] text-muted-foreground">{fmtTime(d.receivedAt)}</span>
             <p className="q-delivery__hint">{deliveryHint(d)}</p>
           </div>
         ))}

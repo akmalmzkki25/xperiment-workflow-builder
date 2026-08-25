@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { getBrowserClient } from '../../lib/api';
@@ -17,7 +18,7 @@ export function VerifyBanner() {
   if (!meQ.data || meQ.data.emailVerified) return null;
 
   return (
-    <div className="q-banner q-banner--warn" data-testid="verify-banner">
+    <Alert variant="warn" className="flex flex-wrap items-center gap-3" data-testid="verify-banner">
       <span>Confirm your email address to secure your account.</span>
       {resent ? (
         <span data-testid="verify-resent">Sent — check your inbox.</span>
@@ -38,6 +39,6 @@ export function VerifyBanner() {
           Resend
         </Button>
       )}
-    </div>
+    </Alert>
   );
 }

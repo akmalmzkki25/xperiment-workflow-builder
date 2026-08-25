@@ -41,9 +41,9 @@ export function PayloadPanel({ executionId, nodeId, attempt }: Props) {
     >
       <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Data in and out</summary>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-        {q.isPending && open ? <span className="q-field__hint">Loading…</span> : null}
+        {q.isPending && open ? <span className="text-[length:var(--text-small)] text-muted-foreground">Loading…</span> : null}
         {q.isError ? (
-          <span className="q-field__error" data-testid={`${testId}-error`}>
+          <span className="text-[length:var(--text-small)] text-destructive" data-testid={`${testId}-error`}>
             Could not load this payload.
           </span>
         ) : null}
@@ -62,7 +62,7 @@ function PayloadBody({ label, value, testId }: { label: string; value: unknown; 
   const preview = previewPayload(value);
   if (preview.empty) {
     return (
-      <span className="q-field__hint" data-testid={`${testId}-empty`}>
+      <span className="text-[length:var(--text-small)] text-muted-foreground" data-testid={`${testId}-empty`}>
         {label}: not recorded
       </span>
     );
@@ -74,18 +74,18 @@ function PayloadBody({ label, value, testId }: { label: string; value: unknown; 
   };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-      <span className="q-field__hint">
+      <span className="text-[length:var(--text-small)] text-muted-foreground">
         {label} ({formatBytes(preview.bytes)})
       </span>
-      <pre className="q-payload" data-testid={testId}>
+      <pre className="m-0 max-h-80 overflow-auto rounded-[var(--radius-node)] border bg-secondary p-3 font-mono text-[length:var(--text-mono)] leading-relaxed" data-testid={testId}>
         {preview.text}
       </pre>
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
-        <Button variant="ghost" type="button"  onClick={copy}>
+        <Button variant="ghost" type="button" onClick={copy}>
           Copy
         </Button>
         {preview.truncated ? (
-          <span className="q-field__hint">Shown truncated — copy gives you the same slice.</span>
+          <span className="text-[length:var(--text-small)] text-muted-foreground">Shown truncated — copy gives you the same slice.</span>
         ) : null}
       </div>
     </div>

@@ -1,6 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { type ConnectionRow, getBrowserClient } from '../../lib/api';
@@ -97,11 +99,10 @@ export function ConnectionDialog({
       onClose={onClose}
       actions={
         <>
-          <Button variant="ghost"  onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button
-            
             disabled={!name.trim() || fields.length === 0 || save.isPending}
             onClick={submit}
             data-testid="conn-submit">
@@ -111,16 +112,15 @@ export function ConnectionDialog({
       }
     >
       {rotate ? (
-        <div className="q-banner" data-testid="conn-rotate-notice">
+        <Alert className="flex flex-wrap items-center gap-3" data-testid="conn-rotate-notice">
           The connection keeps its id, so every published workflow that uses it keeps working. Enter every field
           again — the stored payload is write-only, so this form cannot show you what is there now.
-        </div>
+        </Alert>
       ) : null}
 
-      <label className="q-field">
-        <span className="q-field__label">Connector *</span>
-        <select
-          className="q-select"
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[length:var(--text-small)] font-medium text-secondary-foreground">Connector *</span>
+        <NativeSelect
           value={connectorKey}
           disabled={rotate !== undefined}
           onChange={(e) => {
@@ -134,7 +134,7 @@ export function ConnectionDialog({
               {s.connectorKey}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </label>
       <TextField label="Name" value={name} onChange={setName} required placeholder="Tim bot" testId="conn-name" />
 
@@ -142,19 +142,19 @@ export function ConnectionDialog({
       {/* An older API that does not send connection schemas leaves the form with nothing
           to draw. Saying so beats a Create button that fails with a validation error. */}
       {!catalog.isLoading && schemas.length === 0 ? (
-        <div className="q-banner">This API build does not publish connection field definitions.</div>
+        <Alert className="flex flex-wrap items-center gap-3">This API build does not publish connection field definitions.</Alert>
       ) : null}
 
       {fields.map((field) =>
         field.kind === 'checkbox' ? (
-          <label className="q-field q-field--inline" key={field.name}>
+          <label className="flex items-center gap-2" key={field.name}>
             <input
               type="checkbox"
               checked={values[field.name] === 'true'}
               onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: String(e.target.checked) }))}
               data-testid={`conn-field-${field.name}`}
             />
-            <span className="q-field__label">{field.label}</span>
+            <span className="text-[length:var(--text-small)] font-medium text-secondary-foreground">{field.label}</span>
           </label>
         ) : (
           <TextField
@@ -170,7 +170,7 @@ export function ConnectionDialog({
           />
         ),
       )}
-      {error ? <div className="q-banner">{error}</div> : null}
+      {error ? <Alert className="flex flex-wrap items-center gap-3">{error}</Alert> : null}
     </Dialog>
   );
 }

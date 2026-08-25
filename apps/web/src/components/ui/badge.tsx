@@ -15,6 +15,11 @@ const badgeVariants = cva(
         destructive:
           "border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80",
         outline: "text-foreground",
+        // The tinted pill. Border and background both derive from `currentColor`, so a
+        // caller sets ONE colour — `style={{ color: 'var(--status-failed)' }}` — and the
+        // whole chip follows. Every status read-out in the app relies on that; a fixed
+        // palette here would need a variant per status and would drift from the tokens.
+        tone: "gap-1.5 whitespace-nowrap rounded-full border-current bg-[color-mix(in_srgb,currentColor_9%,transparent)] text-[length:var(--text-small)]",
       },
     },
     defaultVariants: {
@@ -24,12 +29,16 @@ const badgeVariants = cva(
 )
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof badgeVariants> {}
 
+/**
+ * A `span`, not shadcn's stock `div`: chips sit inline inside paragraphs and table cells
+ * here, and a block element there is invalid HTML that React reports as a hydration error.
+ */
 function Badge({ className, variant, ...props }: BadgeProps) {
   return (
-    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+    <span className={cn(badgeVariants({ variant }), className)} {...props} />
   )
 }
 

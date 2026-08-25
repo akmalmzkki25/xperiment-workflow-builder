@@ -26,10 +26,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   if (!ready) return null;
 
   return (
-    <div className="q-shell">
+    <div className="grid min-h-screen grid-cols-[220px_1fr]">
       <Sidebar />
-      <div className="q-main">
-        <header className="q-topbar">
+      <div className="flex min-w-0 flex-col">
+        <header className="flex h-14 items-center justify-end gap-3 border-b bg-card px-8">
           <WorkspaceSwitcher />
           <Button variant="ghost" size="sm"
             
@@ -47,7 +47,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             Sign out
           </Button>
         </header>
-        <div className="q-content">
+        <div className="flex min-h-0 flex-1 flex-col gap-6 p-8">
           <VerifyBanner />
           <IncidentBanner />
           <QuotaBanner />

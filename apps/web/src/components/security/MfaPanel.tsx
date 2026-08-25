@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useState, type CSSProperties } from 'react';
 import { TextField } from '../common/TextField';
@@ -94,7 +95,6 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
           </p>
           <TextField label="Code from the app" value={code} onChange={setCode} testId="mfa-code" />
           <Button
-            
             disabled={busy || code.length < 6}
             onClick={() => void confirm()}
             data-testid="mfa-confirm"
@@ -138,7 +138,6 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
             testId="mfa-password"
           />
           <Button
-            
             disabled={busy || password.length === 0}
             onClick={() => void start()}
             data-testid="mfa-start"
@@ -173,9 +172,9 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
       ) : null}
 
       {error ? (
-        <div className="q-banner" data-testid="mfa-error">
+        <Alert className="flex flex-wrap items-center gap-3" data-testid="mfa-error">
           {error}
-        </div>
+        </Alert>
       ) : null}
     </section>
   );

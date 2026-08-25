@@ -1,6 +1,10 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -30,7 +34,7 @@ function DiffView({ diff }: { diff: WorkflowDiff }) {
           <span style={{ color: 'var(--color-amber)', fontWeight: 600 }}>~ Modified</span>{' '}
           <span className="mono">{m.nodeId}</span>{' '}
           {m.changedFields.map((f) => (
-            <span key={f} className="q-chip" style={{ marginLeft: 4 }}>{f}</span>
+            <Badge key={f} variant="tone" style={{ marginLeft: 4 }}>{f}</Badge>
           ))}
         </div>
       ))}
@@ -62,7 +66,7 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
   });
 
   if (wfQ.isLoading) return <p style={{ color: 'var(--text-muted)' }}>Loading versions…</p>;
-  if (wfQ.isError || !wfQ.data) return <div className="q-banner">Could not load this workflow.</div>;
+  if (wfQ.isError || !wfQ.data) return <Alert className="flex flex-wrap items-center gap-3">Could not load this workflow.</Alert>;
 
   const wf = wfQ.data;
   const options = [
@@ -72,22 +76,22 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
 
   return (
     <div data-testid="versions-page">
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Versions · {shortId(params.id)}</h1>
         <Button asChild variant="ghost" size="sm"><Link href={`/workflows/${params.id}`}>Open editor</Link></Button>
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', marginBottom: 'var(--space-5)', flexWrap: 'wrap' }}>
-        <select className="q-select" value={from} onChange={(e) => setFrom(e.target.value)} data-testid="diff-from" aria-label="Compare from">
+        <NativeSelect value={from} onChange={(e) => setFrom(e.target.value)} data-testid="diff-from" aria-label="Compare from">
           <option value="">From…</option>
           {options.map((o) => <option key={`f-${o.value}`} value={o.value}>{o.label}</option>)}
-        </select>
+        </NativeSelect>
         <span style={{ color: 'var(--text-muted)' }}>→</span>
-        <select className="q-select" value={to} onChange={(e) => setTo(e.target.value)} data-testid="diff-to" aria-label="Compare to">
+        <NativeSelect value={to} onChange={(e) => setTo(e.target.value)} data-testid="diff-to" aria-label="Compare to">
           <option value="">To…</option>
           {options.map((o) => <option key={`t-${o.value}`} value={o.value}>{o.label}</option>)}
-        </select>
-        <Button size="sm"  disabled={!from || !to || compare.isPending} onClick={() => compare.mutate()} data-testid="diff-compare">
+        </NativeSelect>
+        <Button size="sm" disabled={!from || !to || compare.isPending} onClick={() => compare.mutate()} data-testid="diff-compare">
           Compare
         </Button>
       </div>
@@ -97,20 +101,20 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
       {wf.versions.length === 0 ? (
         <p style={{ color: 'var(--text-muted)' }}>No published versions yet.</p>
       ) : (
-        <table className="q-table">
-          <thead>
-            <tr><th>Version</th><th>Published</th><th>Hash</th><th></th></tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow><TableHead>Version</TableHead><TableHead>Published</TableHead><TableHead>Hash</TableHead><TableHead></TableHead></TableRow>
+          </TableHeader>
+          <TableBody>
             {wf.versions.map((v) => (
-              <tr key={v.id} data-testid={`version-${v.versionNumber}`}>
-                <td>
+              <TableRow key={v.id} data-testid={`version-${v.versionNumber}`}>
+                <TableCell>
                   v{v.versionNumber}
-                  {v.id === wf.activeVersionId ? <span className="q-chip" style={{ marginLeft: 6 }}>active</span> : null}
-                </td>
-                <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(v.publishedAt)}</td>
-                <td className="mono" style={{ color: 'var(--text-muted)' }}>{shortId(v.definitionHash)}</td>
-                <td>
+                  {v.id === wf.activeVersionId ? <Badge variant="tone" style={{ marginLeft: 6 }}>active</Badge> : null}
+                </TableCell>
+                <TableCell style={{ color: 'var(--text-secondary)' }}>{fmtTime(v.publishedAt)}</TableCell>
+                <TableCell className="mono" style={{ color: 'var(--text-muted)' }}>{shortId(v.definitionHash)}</TableCell>
+                <TableCell>
                   <Button variant="ghost" size="sm"
                     
                     disabled={rollback.isPending || v.id === wf.activeVersionId}
@@ -121,11 +125,11 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
                   >
                     Rollback
                   </Button>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
@@ -73,11 +74,11 @@ export function ImportButton({ onImported }: { onImported: () => void }) {
       </Button>
 
       {fileError ? (
-        <div className="q-banner" data-testid="wf-import-error">
+        <Alert className="flex flex-wrap items-center gap-3" data-testid="wf-import-error">
           {fileError}
-        </div>
+        </Alert>
       ) : null}
-      {run.isError ? <div className="q-banner">{(run.error as Error).message}</div> : null}
+      {run.isError ? <Alert className="flex flex-wrap items-center gap-3">{(run.error as Error).message}</Alert> : null}
 
       <Dialog
         title="Imported — some nodes need a connection"
@@ -85,7 +86,6 @@ export function ImportButton({ onImported }: { onImported: () => void }) {
         onClose={() => setResult(null)}
         actions={
           <Button
-            
             data-testid="wf-import-open"
             onClick={() => {
               if (result) router.push(`/workflows/${result.id}`);

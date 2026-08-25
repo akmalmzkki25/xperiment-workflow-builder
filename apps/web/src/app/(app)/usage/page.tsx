@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { getBrowserClient } from '../../../lib/api';
 import type { UsageSummary } from '../../../lib/api';
@@ -82,16 +83,16 @@ export default function UsagePage() {
   const forbidden = forbiddenDetail(usageQ.error);
   if (forbidden) return <PermissionNotice detail={forbidden} />;
   if (usageQ.isLoading) return <p style={{ color: 'var(--text-muted)' }}>Loading usage…</p>;
-  if (usageQ.isError || !usageQ.data) return <div className="q-banner">Could not load usage.</div>;
+  if (usageQ.isError || !usageQ.data) return <Alert className="flex flex-wrap items-center gap-3">Could not load usage.</Alert>;
 
   const usage = usageQ.data;
   const periodFrom = new Date(usage.period.from).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   return (
     <div data-testid="usage-page">
-      <div className="q-page-head">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1>Usage</h1>
-        <span className="q-field__hint">Since {periodFrom} · this workspace</span>
+        <span className="text-[length:var(--text-small)] text-muted-foreground">Since {periodFrom} · this workspace</span>
       </div>
 
       <div

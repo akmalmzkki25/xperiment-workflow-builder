@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { Wordmark } from '@/components/common/Wordmark';
+import { Card } from '@/components/ui/card';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { getBrowserClient } from '../../lib/api';
@@ -39,18 +41,18 @@ function VerifyRunner() {
 
 export default function VerifyEmailPage() {
   return (
-    <main className="q-auth" data-testid="verify-email-page">
-      <div className="q-auth__card">
+    <main className="grid min-h-screen place-items-center bg-[var(--color-lontar)] p-8" data-testid="verify-email-page">
+      <Card className="flex w-[min(400px,100%)] flex-col gap-6 rounded-[14px] p-10">
         <div>
-          <div className="q-wordmark">Xperiment</div>
-          <p className="q-auth__tagline" style={{ marginTop: 4 }}>
+          <Wordmark />
+          <p className="mt-1 text-secondary-foreground">
             Confirm your email.
           </p>
         </div>
         <Suspense fallback={null}>
           <VerifyRunner />
         </Suspense>
-      </div>
+      </Card>
     </main>
   );
 }

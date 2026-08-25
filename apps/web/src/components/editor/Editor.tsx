@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -535,11 +536,11 @@ function EditorInner({ workflowId }: { workflowId: string }) {
     return <p style={{ color: 'var(--text-muted)' }}>Loading editor…</p>;
   }
   if (workflowQ.isError || !workflowQ.data) {
-    return <div className="q-banner">Could not load this workflow.</div>;
+    return <Alert className="flex flex-wrap items-center gap-3">Could not load this workflow.</Alert>;
   }
   if (catalogQ.isError) {
     // Without the catalog, readiness badges and forms would silently lie.
-    return <div className="q-banner">Could not load the connector catalog — check the API and reload.</div>;
+    return <Alert className="flex flex-wrap items-center gap-3">Could not load the connector catalog — check the API and reload.</Alert>;
   }
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
@@ -607,7 +608,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
             />
           ) : null}
           {canvasOffer ? (
-            <div className="q-banner q-banner--warn" data-testid="ai-canvas-offer">
+            <Alert variant="warn" className="flex flex-wrap items-center gap-3" data-testid="ai-canvas-offer">
               <span>
                 The assistant saved a new version of this draft (rev {canvasOffer.revision}). You have unsaved changes
                 on the canvas.
@@ -633,7 +634,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
               >
                 Keep mine
               </Button>
-            </div>
+            </Alert>
           ) : null}
           <AiChat
             open={aiOpen}
