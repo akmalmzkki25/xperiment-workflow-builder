@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { getBrowserClient } from '../../lib/api';
 import { formatBytes, previewPayload } from '../../lib/payloadView';
@@ -80,9 +81,9 @@ function PayloadBody({ label, value, testId }: { label: string; value: unknown; 
         {preview.text}
       </pre>
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
-        <button type="button" className="q-btn q-btn--ghost" onClick={copy}>
+        <Button variant="ghost" type="button"  onClick={copy}>
           Copy
-        </button>
+        </Button>
         {preview.truncated ? (
           <span className="q-field__hint">Shown truncated — copy gives you the same slice.</span>
         ) : null}

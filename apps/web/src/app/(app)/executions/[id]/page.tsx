@@ -1,10 +1,11 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Timeline } from '../../../../components/executions/Timeline';
-import { StatusChip } from '../../../../components/ui/StatusChip';
+import { StatusChip } from '../../../../components/common/StatusChip';
 import { getBrowserClient } from '../../../../lib/api';
 import { fmtDuration, shortId } from '../../../../lib/format';
 
@@ -45,26 +46,26 @@ export default function ExecutionDetailPage({ params }: { params: { id: string }
           <StatusChip status={execution.status} testId="exec-status" />
           <span className="q-field__hint">{fmtDuration(execution.startedAt, execution.completedAt)}</span>
           {!isTerminal ? (
-            <button
-              className="q-btn q-btn--danger q-btn--sm"
+            <Button variant="destructive" size="sm"
+              
               disabled={cancel.isPending}
               onClick={() => cancel.mutate()}
               data-testid="exec-cancel"
             >
               Cancel
-            </button>
+            </Button>
           ) : null}
-          <button
-            className="q-btn q-btn--ghost q-btn--sm"
+          <Button variant="ghost" size="sm"
+            
             disabled={retry.isPending}
             onClick={() => retry.mutate()}
             data-testid="exec-retry"
           >
             Retry
-          </button>
-          <Link href={`/workflows/${execution.workflowId}`} className="q-btn q-btn--ghost q-btn--sm">
+          </Button>
+          <Button asChild variant="ghost" size="sm"><Link href={`/workflows/${execution.workflowId}`}>
             Open workflow
-          </Link>
+          </Link></Button>
         </div>
       </div>
 

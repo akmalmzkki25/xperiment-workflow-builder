@@ -1,6 +1,7 @@
 'use client';
 
 import type { ChatItem } from '../../lib/chatMessages';
+import { Button } from '@/components/ui/button';
 
 /**
  * One row of the transcript.
@@ -79,13 +80,13 @@ export function AiChatMessage({ item, onConnect }: Props): JSX.Element {
             ✓ Connected
           </span>
         ) : (
-          <button
-            className="q-btn q-btn--sm"
+          <Button size="sm"
+            
             data-testid={`ai-connect-${item.connectorKey}`}
             onClick={() => onConnect(item.connectorKey)}
           >
             Connect {item.displayName}
-          </button>
+          </Button>
         )}
       </div>
     );

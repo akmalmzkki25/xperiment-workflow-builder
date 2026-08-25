@@ -1,10 +1,11 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { getBrowserClient } from '../../lib/api';
 import type { InvoiceSummary } from '../../lib/api';
 import { forbiddenDetail } from '../../lib/permissions';
-import { PermissionNotice } from '../ui/PermissionNotice';
+import { PermissionNotice } from '../common/PermissionNotice';
 
 /** Whole rupiah, grouped — amounts are integers, so there is no decimal handling. */
 function money(minor: number, currency: string): string {
@@ -62,14 +63,14 @@ export function InvoiceTable() {
             <td style={{ color: STATUS_COLOR[inv.status] }}>{inv.status}</td>
             <td>
               {inv.status === 'issued' ? (
-                <button
-                  className="q-btn q-btn--ghost q-btn--sm"
+                <Button variant="ghost" size="sm"
+                  
                   disabled={settle.isPending}
                   onClick={() => settle.mutate(inv.id)}
                   data-testid={`settle-${inv.id}`}
                 >
                   Mark paid
-                </button>
+                </Button>
               ) : null}
             </td>
           </tr>

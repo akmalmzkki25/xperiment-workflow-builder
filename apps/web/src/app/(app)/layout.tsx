@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import { useEffect, useState, type ReactNode } from 'react';
 import { IncidentBanner } from '../../components/shell/IncidentBanner';
 import { QuotaBanner } from '../../components/shell/QuotaBanner';
@@ -30,8 +31,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <div className="q-main">
         <header className="q-topbar">
           <WorkspaceSwitcher />
-          <button
-            className="q-btn q-btn--ghost q-btn--sm"
+          <Button variant="ghost" size="sm"
+            
             data-testid="logout"
             onClick={() => {
               void getBrowserClient()
@@ -44,7 +45,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             }}
           >
             Sign out
-          </button>
+          </Button>
         </header>
         <div className="q-content">
           <VerifyBanner />

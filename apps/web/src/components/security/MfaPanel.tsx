@@ -1,8 +1,9 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useState, type CSSProperties } from 'react';
-import { TextField } from '../ui/TextField';
+import { TextField } from '../common/TextField';
 import { ApiError, getBrowserClient } from '../../lib/api';
 import { QrCode } from './QrCode';
 
@@ -92,14 +93,14 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
             Or type this key: <code data-testid="mfa-key">{grouped(stage.key)}</code>
           </p>
           <TextField label="Code from the app" value={code} onChange={setCode} testId="mfa-code" />
-          <button
-            className="q-btn"
+          <Button
+            
             disabled={busy || code.length < 6}
             onClick={() => void confirm()}
             data-testid="mfa-confirm"
           >
             Turn on
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -116,13 +117,13 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
               </li>
             ))}
           </ul>
-          <button
-            className="q-btn q-btn--ghost"
+          <Button variant="ghost"
+            
             onClick={() => setStage({ kind: 'idle' })}
             data-testid="mfa-codes-done"
           >
             I have saved them
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -136,14 +137,14 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
             hint="Confirms it is really you before a second factor is attached"
             testId="mfa-password"
           />
-          <button
-            className="q-btn"
+          <Button
+            
             disabled={busy || password.length === 0}
             onClick={() => void start()}
             data-testid="mfa-start"
           >
             Set up
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -151,22 +152,22 @@ export function MfaPanel({ enabled }: { enabled: boolean }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <TextField label="Current code or a recovery code" value={code} onChange={setCode} testId="mfa-proof" />
           <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-            <button
-              className="q-btn q-btn--ghost"
+            <Button variant="ghost"
+              
               disabled={busy || code.length < 6}
               onClick={() => void regenerate()}
               data-testid="mfa-regenerate"
             >
               New recovery codes
-            </button>
-            <button
-              className="q-btn q-btn--ghost"
+            </Button>
+            <Button variant="ghost"
+              
               disabled={busy || code.length < 6}
               onClick={() => void disable()}
               data-testid="mfa-disable"
             >
               Turn off
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}

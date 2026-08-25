@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { getBrowserClient, type TriggerView } from '../../lib/api';
 import { deliveryHint, deliveryTone } from '../../lib/deliveryHint';
@@ -9,13 +10,13 @@ import { expressionPaths } from '../../lib/samplePaths';
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   return (
-    <button
-      className="q-btn q-btn--ghost q-btn--sm"
+    <Button variant="ghost" size="sm"
+      
       type="button"
       onClick={() => void navigator.clipboard?.writeText(value)?.catch(() => undefined)}
     >
       Copy {label}
-    </button>
+    </Button>
   );
 }
 

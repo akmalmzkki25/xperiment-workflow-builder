@@ -1,6 +1,9 @@
 'use client';
 
 import type { ChangeEvent } from 'react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/cn';
 
 interface TextFieldProps {
   label: string;
@@ -15,6 +18,7 @@ interface TextFieldProps {
   testId?: string;
 }
 
+/** Same props as before; shadcn Input and Label underneath. */
 export function TextField({
   label,
   value,
@@ -28,21 +32,21 @@ export function TextField({
   testId,
 }: TextFieldProps) {
   return (
-    <label className="q-field">
-      <span className="q-field__label">
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-secondary-foreground">
         {label}
         {required ? ' *' : ''}
-      </span>
-      <input
-        className={mono ? 'q-input q-input--mono' : 'q-input'}
+      </Label>
+      <Input
+        className={cn(mono && 'font-mono text-[length:var(--text-mono)]', error && 'border-destructive')}
         type={type}
         value={value}
         placeholder={placeholder}
         onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
         data-testid={testId}
       />
-      {hint ? <span className="q-field__hint">{hint}</span> : null}
-      {error ? <span className="q-field__error">{error}</span> : null}
-    </label>
+      {hint ? <p className="text-[length:var(--text-small)] text-muted-foreground">{hint}</p> : null}
+      {error ? <p className="text-[length:var(--text-small)] text-destructive">{error}</p> : null}
+    </div>
   );
 }

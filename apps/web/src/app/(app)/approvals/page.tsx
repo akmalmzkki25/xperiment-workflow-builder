@@ -1,10 +1,11 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useState } from 'react';
-import { EmptyState } from '../../../components/ui/EmptyState';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
+import { EmptyState } from '../../../components/common/EmptyState';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { getBrowserClient, type ApprovalItem } from '../../../lib/api';
 import { fmtTime, shortId } from '../../../lib/format';
 import { forbiddenDetail } from '../../../lib/permissions';
@@ -69,22 +70,22 @@ export default function ApprovalsPage() {
                 rows={2}
               />
               <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                <button
-                  className="q-btn q-btn--live q-btn--sm"
+                <Button variant="live" size="sm"
+                  
                   disabled={decide.isPending}
                   onClick={() => decide.mutate({ item, decision: 'approve' })}
                   data-testid={`approve-${item.nodeId}`}
                 >
                   Approve
-                </button>
-                <button
-                  className="q-btn q-btn--danger q-btn--sm"
+                </Button>
+                <Button variant="destructive" size="sm"
+                  
                   disabled={decide.isPending}
                   onClick={() => decide.mutate({ item, decision: 'reject' })}
                   data-testid={`reject-${item.nodeId}`}
                 >
                   Reject
-                </button>
+                </Button>
               </div>
             </div>
           ))}

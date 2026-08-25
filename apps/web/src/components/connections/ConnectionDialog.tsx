@@ -1,11 +1,12 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { type ConnectionRow, getBrowserClient } from '../../lib/api';
 import { buildPayload, deriveFields, type JsonSchemaLike } from '../../lib/connectionFields';
-import { Dialog } from '../ui/Dialog';
-import { TextField } from '../ui/TextField';
+import { Dialog } from '../common/Dialog';
+import { TextField } from '../common/TextField';
 
 /** Set when rotating an existing connection rather than creating one. */
 export interface RotateTarget {
@@ -96,17 +97,16 @@ export function ConnectionDialog({
       onClose={onClose}
       actions={
         <>
-          <button className="q-btn q-btn--ghost" onClick={onClose}>
+          <Button variant="ghost"  onClick={onClose}>
             Cancel
-          </button>
-          <button
-            className="q-btn"
+          </Button>
+          <Button
+            
             disabled={!name.trim() || fields.length === 0 || save.isPending}
             onClick={submit}
-            data-testid="conn-submit"
-          >
+            data-testid="conn-submit">
             {rotate ? 'Rotate' : 'Create'}
-          </button>
+          </Button>
         </>
       }
     >

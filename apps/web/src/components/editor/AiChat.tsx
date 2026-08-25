@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ApiError, getBrowserClient, StreamInterrupted } from '../../lib/api';
 import { chatReducer, initialChatState } from '../../lib/chatMessages';
@@ -111,14 +112,13 @@ export function AiChat({ open, onClose, workflowId, onCanvasFrame }: AiChatProps
     <aside className="q-aichat" data-testid="ai-dock" aria-label="Workflow builder">
       <div className="q-aichat__head">
         <span className="q-inspector__section-title">Build with AI</span>
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        <Button variant="ghost" size="sm"
+          
           onClick={onClose}
           disabled={pendingConnector !== null}
-          aria-label="Close the builder"
-        >
+          aria-label="Close the builder">
           ✕
-        </button>
+        </Button>
       </div>
 
       <div className="q-aichat__thread" ref={threadRef} data-testid="ai-thread" role="log" aria-live="polite">

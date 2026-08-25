@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { useMemo, useState } from 'react';
 import type { IRNodeData } from '../../lib/irCanvas';
 import { deriveFields } from '../../lib/schemaForm';
@@ -63,14 +64,14 @@ export function Inspector({
             />
             {idError ? <span className="q-field__error">{idError}</span> : null}
           </div>
-          <button
-            className="q-btn q-btn--ghost q-btn--sm"
+          <Button variant="ghost" size="sm"
+            
             disabled={idDraft === ir.id || idError !== null}
             onClick={() => onRename(ir.id, idDraft)}
             data-testid="node-rename"
           >
             Rename
-          </button>
+          </Button>
         </div>
         <p className="q-node__sub" style={{ marginTop: 8 }}>
           {ir.type} · v{ir.operationVersion}
@@ -118,17 +119,17 @@ export function Inspector({
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        <Button variant="ghost" size="sm"
+          
           onClick={() => onDuplicate(ir.id)}
           title="Duplicate (Ctrl+D)"
           data-testid="node-duplicate"
         >
           Duplicate
-        </button>
-        <button className="q-btn q-btn--danger q-btn--sm" onClick={() => onDelete(ir.id)} data-testid="node-delete">
+        </Button>
+        <Button variant="destructive" size="sm"  onClick={() => onDelete(ir.id)} data-testid="node-delete">
           Delete node
-        </button>
+        </Button>
       </div>
     </aside>
   );

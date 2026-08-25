@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { TextField } from '../../components/ui/TextField';
+import { TextField } from '../../components/common/TextField';
 import { ApiError, getBrowserClient } from '../../lib/api';
 
 function ResetForm() {
@@ -55,9 +56,9 @@ function ResetForm() {
           {error}
         </div>
       ) : null}
-      <button className="q-btn" type="submit" disabled={busy || password.length < 8} data-testid="reset-submit">
+      <Button  type="submit" disabled={busy || password.length < 8} data-testid="reset-submit">
         Set new password
-      </button>
+      </Button>
     </form>
   );
 }

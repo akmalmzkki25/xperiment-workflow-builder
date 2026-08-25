@@ -1,12 +1,13 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { EmptyState } from '../../../components/ui/EmptyState';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
-import { StatusChip } from '../../../components/ui/StatusChip';
+import { EmptyState } from '../../../components/common/EmptyState';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
+import { StatusChip } from '../../../components/common/StatusChip';
 import { getBrowserClient } from '../../../lib/api';
 import { choiceFromParams, paramsForChoice, statusesFor, STATUS_CHOICES } from '../../../lib/executionFilter';
 import { fmtDuration, fmtTime, shortId } from '../../../lib/format';
@@ -129,12 +130,12 @@ function ExecutionsList() {
             aria-label="Search runs by trigger payload"
             data-testid="exec-search-input"
           />
-          <button className="q-btn q-btn--sm" type="submit" data-testid="exec-search-submit">
+          <Button size="sm"  type="submit" data-testid="exec-search-submit">
             Search
-          </button>
+          </Button>
           {searching ? (
-            <button
-              className="q-btn q-btn--ghost q-btn--sm"
+            <Button variant="ghost" size="sm"
+              
               type="button"
               onClick={() => {
                 setSearchDraft('');
@@ -143,7 +144,7 @@ function ExecutionsList() {
               data-testid="exec-search-clear"
             >
               Clear
-            </button>
+            </Button>
           ) : null}
           {searchDraft.trim().length > 0 && searchDraft.trim().length < 3 ? (
             <span className="q-field__hint">At least three characters — shorter than that cannot be indexed.</span>
@@ -197,16 +198,16 @@ function ExecutionsList() {
       {!searching && canBulkRetry && !forbidden ? (
         <div className="q-banner" data-testid="bulk-retry-bar">
           <span>{retryNotice ?? 'Fixed whatever broke these? Re-run them all.'}</span>
-          <button
-            className="q-btn q-btn--ghost q-btn--sm"
+          <Button variant="ghost" size="sm"
+            
             disabled={retry.isPending}
             onClick={() => retry.mutate(true)}
             data-testid="bulk-retry-count"
           >
             Count matches
-          </button>
-          <button
-            className="q-btn q-btn--sm"
+          </Button>
+          <Button size="sm"
+            
             disabled={retry.isPending}
             onClick={() => {
               if (window.confirm('Re-run every execution matching this filter? Each one uses quota.')) {
@@ -216,7 +217,7 @@ function ExecutionsList() {
             data-testid="bulk-retry-run"
           >
             Re-run matching
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -270,22 +271,22 @@ function ExecutionsList() {
 
       {forbidden || searching || items.length === 0 ? null : (
         <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
-          <button
-            className="q-btn q-btn--ghost q-btn--sm"
+          <Button variant="ghost" size="sm"
+            
             disabled={cursors.length === 0}
             onClick={() => setCursors((prev) => prev.slice(0, -1))}
             data-testid="exec-prev"
           >
             Previous
-          </button>
-          <button
-            className="q-btn q-btn--ghost q-btn--sm"
+          </Button>
+          <Button variant="ghost" size="sm"
+            
             disabled={nextCursor === null}
             onClick={() => setCursors((prev) => (nextCursor ? [...prev, nextCursor] : prev))}
             data-testid="exec-next"
           >
             Next
-          </button>
+          </Button>
           {cursors.length > 0 ? (
             <span style={{ alignSelf: 'center', color: 'var(--text-muted)' }}>
               Page {cursors.length + 1} — live updates paused

@@ -1,8 +1,8 @@
 import type { ExecutionDetail } from '../../lib/api';
 import { fmtDuration, fmtTime, nodeLabel } from '../../lib/format';
 import { attemptError, attemptPortLabel, groupAttemptsByNode } from '../../lib/timeline';
-import { PayloadPanel } from '../ui/PayloadPanel';
-import { StatusChip } from '../ui/StatusChip';
+import { PayloadPanel } from '../common/PayloadPanel';
+import { StatusChip } from '../common/StatusChip';
 import { WaitsPanel } from './WaitsPanel';
 
 export function Timeline({ detail }: { detail: ExecutionDetail }) {

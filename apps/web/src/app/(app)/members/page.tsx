@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { ApiError, getBrowserClient } from '../../../lib/api';
 import type { WorkspaceMember } from '../../../lib/api';
 import { fmtTime } from '../../../lib/format';

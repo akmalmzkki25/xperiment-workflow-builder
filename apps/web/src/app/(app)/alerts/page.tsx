@@ -1,8 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { getBrowserClient } from '../../../lib/api';
 import type { AlertEvent, AlertRule } from '../../../lib/api';
 import { fmtTime } from '../../../lib/format';
@@ -94,9 +95,9 @@ function CreateRuleForm({ onCreated }: { onCreated: (secret?: string) => void })
         </>
       )}
       <input className="q-input" placeholder="Webhook URL (optional)" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} />
-      <button className="q-btn q-btn--primary q-btn--sm" type="submit" disabled={create.isPending || !name.trim()} data-testid="alert-create">
+      <Button size="sm"  type="submit" disabled={create.isPending || !name.trim()} data-testid="alert-create">
         Create rule
-      </button>
+      </Button>
     </form>
   );
 }
@@ -118,12 +119,12 @@ function RuleRow({ rule }: { rule: AlertRule }) {
       <td>{rule.enabled ? 'On' : 'Off'}</td>
       <td style={{ color: 'var(--text-secondary)' }}>{rule.cooldownMinutes}m</td>
       <td style={{ display: 'flex', gap: 'var(--space-2)' }}>
-        <button className="q-btn q-btn--ghost q-btn--sm" onClick={() => toggle.mutate()} disabled={toggle.isPending}>
+        <Button variant="ghost" size="sm"  onClick={() => toggle.mutate()} disabled={toggle.isPending}>
           {rule.enabled ? 'Disable' : 'Enable'}
-        </button>
-        <button className="q-btn q-btn--danger q-btn--sm" onClick={() => remove.mutate()} disabled={remove.isPending}>
+        </Button>
+        <Button variant="destructive" size="sm"  onClick={() => remove.mutate()} disabled={remove.isPending}>
           Delete
-        </button>
+        </Button>
       </td>
     </tr>
   );
@@ -143,9 +144,9 @@ function FiringRow({ event }: { event: AlertEvent }) {
         {event.acknowledgedAt ? (
           <span style={{ color: 'var(--text-muted)' }}>Acknowledged</span>
         ) : (
-          <button className="q-btn q-btn--ghost q-btn--sm" onClick={() => ack.mutate()} disabled={ack.isPending}>
+          <Button variant="ghost" size="sm"  onClick={() => ack.mutate()} disabled={ack.isPending}>
             Acknowledge
-          </button>
+          </Button>
         )}
       </td>
     </tr>
@@ -178,9 +179,9 @@ export default function AlertsPage() {
       {secret ? (
         <div className="q-banner q-banner--warn" data-testid="alert-secret">
           Signing secret (shown once): <span className="mono">{secret}</span>
-          <button className="q-btn q-btn--ghost q-btn--sm" style={{ marginLeft: 'var(--space-3)' }} onClick={() => setSecret(null)}>
+          <Button variant="ghost" size="sm"  style={{ marginLeft: 'var(--space-3)' }} onClick={() => setSecret(null)}>
             Dismiss
-          </button>
+          </Button>
         </div>
       ) : null}
 

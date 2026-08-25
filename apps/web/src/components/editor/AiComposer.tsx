@@ -1,6 +1,7 @@
 'use client';
 
 import type { KeyboardEvent } from 'react';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   value: string;
@@ -42,18 +43,17 @@ export function AiComposer({ value, onChange, onSubmit, onStop, streaming, disab
         onKeyDown={onKeyDown}
       />
       {streaming ? (
-        <button className="q-btn q-btn--ghost q-btn--sm" data-testid="ai-stop" onClick={onStop}>
+        <Button variant="ghost" size="sm"  data-testid="ai-stop" onClick={onStop}>
           Stop
-        </button>
+        </Button>
       ) : (
-        <button
-          className="q-btn q-btn--live q-btn--sm"
+        <Button variant="live" size="sm"
+          
           data-testid="ai-send"
           disabled={!value.trim() || disabled}
-          onClick={onSubmit}
-        >
+          onClick={onSubmit}>
           Send
-        </button>
+        </Button>
       )}
     </div>
   );

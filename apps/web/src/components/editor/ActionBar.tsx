@@ -1,11 +1,12 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, getBrowserClient, type Finding, type TriggerView, type WorkflowDetail } from '../../lib/api';
 import { exportFilename } from '../../lib/portableFile';
 import { useEditorStore } from '../../stores/editorStore';
-import { LiveChip, StatusChip } from '../ui/StatusChip';
+import { LiveChip, StatusChip } from '../common/StatusChip';
 import { FindingsPanel } from './FindingsPanel';
 import { TriggerPanel } from './TriggerPanel';
 
@@ -252,60 +253,56 @@ export function ActionBar({
           </span>
         ) : null}
         <span className="q-editor-head__spacer" />
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        <Button variant="ghost" size="sm"
+          
           disabled={!canUndo}
           onClick={onUndo}
           title="Undo (Ctrl+Z)"
           aria-label="Undo"
-          data-testid="action-undo"
-        >
+          data-testid="action-undo">
           ↶
-        </button>
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        </Button>
+        <Button variant="ghost" size="sm"
+          
           disabled={!canRedo}
           onClick={onRedo}
           title="Redo (Ctrl+Shift+Z)"
           aria-label="Redo"
-          data-testid="action-redo"
-        >
+          data-testid="action-redo">
           ↷
-        </button>
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        </Button>
+        <Button variant="ghost" size="sm"
+          
           disabled={nodeCount === 0}
           onClick={onTidy}
           title="Arrange the canvas — undoable"
-          data-testid="action-tidy"
-        >
+          data-testid="action-tidy">
           Tidy
-        </button>
-        <button className="q-btn q-btn--live q-btn--sm" onClick={onToggleAi} data-testid="ai-open">
+        </Button>
+        <Button variant="live" size="sm"  onClick={onToggleAi} data-testid="ai-open">
           ✦ AI
-        </button>
-        <button className="q-btn q-btn--ghost q-btn--sm" onClick={onToggleLibrary} data-testid="lib-open">
+        </Button>
+        <Button variant="ghost" size="sm"  onClick={onToggleLibrary} data-testid="lib-open">
           Add node
-        </button>
-        <button
-          className="q-btn q-btn--sm"
+        </Button>
+        <Button size="sm"
+          
           disabled={busy || !dirty}
           onClick={triggerSave}
           title="Save draft (Ctrl+S)"
-          data-testid="action-save"
-        >
+          data-testid="action-save">
           Save draft
-        </button>
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        </Button>
+        <Button variant="ghost" size="sm"
+          
           disabled={busy}
           onClick={() => validate.mutate()}
           data-testid="action-validate"
         >
           Validate
-        </button>
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        </Button>
+        <Button variant="ghost" size="sm"
+          
           // Enabled while dirty on purpose: POST /execute reads activeVersionId, never
           // the draft, so refusing here would imply the two are related when they are not.
           disabled={busy || !workflow.activeVersionId}
@@ -318,73 +315,73 @@ export function ActionBar({
           data-testid="action-run"
         >
           Run
-        </button>
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        </Button>
+        <Button variant="ghost" size="sm"
+          
           disabled={busy}
           title="Download this workflow as a file you can keep or import elsewhere"
           onClick={() => exportWorkflow.mutate()}
           data-testid="action-export"
         >
           Export
-        </button>
-        <button
-          className="q-btn q-btn--sm"
+        </Button>
+        <Button size="sm"
+          
           disabled={busy || dirty || nodeCount === 0}
           title={dirty ? 'Save the draft first' : undefined}
           onClick={() => publish.mutate()}
           data-testid="action-publish"
         >
           Publish
-        </button>
+        </Button>
         {workflow.active ? (
-          <button
-            className="q-btn q-btn--ghost q-btn--sm"
+          <Button variant="ghost" size="sm"
+            
             disabled={busy}
             onClick={() => deactivate.mutate()}
             data-testid="action-deactivate"
           >
             Deactivate
-          </button>
+          </Button>
         ) : (
-          <button
-            className="q-btn q-btn--live q-btn--sm"
+          <Button variant="live" size="sm"
+            
             disabled={busy || !workflow.activeVersionId}
             title={!workflow.activeVersionId ? 'Publish a version first' : undefined}
             onClick={() => activate.mutate()}
             data-testid="action-activate"
           >
             Activate
-          </button>
+          </Button>
         )}
       </div>
 
       {conflict ? (
         <div className="q-banner" data-testid="draft-conflict">
           <span>This draft changed in another session. Reload to pick up the latest revision.</span>
-          <button className="q-btn q-btn--sm" onClick={() => window.location.reload()}>
+          <Button size="sm"  onClick={() => window.location.reload()}>
             Reload
-          </button>
+          </Button>
         </div>
       ) : null}
       {notice ? (
         <div className={notice.kind === 'ok' ? 'q-banner q-banner--ok' : 'q-banner'} data-testid="editor-banner">
           <span>{notice.text}</span>
-          <button className="q-btn q-btn--ghost q-btn--sm" onClick={() => setNotice(null)}>
+          <Button variant="ghost" size="sm"  onClick={() => setNotice(null)}>
             Dismiss
-          </button>
+          </Button>
         </div>
       ) : null}
       <FindingsPanel findings={findings} />
       {workflow.active && !panelOpen ? (
-        <button
-          className="q-btn q-btn--ghost q-btn--sm"
+        <Button variant="ghost" size="sm"
+          
           style={{ alignSelf: 'flex-start' }}
           onClick={() => setPanelOpen(true)}
           data-testid="triggers-show"
         >
           Show trigger URLs
-        </button>
+        </Button>
       ) : null}
       {workflow.active && panelOpen ? (
         <TriggerPanel

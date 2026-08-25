@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { getBrowserClient } from '../../../lib/api';
 import type { TemplateSummary } from '../../../lib/api';
@@ -35,15 +36,15 @@ function TemplateCard({ template }: { template: TemplateSummary }) {
           <span key={c} className="q-chip">{c}</span>
         ))}
       </div>
-      <button
-        className="q-btn q-btn--primary q-btn--sm"
+      <Button size="sm"
+        
         style={{ alignSelf: 'flex-start', marginTop: 'var(--space-1)' }}
         disabled={clone.isPending}
         onClick={() => clone.mutate()}
         data-testid={`use-${template.id}`}
       >
         Use this template
-      </button>
+      </Button>
     </div>
   );
 }

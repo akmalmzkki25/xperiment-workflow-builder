@@ -1,4 +1,20 @@
-/* Arus design tokens — UIUXDesign.md §10-12. Light theme is primary; dark vars ship unpolished. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Arus design tokens — UIUXDesign.md §10-12 — and the shadcn variables derived from them.
+ *
+ * shadcn requires Tailwind, and Tailwind requires a palette. Taking shadcn's stock slate
+ * would have produced precisely the interchangeable look this project's design rules
+ * forbid, so the shadcn variable names below are defined FROM the Arus values rather than
+ * beside them. There is one palette; shadcn is the component layer over it.
+ *
+ * Two forms of each colour exist on purpose. The hex `--color-*` / `--surface-*` names are
+ * what the ReactFlow canvas CSS still uses — that surface has no shadcn primitive and was
+ * deliberately left on hand-written CSS. The `--*-hsl` triples are what Tailwind consumes,
+ * because `hsl(var(--x))` needs bare channels rather than a finished colour.
+ */
 :root {
   /* Brand */
   --color-ink: #171a1f;
@@ -26,7 +42,7 @@
   --border-default: #e4dfd2;
   --border-strong: #c9c2b0;
 
-  /* Semantic status (always paired with glyph + label, never color alone) */
+  /* Semantic status (always paired with glyph + label, never colour alone) */
   --status-succeeded: var(--color-jade);
   --status-failed: var(--color-coral);
   --status-running: var(--color-tide);
@@ -40,44 +56,80 @@
   --rail-logic: var(--color-amber);
 
   /* Typography */
-  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
-  --text-display: 1.75rem;
-  --text-h1: 1.375rem;
+  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --text-display: clamp(2rem, 1.4rem + 2vw, 3rem);
+  --text-h1: 1.5rem;
   --text-h2: 1.125rem;
-  --text-body: 0.875rem;
-  --text-small: 0.78rem;
-  --text-mono: 0.75rem;
-  --text-mono-sub: 0.6875rem; /* 11px node sub-labels */
+  --text-body: 0.9375rem;
+  --text-small: 0.8125rem;
+  --text-mono: 0.8125rem;
+  --text-mono-sub: 0.75rem;
 
   /* Shape */
   --radius-node: 10px;
   --radius-control: 8px;
   --radius-chip: 999px;
 
-  /* Spacing — 4px grid */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-7: 28px;
-  --space-8: 32px;
+  /* Spacing, 4px grid */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
 
-  /* Motion + focus */
+  /* Motion and focus */
   --duration-fast: 150ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --focus-ring: 0 0 0 2px var(--surface-page), 0 0 0 4px var(--color-arus);
+
+  /* ---- shadcn / Tailwind channels, computed from the palette above ---- */
+  --background: 42.9 100% 98.6%; /* surface-page */
+  --foreground: 213.3 13.4% 13.1%; /* text-primary */
+  --card: 0 0% 100%; /* surface-raised */
+  --card-foreground: 213.3 13.4% 13.1%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 213.3 13.4% 13.1%;
+
+  /* Ink, not lime: the primary action is a solid dark button, and Arus is reserved. */
+  --primary: 217.5 14.8% 10.6%;
+  --primary-foreground: 40 45.5% 93.5%; /* lontar */
+
+  --secondary: 45 36.4% 95.7%; /* surface-sunken */
+  --secondary-foreground: 213.3 13.4% 13.1%;
+  --muted: 45 36.4% 95.7%;
+  --muted-foreground: 216 6.8% 57.1%; /* text-muted */
+  --accent: 45 36.4% 95.7%;
+  --accent-foreground: 213.3 13.4% 13.1%;
+  --destructive: 350.5 65.6% 56.7%; /* coral */
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 43.3 25% 85.9%;
+  --input: 43.3 25% 85.9%;
+  --ring: 80.5 86.5% 62.2%; /* the focus ring stays Arus lime */
+  --radius: 0.5rem;
+
+  /* Arus semantics as Tailwind-consumable channels */
+  --arus: 80.5 86.5% 62.2%;
+  --status-succeeded-hsl: 167.2 78.3% 23.5%;
+  --status-failed-hsl: 350.5 65.6% 56.7%;
+  --status-running-hsl: 228.4 100% 60.4%;
+  --status-retry-hsl: 42.7 88.7% 38.2%;
+  --rail-trigger-hsl: 228.4 100% 60.4%;
+  --rail-action-hsl: 259.9 66.4% 58%;
+  --rail-logic-hsl: 42.7 88.7% 38.2%;
 }
 
-:root[data-theme='dark'] {
-  --surface-page: #14161a;
-  --surface-raised: #1b1e24;
-  --surface-sunken: #101216;
-  --text-primary: #ecebe6;
-  --text-secondary: #b4b8be;
-  --text-muted: #7d828a;
-  --border-default: #2a2e35;
-  --border-strong: #3a3f48;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-ui);
+    font-size: var(--text-body);
+  }
 }

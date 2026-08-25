@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ApiError, getBrowserClient } from '../../lib/api';
 import { clearToken, setToken } from '../../lib/auth';
-import { TextField } from '../ui/TextField';
+import { TextField } from '../common/TextField';
 
 export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const router = useRouter();
@@ -85,8 +86,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             </div>
           ) : null}
           {challenge ? (
-            <button
-              className="q-btn"
+            <Button
+              
               type="button"
               disabled={busy || code.length < 6}
               data-testid="mfa-login-submit"
@@ -106,11 +107,11 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
               }}
             >
               Continue
-            </button>
+            </Button>
           ) : (
-            <button className="q-btn" type="submit" disabled={busy || !email || !password} data-testid="auth-submit">
+            <Button  type="submit" disabled={busy || !email || !password} data-testid="auth-submit">
               {mode === 'register' ? 'Create account' : 'Sign in'}
-            </button>
+            </Button>
           )}
         </form>
         {mode === 'login' ? (

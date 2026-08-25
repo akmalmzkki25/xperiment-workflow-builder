@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import type { ExecutionDetail } from '../../lib/api';
 import { fmtDuration, shortId } from '../../lib/format';
-import { StatusChip } from '../ui/StatusChip';
+import { StatusChip } from '../common/StatusChip';
 
 interface Props {
   executionId: string;
@@ -21,12 +22,12 @@ export function RunBanner({ executionId, detail, watchExpired, onStopWatching }:
         {detail ? (
           <span className="q-field__hint">{fmtDuration(detail.execution.startedAt, detail.execution.completedAt)}</span>
         ) : null}
-        <Link href={`/executions/${executionId}`} className="q-btn q-btn--ghost" data-testid="run-open">
+        <Button asChild variant="ghost"><Link href={`/executions/${executionId}`}  data-testid="run-open">
           Open run →
-        </Link>
-        <button type="button" className="q-btn q-btn--ghost" onClick={onStopWatching} data-testid="run-stop-watching">
+        </Link></Button>
+        <Button variant="ghost" type="button"  onClick={onStopWatching} data-testid="run-stop-watching">
           Stop watching
-        </button>
+        </Button>
       </div>
       {watchExpired ? (
         <span className="q-field__hint">

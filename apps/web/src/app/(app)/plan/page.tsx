@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { InvoiceTable } from '../../../components/plan/InvoiceTable';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { ApiError, getBrowserClient } from '../../../lib/api';
 import type { PlanSnapshot, QuotaLineView } from '../../../lib/api';
 import { fmtCount } from '../../../lib/format';

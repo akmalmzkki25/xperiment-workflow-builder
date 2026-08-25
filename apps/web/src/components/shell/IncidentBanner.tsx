@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { getBrowserClient } from '../../lib/api';
@@ -44,12 +45,12 @@ export function IncidentBanner() {
       <span>
         ⚠ {count} unacknowledged alert{count === 1 ? '' : 's'}
       </span>
-      <Link href="/alerts" className="q-btn q-btn--ghost q-btn--sm">
+      <Button asChild variant="ghost" size="sm"><Link href="/alerts">
         View
-      </Link>
-      <button className="q-btn q-btn--ghost q-btn--sm" style={{ marginLeft: 'auto' }} onClick={() => setDismissedCount(count)}>
+      </Link></Button>
+      <Button variant="ghost" size="sm"  style={{ marginLeft: 'auto' }} onClick={() => setDismissedCount(count)}>
         Dismiss
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { getBrowserClient } from '../../lib/api';
 
@@ -21,9 +22,9 @@ export function VerifyBanner() {
       {resent ? (
         <span data-testid="verify-resent">Sent — check your inbox.</span>
       ) : (
-        <button
+        <Button variant="ghost" size="sm"
           type="button"
-          className="q-btn q-btn--ghost q-btn--sm"
+          
           data-testid="verify-resend"
           onClick={() => {
             // Already-verified and rate-limited both land in catch; either way the honest
@@ -35,7 +36,7 @@ export function VerifyBanner() {
           }}
         >
           Resend
-        </button>
+        </Button>
       )}
     </div>
   );

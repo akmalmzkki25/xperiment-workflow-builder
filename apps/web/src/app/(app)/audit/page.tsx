@@ -1,8 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { getBrowserClient, type AuditEvent } from '../../../lib/api';
 import { fmtTime } from '../../../lib/format';
 import { forbiddenDetail } from '../../../lib/permissions';
@@ -132,15 +133,15 @@ export default function AuditPage() {
                   </tbody>
                 </table>
                 {auditQ.data.nextBefore ? (
-                  <button
+                  <Button
                     type="button"
-                    className="q-btn"
+                    
                     style={{ marginTop: '1rem' }}
                     onClick={() => setPages((p) => [...p, auditQ.data!.nextBefore!])}
                     data-testid="audit-load-more"
                   >
                     Load more
-                  </button>
+                  </Button>
                 ) : null}
               </>
             )

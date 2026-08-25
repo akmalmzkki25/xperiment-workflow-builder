@@ -1,15 +1,16 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { LiveChip, StatusChip } from '../../../components/ui/StatusChip';
+import { LiveChip, StatusChip } from '../../../components/common/StatusChip';
 import { ImportButton } from '../../../components/workflows/ImportButton';
-import { Dialog } from '../../../components/ui/Dialog';
-import { EmptyState } from '../../../components/ui/EmptyState';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
-import { TextField } from '../../../components/ui/TextField';
+import { Dialog } from '../../../components/common/Dialog';
+import { EmptyState } from '../../../components/common/EmptyState';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
+import { TextField } from '../../../components/common/TextField';
 import { getBrowserClient } from '../../../lib/api';
 import { forbiddenDetail } from '../../../lib/permissions';
 
@@ -42,9 +43,9 @@ export default function WorkflowsPage() {
         {forbidden ? null : (
           <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
             <ImportButton onImported={() => void queryClient.invalidateQueries({ queryKey: ['workflows'] })} />
-            <button className="q-btn" data-testid="wf-create" onClick={() => setDialogOpen(true)}>
+            <Button  data-testid="wf-create" onClick={() => setDialogOpen(true)}>
               New workflow
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -58,9 +59,9 @@ export default function WorkflowsPage() {
           title="No workflows yet"
           hint="Create your first workflow and wire a trigger to an action on the canvas."
           action={
-            <button className="q-btn" data-testid="wf-create-empty" onClick={() => setDialogOpen(true)}>
+            <Button  data-testid="wf-create-empty" onClick={() => setDialogOpen(true)}>
               New workflow
-            </button>
+            </Button>
           }
         />
       ) : (
@@ -91,13 +92,12 @@ export default function WorkflowsPage() {
                   {wf.id.slice(0, 8)}
                 </td>
                 <td>
-                  <Link
+                  <Button asChild variant="ghost" size="sm"><Link
                     href={`/workflows/${wf.id}/versions`}
-                    className="q-btn q-btn--ghost q-btn--sm"
-                    data-testid={`wf-history-${wf.id.slice(0, 8)}`}
-                  >
+                    
+                    data-testid={`wf-history-${wf.id.slice(0, 8)}`}>
                     History
-                  </Link>
+                  </Link></Button>
                 </td>
               </tr>
             ))}
@@ -111,17 +111,17 @@ export default function WorkflowsPage() {
         onClose={() => setDialogOpen(false)}
         actions={
           <>
-            <button className="q-btn q-btn--ghost" onClick={() => setDialogOpen(false)}>
+            <Button variant="ghost"  onClick={() => setDialogOpen(false)}>
               Cancel
-            </button>
-            <button
-              className="q-btn"
+            </Button>
+            <Button
+              
               data-testid="wf-create-submit"
               disabled={!name.trim() || create.isPending}
               onClick={() => create.mutate(name.trim())}
             >
               Create
-            </button>
+            </Button>
           </>
         }
       >

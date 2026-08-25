@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlowProvider,
@@ -611,8 +612,8 @@ function EditorInner({ workflowId }: { workflowId: string }) {
                 The assistant saved a new version of this draft (rev {canvasOffer.revision}). You have unsaved changes
                 on the canvas.
               </span>
-              <button
-                className="q-btn q-btn--sm"
+              <Button size="sm"
+                
                 data-testid="ai-canvas-apply"
                 onClick={() => {
                   applyDefinition(canvasOffer.definition, { saved: true });
@@ -621,9 +622,9 @@ function EditorInner({ workflowId }: { workflowId: string }) {
                 }}
               >
                 Load it
-              </button>
-              <button
-                className="q-btn q-btn--ghost q-btn--sm"
+              </Button>
+              <Button variant="ghost" size="sm"
+                
                 data-testid="ai-canvas-dismiss"
                 // Deliberately does NOT bump the local revision: doing so would let the
                 // next save overwrite the assistant's work with no record. Their next
@@ -631,7 +632,7 @@ function EditorInner({ workflowId }: { workflowId: string }) {
                 onClick={() => setCanvasOffer(null)}
               >
                 Keep mine
-              </button>
+              </Button>
             </div>
           ) : null}
           <AiChat

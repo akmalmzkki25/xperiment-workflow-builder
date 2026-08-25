@@ -3,7 +3,7 @@
 import type { ExecutionWaitRow } from '../../lib/api';
 import { fmtJakarta } from '../../lib/format';
 import { waitDecisionLine, waitKindLabel } from '../../lib/waitLabel';
-import { StatusChip } from '../ui/StatusChip';
+import { StatusChip } from '../common/StatusChip';
 
 /**
  * Why a run is sitting still.

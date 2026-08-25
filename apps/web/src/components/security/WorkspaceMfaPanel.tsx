@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { ApiError, getBrowserClient } from '../../lib/api';
 import { PANEL } from './MfaPanel';
@@ -44,14 +45,14 @@ export function WorkspaceMfaPanel({
           Turn on your own two-factor first — otherwise this locks you out.
         </p>
       ) : null}
-      <button
-        className="q-btn"
+      <Button
+        
         disabled={busy || (!selfEnrolled && !requireMfa)}
         onClick={() => void toggle()}
         data-testid="policy-toggle"
       >
         {requireMfa ? 'Stop requiring it' : 'Require it'}
-      </button>
+      </Button>
       {error ? (
         <div className="q-banner" data-testid="policy-error">
           {error}

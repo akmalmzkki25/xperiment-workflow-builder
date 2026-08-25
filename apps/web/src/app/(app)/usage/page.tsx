@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { getBrowserClient } from '../../../lib/api';
 import type { UsageSummary } from '../../../lib/api';
 import { fmtCount, fmtMs } from '../../../lib/format';

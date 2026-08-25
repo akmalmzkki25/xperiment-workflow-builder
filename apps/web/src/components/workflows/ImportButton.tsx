@@ -1,11 +1,12 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { getBrowserClient, type ImportResult, type WorkflowExportDoc } from '../../lib/api';
 import { parseExportFile } from '../../lib/portableFile';
-import { Dialog } from '../ui/Dialog';
+import { Dialog } from '../common/Dialog';
 
 const REASONS: Record<string, string> = {
   too_large: 'That file is too large to be a workflow export.',
@@ -62,14 +63,14 @@ export function ImportButton({ onImported }: { onImported: () => void }) {
           if (file) void pick(file);
         }}
       />
-      <button
-        className="q-btn q-btn--ghost"
+      <Button variant="ghost"
+        
         data-testid="wf-import"
         disabled={run.isPending}
         onClick={() => input.current?.click()}
       >
         {run.isPending ? 'Importing…' : 'Import'}
-      </button>
+      </Button>
 
       {fileError ? (
         <div className="q-banner" data-testid="wf-import-error">
@@ -83,15 +84,15 @@ export function ImportButton({ onImported }: { onImported: () => void }) {
         open={result !== null}
         onClose={() => setResult(null)}
         actions={
-          <button
-            className="q-btn"
+          <Button
+            
             data-testid="wf-import-open"
             onClick={() => {
               if (result) router.push(`/workflows/${result.id}`);
             }}
           >
             Open workflow
-          </button>
+          </Button>
         }
       >
         <p style={{ color: 'var(--text-muted)' }}>

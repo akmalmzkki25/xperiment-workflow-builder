@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useState } from 'react';
 import { getBrowserClient } from '../../../../../lib/api';
@@ -73,7 +74,7 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
     <div data-testid="versions-page">
       <div className="q-page-head">
         <h1>Versions · {shortId(params.id)}</h1>
-        <Link href={`/workflows/${params.id}`} className="q-btn q-btn--ghost q-btn--sm">Open editor</Link>
+        <Button asChild variant="ghost" size="sm"><Link href={`/workflows/${params.id}`}>Open editor</Link></Button>
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', marginBottom: 'var(--space-5)', flexWrap: 'wrap' }}>
@@ -86,9 +87,9 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
           <option value="">To…</option>
           {options.map((o) => <option key={`t-${o.value}`} value={o.value}>{o.label}</option>)}
         </select>
-        <button className="q-btn q-btn--primary q-btn--sm" disabled={!from || !to || compare.isPending} onClick={() => compare.mutate()} data-testid="diff-compare">
+        <Button size="sm"  disabled={!from || !to || compare.isPending} onClick={() => compare.mutate()} data-testid="diff-compare">
           Compare
-        </button>
+        </Button>
       </div>
 
       {diff ? <div style={{ marginBottom: 'var(--space-6)' }}><DiffView diff={diff.diff} /></div> : null}
@@ -110,8 +111,8 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
                 <td style={{ color: 'var(--text-secondary)' }}>{fmtTime(v.publishedAt)}</td>
                 <td className="mono" style={{ color: 'var(--text-muted)' }}>{shortId(v.definitionHash)}</td>
                 <td>
-                  <button
-                    className="q-btn q-btn--ghost q-btn--sm"
+                  <Button variant="ghost" size="sm"
+                    
                     disabled={rollback.isPending || v.id === wf.activeVersionId}
                     onClick={() => {
                       if (window.confirm(`Roll back to v${v.versionNumber}? This publishes it forward as a new version.`)) rollback.mutate(v.id);
@@ -119,7 +120,7 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
                     data-testid={`rollback-${v.versionNumber}`}
                   >
                     Rollback
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}

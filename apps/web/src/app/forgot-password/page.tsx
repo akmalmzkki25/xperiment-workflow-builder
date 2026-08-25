@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
-import { TextField } from '../../components/ui/TextField';
+import { TextField } from '../../components/common/TextField';
 import { getBrowserClient } from '../../lib/api';
 
 export default function ForgotPasswordPage() {
@@ -44,9 +45,9 @@ export default function ForgotPasswordPage() {
             }}
           >
             <TextField label="Email" type="email" value={email} onChange={setEmail} testId="forgot-email" />
-            <button className="q-btn" type="submit" disabled={busy || !email} data-testid="forgot-submit">
+            <Button  type="submit" disabled={busy || !email} data-testid="forgot-submit">
               Send reset link
-            </button>
+            </Button>
           </form>
         )}
         <p style={{ color: 'var(--text-secondary)' }}>

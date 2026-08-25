@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { getBrowserClient } from '../../lib/api';
 
@@ -20,9 +21,9 @@ export function QuotaBanner() {
       <span>
         {worst.metric}: {worst.used} of {worst.limit} used this period.
       </span>
-      <Link href="/plan" className="q-btn q-btn--ghost q-btn--sm">
+      <Button asChild variant="ghost" size="sm"><Link href="/plan">
         View plan
-      </Link>
+      </Link></Button>
     </div>
   );
 }

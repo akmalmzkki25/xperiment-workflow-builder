@@ -1,10 +1,11 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { ConnectionDialog, type RotateTarget } from '../../../components/connections/ConnectionDialog';
-import { EmptyState } from '../../../components/ui/EmptyState';
-import { PermissionNotice } from '../../../components/ui/PermissionNotice';
+import { EmptyState } from '../../../components/common/EmptyState';
+import { PermissionNotice } from '../../../components/common/PermissionNotice';
 import { getBrowserClient } from '../../../lib/api';
 import { fmtTime } from '../../../lib/format';
 import { forbiddenDetail } from '../../../lib/permissions';
@@ -52,18 +53,18 @@ export default function ConnectionsPage() {
       <div className="q-page-head">
         <h1>Connections</h1>
         {forbidden ? null : (
-          <button className="q-btn" data-testid="conn-create" onClick={() => setDialogOpen(true)}>
+          <Button  data-testid="conn-create" onClick={() => setDialogOpen(true)}>
             New connection
-          </button>
+          </Button>
         )}
       </div>
 
       {pageError ? (
         <div className="q-banner">
           <span>{pageError}</span>
-          <button className="q-btn q-btn--ghost q-btn--sm" onClick={() => setPageError(null)}>
+          <Button variant="ghost" size="sm"  onClick={() => setPageError(null)}>
             Dismiss
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -76,9 +77,9 @@ export default function ConnectionsPage() {
           title="No connections yet"
           hint="Store provider credentials once, encrypted, and reference them from workflow nodes."
           action={
-            <button className="q-btn" onClick={() => setDialogOpen(true)}>
+            <Button  onClick={() => setDialogOpen(true)}>
               New connection
-            </button>
+            </Button>
           }
         />
       ) : (
@@ -118,25 +119,25 @@ export default function ConnectionsPage() {
                     )}
                   </td>
                   <td style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
-                    <button
-                      className="q-btn q-btn--ghost q-btn--sm"
+                    <Button variant="ghost" size="sm"
+                      
                       disabled={test.isPending}
                       onClick={() => test.mutate(conn.id)}
                       data-testid={`conn-test-${conn.name}`}
                     >
                       Test
-                    </button>
-                    <button
-                      className="q-btn q-btn--ghost q-btn--sm"
+                    </Button>
+                    <Button variant="ghost" size="sm"
+                      
                       onClick={() =>
                         setRotating({ id: conn.id, name: conn.name, connectorKey: conn.connectorKey })
                       }
                       data-testid={`conn-rotate-${conn.name}`}
                     >
                       Rotate
-                    </button>
-                    <button
-                      className="q-btn q-btn--danger q-btn--sm"
+                    </Button>
+                    <Button variant="destructive" size="sm"
+                      
                       disabled={remove.isPending}
                       onClick={() => {
                         if (window.confirm(`Delete connection "${conn.name}"?`)) remove.mutate(conn.id);
@@ -144,7 +145,7 @@ export default function ConnectionsPage() {
                       data-testid={`conn-delete-${conn.name}`}
                     >
                       Delete
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               );
