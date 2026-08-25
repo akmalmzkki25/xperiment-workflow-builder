@@ -1,12 +1,15 @@
 import {
   AUDIT_RETENTION_FLOOR_DAYS,
   OUTBOX_RETENTION_DAYS,
+  PLAN_RETENTION,
   USAGE_RETENTION_FLOOR_DAYS,
 } from '@xperiment/plans';
 import type pg from 'pg';
 
 export interface RetentionPolicy {
+  /** The fallback for a workspace whose plan is unknown. A plan in PLAN_RETENTION wins. */
   executionDays: number;
+  /** Likewise a fallback. See `executionDays`. */
   triggerEventDays: number;
   auditDays: number;
   usageDays: number;
@@ -27,6 +30,69 @@ export interface PruneResult {
   deadLetters: number;
   agentConversations: number;
 }
+
+/**
+ * The per-plan schedule, as parallel arrays the sweep hands to `unnest`.
+ *
+ * Retention is a property of the plan, not of the operator running the sweep: a free
+ * workspace is entitled to seven days of run history and a business workspace to a year.
+ * Before this, every workspace got whatever single number the caller passed — 30 days for
+ * everyone, because the scheduler calls `pruneExpired(pool)` with no arguments at all —
+ * so a free plan kept four weeks it had not paid for and a business plan lost eleven
+ * months it had.
+ *
+ * `triggerDays` is floored at the same plan's `executionDays` for the reason `clampPolicy`
+ * does it to an operator's request: an execution whose trigger event was deleted still
+ * points at it, and every later sweep would unhook the same rows again. The catalog has
+ * them equal today, and this keeps a future edit from quietly costing that.
+ */
+const PLAN_SCHEDULE = ((): { codes: string[]; executionDays: number[]; triggerDays: number[] } => {
+  const codes: string[] = [];
+  const executionDays: number[] = [];
+  const triggerDays: number[] = [];
+  for (const [code, days] of Object.entries(PLAN_RETENTION)) {
+    codes.push(code);
+    executionDays.push(Math.max(1, days.executionDays));
+    triggerDays.push(Math.max(1, days.triggerEventDays, days.executionDays));
+  }
+  return { codes, executionDays, triggerDays };
+})();
+
+/**
+ * The schedule the sweep will actually apply, per plan.
+ *
+ * Derived from PLAN_SCHEDULE rather than re-read from the catalog, so it reflects the
+ * `triggerDays` floor. An operator asking what a sweep is going to do should be told what
+ * it does, not what a constant says before this module gets hold of it.
+ */
+export function planRetentionSchedule(): Record<string, { executionDays: number; triggerEventDays: number }> {
+  const out: Record<string, { executionDays: number; triggerEventDays: number }> = {};
+  PLAN_SCHEDULE.codes.forEach((code, i) => {
+    out[code] = {
+      executionDays: PLAN_SCHEDULE.executionDays[i]!,
+      triggerEventDays: PLAN_SCHEDULE.triggerDays[i]!,
+    };
+  });
+  return out;
+}
+
+/**
+ * Joins each row to its workspace's plan.
+ *
+ * A LEFT JOIN, and the caller's own number is the COALESCE fallback — NOT `free`.
+ * `getWorkspacePlan` treats a missing row as free because spend must fail closed, but
+ * deletion is the other direction: a business workspace whose plan row went missing would
+ * have 358 days of history removed on the next sweep. When the plan is unknown the sweep
+ * does what it did before plans were consulted, which is the conservative answer for
+ * something irreversible.
+ *
+ * $1/$2/$3 are the schedule; $4 is the fallback in days.
+ */
+const PLAN_DAYS_CTE = `WITH plan_days AS (
+    SELECT * FROM unnest($1::text[], $2::int[], $3::int[]) AS t(code, execution_days, trigger_days)
+  )`;
+
+const PLAN_PARAMS = [PLAN_SCHEDULE.codes, PLAN_SCHEDULE.executionDays, PLAN_SCHEDULE.triggerDays];
 
 /** Bound so one sweep cannot hold a transaction over a million rows. */
 export const DEFAULT_PRUNE_BATCH = 5000;
@@ -55,6 +121,20 @@ export function clampPolicy(requested: Partial<RetentionPolicy>): RetentionPolic
 async function deleteBatch(client: pg.PoolClient, sql: string, params: unknown[]): Promise<number> {
   const r = await client.query(sql, params);
   return r.rowCount ?? 0;
+}
+
+/**
+ * The ids this sweep will remove, chosen once.
+ *
+ * Chosen once and then reused, rather than repeating the `LIMIT` subquery in each
+ * statement. Two statements with the same `LIMIT` and no `ORDER BY` are not obliged to
+ * return the same rows — and between them an execution can cross the age threshold, so
+ * the second could name a row whose open wait the first never deleted, which is a 23503.
+ * Cheap to hold: the list is bounded by the batch.
+ */
+async function doomedIds(client: pg.PoolClient, sql: string, params: unknown[]): Promise<string[]> {
+  const r = await client.query<{ id: string }>(sql, params);
+  return r.rows.map((row) => row.id);
 }
 
 /**
@@ -101,47 +181,70 @@ export async function pruneExpired(
       [policy.conversationDays],
     );
 
-    const oldExecutions = `SELECT id FROM executions WHERE created_at < now() - make_interval(days => $1) LIMIT ${batch}`;
+    const doomedExecutions = await doomedIds(
+      client,
+      `${PLAN_DAYS_CTE}
+       SELECT e.id FROM executions e
+       LEFT JOIN workspace_plans wp ON wp.workspace_id = e.workspace_id
+       LEFT JOIN plan_days pd ON pd.code = wp.plan_code
+       WHERE e.created_at < now() - make_interval(days => COALESCE(pd.execution_days, $4))
+       LIMIT ${batch}`,
+      [...PLAN_PARAMS, policy.executionDays],
+    );
 
     result.executionWaits = await deleteBatch(
       client,
-      `DELETE FROM execution_waits WHERE execution_id IN (${oldExecutions})`,
-      [policy.executionDays],
+      `DELETE FROM execution_waits WHERE execution_id = ANY($1::uuid[])`,
+      [doomedExecutions],
     );
     result.executions = await deleteBatch(
       client,
-      `DELETE FROM executions WHERE id IN (${oldExecutions})`,
-      [policy.executionDays],
+      `DELETE FROM executions WHERE id = ANY($1::uuid[])`,
+      [doomedExecutions],
+    );
+
+    const doomedTriggers = await doomedIds(
+      client,
+      `${PLAN_DAYS_CTE}
+       SELECT te.id FROM trigger_events te
+       LEFT JOIN workspace_plans wp ON wp.workspace_id = te.workspace_id
+       LEFT JOIN plan_days pd ON pd.code = wp.plan_code
+       WHERE te.received_at < now() - make_interval(days => COALESCE(pd.trigger_days, $4))
+       LIMIT ${batch}`,
+      [...PLAN_PARAMS, policy.triggerEventDays],
     );
 
     // Unhook rather than cascade: an execution outlives the webhook body that started
     // it, and losing the run because the payload aged out would be the wrong trade.
-    await client.query(
-      `UPDATE executions SET trigger_event_id = NULL
-       WHERE trigger_event_id IN (
-         SELECT id FROM trigger_events WHERE received_at < now() - make_interval(days => $1) LIMIT ${batch}
-       )`,
-      [policy.triggerEventDays],
-    );
+    await client.query(`UPDATE executions SET trigger_event_id = NULL WHERE trigger_event_id = ANY($1::uuid[])`, [
+      doomedTriggers,
+    ]);
     result.triggerEvents = await deleteBatch(
       client,
-      `DELETE FROM trigger_events WHERE id IN (
-         SELECT id FROM trigger_events WHERE received_at < now() - make_interval(days => $1) LIMIT ${batch}
-       )`,
-      [policy.triggerEventDays],
+      `DELETE FROM trigger_events WHERE id = ANY($1::uuid[])`,
+      [doomedTriggers],
     );
 
-    // Same horizon as the trigger bodies they describe. A delivery record is diagnostic,
-    // not evidence: keeping it past the run it explains helps nobody and costs storage on
-    // the highest-volume write path in the system.
+    // Same horizon as the trigger bodies they describe, and so also per plan. A delivery
+    // record is diagnostic, not evidence: keeping it past the run it explains helps nobody
+    // and costs storage on the highest-volume write path in the system.
     result.webhookDeliveries = await deleteBatch(
       client,
-      `DELETE FROM webhook_deliveries WHERE id IN (
-         SELECT id FROM webhook_deliveries WHERE received_at < now() - make_interval(days => $1) LIMIT ${batch}
+      `${PLAN_DAYS_CTE}
+       DELETE FROM webhook_deliveries WHERE id IN (
+         SELECT wd.id FROM webhook_deliveries wd
+         LEFT JOIN workspace_plans wp ON wp.workspace_id = wd.workspace_id
+         LEFT JOIN plan_days pd ON pd.code = wp.plan_code
+         WHERE wd.received_at < now() - make_interval(days => COALESCE(pd.trigger_days, $4))
+         LIMIT ${batch}
        )`,
-      [policy.triggerEventDays],
+      [...PLAN_PARAMS, policy.triggerEventDays],
     );
 
+    // Audit and usage are NOT per plan, and deliberately so. They have floors precisely
+    // because no plan and no operator may shorten them: a free workspace's audit trail is
+    // evidence of who did what, and its usage rows are what an invoice was computed from.
+    // A plan buys longer run history, not a shorter paper trail.
     result.auditEvents = await deleteBatch(
       client,
       `DELETE FROM audit_events WHERE id IN (

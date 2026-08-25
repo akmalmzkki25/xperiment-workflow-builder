@@ -670,6 +670,40 @@ invoice changes a record of money. The close sweep is idempotent per
 Making the zone per-workspace is a real feature with its own settings surface and
 migration, and is deliberately not part of this.
 
+## Retention
+
+How long data survives is a property of the **plan**, applied per workspace by
+`pruneExpired`, which the scheduler runs on a timer and the CLI exposes as
+`xperiment prune`.
+
+| Plan | Executions and their events | Recorded webhook bodies |
+|---|---|---|
+| free | 7 days | 7 days |
+| builder | 30 days | 30 days |
+| team | 90 days | 90 days |
+| business | 365 days | 365 days |
+
+`--execution-days` / `--trigger-days` are **fallbacks**, not overrides: they apply
+to a workspace whose `workspace_plans` row is missing. That direction is
+deliberate and differs from `getWorkspacePlan`, which treats a missing row as
+free because spend must fail closed. Deletion is the opposite risk — a business
+workspace whose plan row went missing would lose most of a year on the next
+sweep, and that is not recoverable.
+
+Three things are **not** per plan:
+
+- **Audit** (90-day floor) and **usage** (365-day floor). No plan and no operator
+  may shorten either: a free workspace's audit trail is still the record of who
+  did what, and its usage rows are still what an invoice was computed from. A
+  plan buys longer run history, not a shorter paper trail.
+- **Settled bookkeeping** — published outbox rows and replayed dead letters — at
+  seven days. Not workspace data.
+- **Agent conversations**, at 90 days by `updated_at`, so a long conversation
+  somebody is still in the middle of does not vanish mid-sentence.
+
+`xperiment prune --dry-run` prints both the clamped policy and the per-plan schedule
+the sweep would apply.
+
 ## Templates & WhatsApp vertical pack (Phase 2L)
 
 A curated, built-in template catalog — starting with an Indonesian **WhatsApp

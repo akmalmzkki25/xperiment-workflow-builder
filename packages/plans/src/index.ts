@@ -24,7 +24,10 @@ export const PLAN_CATALOG: Record<PlanCode, PlanLimits> = {
   business: { executionsPerMonth: null, aiTokensPerMonth: null, activeWorkflows: null, members: null },
 };
 
-export const PLAN_CODES = Object.keys(PLAN_CATALOG) as PlanCode[];
+/** `readonly` for the same reason as LIMIT_KEYS: an in-place `.sort()` on a shared
+ *  exported array reorders it for everyone, and nothing about the call site looks
+ *  like a mutation. */
+export const PLAN_CODES: readonly PlanCode[] = Object.keys(PLAN_CATALOG) as PlanCode[];
 
 /**
  * How long a plan keeps run history, in days.
@@ -45,10 +48,12 @@ export interface PlanRetention {
 }
 
 /**
- * NOT WIRED YET. `pruneExpired` takes its policy from the CLI, which defaults to 30 days
- * for every workspace — so a free plan currently keeps four weeks it is not entitled to
- * and a business plan loses eleven months it paid for. This is the intended schedule,
- * kept here rather than deleted so the gap stays visible.
+ * Read by `pruneExpired` in @xperiment/db, per workspace, via its `workspace_plans` row.
+ *
+ * Editing a number here changes what the next sweep deletes. A workspace whose plan is
+ * missing or unrecognised is NOT treated as free — the sweep falls back to the caller's
+ * own retention instead, because deleting a paying customer's year of history over a
+ * missing row is not a recoverable mistake.
  */
 export const PLAN_RETENTION: Record<PlanCode, PlanRetention> = {
   free: { executionDays: 7, triggerEventDays: 7 },

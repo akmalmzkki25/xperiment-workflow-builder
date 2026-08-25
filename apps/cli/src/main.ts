@@ -134,12 +134,13 @@ program
 program
   .command('prune')
   .description('Delete run history, webhook bodies and settled bookkeeping past their retention')
-  .option('--execution-days <n>', 'keep executions this long', '30')
-  .option('--trigger-days <n>', 'keep recorded webhook bodies this long', '30')
+  .option('--execution-days <n>', 'fallback for a workspace with no plan; a plan wins', '30')
+  .option('--trigger-days <n>', 'fallback for a workspace with no plan; a plan wins', '30')
   .option('--batch <n>', 'rows per table per run', '5000')
   .option('--dry-run', 'report what the clamped policy would be and delete nothing')
   .action(async (opts: { executionDays: string; triggerDays: string; batch: string; dryRun?: boolean }) => {
-    const { appendAuditEvent, clampPolicy, createPool, pruneExpired } = await import('@xperiment/db');
+    const { appendAuditEvent, clampPolicy, createPool, planRetentionSchedule, pruneExpired } =
+      await import('@xperiment/db');
     const requested = {
       executionDays: Number(opts.executionDays),
       triggerEventDays: Number(opts.triggerDays),
@@ -148,6 +149,10 @@ program
     // Printed always: audit and usage have floors the flags cannot go under, and an
     // operator who asked for thirty days of audit deserves to be told they got ninety.
     console.log(`policy ${JSON.stringify(policy)}`);
+    // And the two run-history numbers above are only what a workspace gets when its plan
+    // is unknown. Saying so beats an operator concluding that --execution-days 1 did
+    // nothing because the sweep is broken.
+    console.log(`per-plan run history ${JSON.stringify(planRetentionSchedule())}`);
     if (opts.dryRun) return;
 
     const pool = createPool();
