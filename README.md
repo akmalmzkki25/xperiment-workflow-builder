@@ -177,6 +177,23 @@ in `apps/web` hid behind an unrelated failure in `packages/db`. `pnpm test`
 now runs all of them, prints a pass/FAIL line per package, and exits non-zero
 if any failed.
 
+### Running without the Docker stack
+
+The packages with pure logic need no database and no Redis, so they run on a bare
+checkout:
+
+```bash
+pnpm --filter @xperiment/ir test
+```
+
+```bash
+pnpm --filter @xperiment/web test
+```
+
+`@xperiment/cli` is a mix. Everything except `test/client.test.ts` runs without the
+stack; that file starts the API against Postgres, so without `docker compose up -d` it
+fails with a password or connection error rather than a test failure.
+
 ## Triggers (Phase 1A)
 
 Webhook and schedule triggers start executions without `POST /execute`:
