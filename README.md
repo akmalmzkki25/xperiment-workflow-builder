@@ -7,20 +7,14 @@ delivery with idempotency, automatic retry, and a full execution audit trail.
 - Spec: `docs/superpowers/specs/2026-07-23-phase0-technical-proof-design.md`
 - Plan: `docs/superpowers/plans/2026-07-23-phase0-technical-proof.md`
 
-## A note on the name
+## Naming
 
-The product is **Xperiment**. It was called Xperiment, and three things still are, on
-purpose:
+The command line tool is `xperiment`. Internally the monorepo uses the `xperiment` prefix: the
+`@xperiment/*` package scope, the `xperiment` database, the `X-Xperiment-Workspace` and
+`X-Xperiment-Signature` headers, and the `XPERIMENT_*` environment variables.
 
-| Still says `xperiment` | Why |
-|---|---|
-| The `@xperiment/*` package scope, the repo directory, the `xperiment` database | Internal names with no user reading them. Renaming the scope touches every import in the monorepo and buys nothing. |
-| `X-Xperiment-Workspace`, `X-Xperiment-Signature` | Wire protocol. The signature header is what external senders already compute against; renaming it breaks live webhooks. |
-| `XPERIMENT_HOME`, `XPERIMENT_TOKEN`, `XPERIMENT_API_URL`, `XPERIMENT_MASTER_KEY` | Renamed, but the old names are still read as a fallback, so an existing shell profile or deployment keeps working. |
-
-Workflow exports changed key: files now say `"xperimentExport"` and download as
-`<name>.xperiment.json`. Readers accept `"xperimentExport"` too — a rename should not
-cost anyone a workflow they saved.
+Workflow exports are written as `"xperimentExport"` files (`<name>.xperiment.json`). The reader also
+accepts the older `"xperimentExport"` key, so a previously saved workflow still loads.
 
 ## Prerequisites
 
