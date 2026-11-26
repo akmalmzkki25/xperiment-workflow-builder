@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-and-unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pnpm version comes from the "packageManager" field in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck every workspace package
+        run: pnpm -r typecheck
+
+      # Only the suites that need neither Postgres nor Redis. The rest still run locally
+      # through `pnpm test` against the docker compose stack.
+      - name: Unit tests (no database)
+        run: |
+          pnpm --filter @xperiment/ir test
+          pnpm --filter @xperiment/web test
