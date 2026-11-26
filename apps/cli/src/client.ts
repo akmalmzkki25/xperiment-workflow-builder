@@ -26,7 +26,7 @@ export class ApiClient {
   private token: string | null;
 
   constructor(
-    private readonly baseUrl: string = process.env['XPERIMENT_API_URL'] ?? process.env['XPERIMENT_API_URL'] ?? 'http://localhost:3000',
+    private readonly baseUrl: string = process.env['XPERIMENT_API_URL'] ?? 'http://localhost:3000',
     token: string | null = null,
   ) {
     this.token = token;

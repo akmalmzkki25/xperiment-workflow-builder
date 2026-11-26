@@ -9,12 +9,10 @@ delivery with idempotency, automatic retry, and a full execution audit trail.
 
 ## Naming
 
-The command line tool is `xperiment`. Internally the monorepo uses the `xperiment` prefix: the
-`@xperiment/*` package scope, the `xperiment` database, the `X-Xperiment-Workspace` and
-`X-Xperiment-Signature` headers, and the `XPERIMENT_*` environment variables.
-
-Workflow exports are written as `"xperimentExport"` files (`<name>.xperiment.json`). The reader also
-accepts the older `"xperimentExport"` key, so a previously saved workflow still loads.
+Everything uses the `xperiment` name: the `xperiment` command line tool, the `@xperiment/*` package
+scope, the `xperiment` database, the `X-Xperiment-Workspace` and `X-Xperiment-Signature` headers,
+and the `XPERIMENT_*` environment variables. Workflow exports are `<name>.xperiment.json` files
+that carry an `"xperimentExport"` version key.
 
 ## Prerequisites
 

@@ -33,9 +33,7 @@ export function parseExportFile(text: string): ParseResult {
     return { ok: false, reason: 'not_json' };
   }
   if (!isRecord(raw)) return { ok: false, reason: 'not_an_export' };
-  // Either key: files written before the rename say `xperimentExport`, and refusing those
-  // would make a cosmetic rename cost people their saved workflows.
-  const format = raw['xperimentExport'] ?? raw['xperimentExport'];
+  const format = raw['xperimentExport'];
   if (typeof format !== 'number' || typeof raw['name'] !== 'string' || !isRecord(raw['definition'])) {
     return { ok: false, reason: 'not_an_export' };
   }

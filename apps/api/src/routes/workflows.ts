@@ -285,8 +285,6 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: ResolvedServe
   const importSchema = z
     .object({
       xperimentExport: z.number().int().optional(),
-      /** Files written before the rename. Accepted so a rename is not data loss. */
-      xperimentExport: z.number().int().optional(),
       name: z.string().min(1).max(200),
       definition: z.unknown(),
       // The manifest is informational on the way in: `planImport` re-derives it from the

@@ -21,8 +21,6 @@ export interface BootCheckEnv {
   REDIS_URL?: string | undefined;
   KMS_KEY_URI?: string | undefined;
   XPERIMENT_MASTER_KEY?: string | undefined;
-  /** Pre-rename name, still honoured so a deploy is not silently downgraded. */
-  XPERIMENT_MASTER_KEY?: string | undefined;
 }
 
 export interface BootProblem {
